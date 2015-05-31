@@ -1,13 +1,15 @@
 # Lokale Einzelchecks
-export MUNIN_LIBDIR=/usr/share/munin
+export MUNIN_LIBDIR=/usr/share/munin MUNIN_PLUGSTATE=/tmp
+export PATH=/root/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
 if cd munin-scripts
 then
   for skript in $(ls)
   do
-    if [ -x "$skript" ] ; then
+    if [ "${skript: -1}" != "_" ] && [ -x "$skript" ] ; then
         echo "<<<munin-$skript>>>"
-        ./$skript
-	./$skript config
+        ./$skript &&
+        ./$skript config
     fi
   done
   cd ..
