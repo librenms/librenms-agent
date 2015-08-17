@@ -16,6 +16,9 @@ set -e
 case "$1" in
     configure)
         [ -x /usr/sbin/service ] && service xinetd restart
+        echo "Enable some default services"
+        /usr/bin/mk_enplug dpkg
+        /usr/bin/mk_enplug dmi
     ;;
 
     abort-upgrade|abort-remove|abort-deconfigure)
