@@ -1,0 +1,13 @@
+Source: librenms-agent
+Section: misc
+Priority: extra
+Maintainer: Mark Schouten <mark@tuxis.nl>
+Build-Depends: debhelper (>= 5)
+Standards-Version: 3.9.1
+
+Package: librenms-agent
+Architecture: all
+Pre-Depends: xinetd
+Suggests: php-cli, php-mysql, libwww-perl, curl, dmidecode, netcat, ipmitool, lm-sensors, python-memcache, python-urllib3, rrdtool, libdbd-pg-perl
+Description: Install the LibreNMS Unix Agent
+ Install the LibreNMS Unix Agent. Please note that the suggested packages are required for some of the plugins

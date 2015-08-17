@@ -1,0 +1,5 @@
+librenms-agent (1.0) stable; urgency=low
+
+  - Initial package release
+
+ -- Mark Schouten <mark@tuxis.nl> Mon, 17 Aug 2015 15:00:00 +0200
