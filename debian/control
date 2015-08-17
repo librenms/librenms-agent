@@ -8,6 +8,8 @@ Standards-Version: 3.9.1
 Package: librenms-agent
 Architecture: all
 Pre-Depends: xinetd
+Conflicts: check-mk-agent
+Provides: check-mk-agent
 Suggests: php-cli, php-mysql, libwww-perl, curl, dmidecode, netcat, ipmitool, lm-sensors, python-memcache, python-urllib3, rrdtool, libdbd-pg-perl
 Description: Install the LibreNMS Unix Agent
  Install the LibreNMS Unix Agent. Please note that the suggested packages are required for some of the plugins
