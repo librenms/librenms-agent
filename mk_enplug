@@ -1,0 +1,62 @@
+#!/bin/bash
+
+# Copyright (C) 2015 Mark Schouten <mark@tuxis.nl>
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; version 2 dated June,
+# 1991.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# See http://www.gnu.org/licenses/gpl.txt for the full license
+
+plugdir=/usr/lib/check_mk_agent/plugins
+repodir=/usr/lib/check_mk_agent/repo
+
+findscripts() {
+    find ${repodir} -type f | sed -e "s#$repodir/##g"
+}
+
+script_enabled() {
+    s=$1
+
+    if [ -L ${plugdir}/${s} ]; then
+        echo "yes"
+    else
+        echo "no"
+    fi
+}
+
+enable_script() {
+    s=$1
+
+    ln -s ${repodir}/${s} ${plugdir}/${s}
+    echo "Enabled $s"
+}
+
+scripts=$(findscripts)
+
+if [ ! -z "$1" ]; then
+    s=$1
+else
+    echo "Which plugin do you want to enable?"
+    echo ${scripts}
+    read s
+fi
+
+echo "Enabling $s"
+
+if [ ! -z "$s" ]; then
+    if [ ! -r ${repodir}/${s} ]; then
+        echo "Plugin $s does not exist!"
+        exit 1
+    fi
+
+    if [ `script_enabled $s` != "yes" ]; then
+        enable_script $s
+    fi
+fi

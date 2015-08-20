@@ -1,0 +1,11 @@
+librenms-agent (1.0.1) stable; urgency=low
+
+  - Do not include the README in the repodir
+
+ -- Mark Schouten <mark@tuxis.nl> Thu, 20 Aug 2015 14:15:00 +0200
+
+librenms-agent (1.0) stable; urgency=low
+
+  - Initial package release
+
+ -- Mark Schouten <mark@tuxis.nl> Mon, 17 Aug 2015 15:00:00 +0200
