@@ -1,0 +1,37 @@
+#!/usr/bin/perl -w
+
+use constant {
+    TIMEZONE => 'Europe/Amsterdam'
+};
+
+use strict;
+use PVE::API2Client;
+use PVE::AccessControl;
+use PVE::INotify;
+use Data::Dumper;
+
+my $hostname = PVE::INotify::read_file("hostname");
+
+my $ticket = PVE::AccessControl::assemble_ticket('root@pam');
+my $csrftoken = PVE::AccessControl::assemble_csrf_prevention_token('root@pam');
+
+my $conn = PVE::API2Client->new(
+    ticket => $ticket,
+    csrftoken => $csrftoken,
+);
+
+my $clustername = $conn->get("/api2/json/cluster/ha/config")->{'data'}->{'children'}[0]{'name'};
+if (!defined($clustername)) {
+    $clustername = $hostname;
+}
+
+
+print "<<<app-proxmox>>>\n";
+
+print "$clustername\n";
+
+foreach my $vm (@{$conn->get("/api2/json/nodes/$hostname/netstat")->{'data'}}) {
+	my $vmid = $vm->{'vmid'};
+	my $vmname = $conn->get("/api2/json/nodes/$hostname/qemu/$vmid/config")->{'data'}->{'name'};
+	print "$vmid/$vm->{'dev'}/$vm->{'in'}/$vm->{'out'}/$vmname\n";
+};
