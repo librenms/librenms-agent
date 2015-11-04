@@ -34,6 +34,8 @@ my $conn = PVE::API2Client->new(
     csrftoken => $csrftoken,
 );
 
+my $clustername;
+
 foreach my $child (@{$conn->get("/api2/json/cluster/status")->{'data'}}) {
     if ($child->{'type'} eq "cluster") {
         $clustername = $child->{'name'};
