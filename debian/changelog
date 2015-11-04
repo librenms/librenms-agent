@@ -1,3 +1,9 @@
+librenms-agent (1.0.3) stable; urgency=low
+
+  - Fix the proxmox-agent for Proxmox VE 4.0
+
+ -- Mark Schouten <mark@tuxis.nl> Wed, 04 Nov 2015 14:33:00 +0200
+
 librenms-agent (1.0.2) stable; urgency=low
 
   - Include a Proxmox-agent
