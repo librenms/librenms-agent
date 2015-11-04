@@ -34,11 +34,15 @@ my $conn = PVE::API2Client->new(
     csrftoken => $csrftoken,
 );
 
-my $clustername = $conn->get("/api2/json/cluster/ha/config")->{'data'}->{'children'}[0]{'name'};
-if (!defined($clustername)) {
-    $clustername = $hostname;
+foreach my $child (@{$conn->get("/api2/json/cluster/status")->{'data'}}) {
+    if ($child->{'type'} eq "cluster") {
+        $clustername = $child->{'name'};
+    }
 }
 
+if (!defined($clustername)) {
+        $clustername = $hostname;
+}
 
 print "<<<app-proxmox>>>\n";
 
