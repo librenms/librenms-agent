@@ -1,3 +1,9 @@
+librenms-agent (1.0.4) stable; urgency=low
+
+  - Include a Ceph agent
+
+ -- Mark Schouten <mark@tuxis.nl> Wed, 10 Nov 2015 10:58:00 +0200
+
 librenms-agent (1.0.3) stable; urgency=low
 
   - Fix the proxmox-agent for Proxmox VE 4.0
