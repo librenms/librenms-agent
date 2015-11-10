@@ -1,0 +1,65 @@
+#!/usr/bin/env python
+
+# Copyright (C) 2015 Mark Schouten <mark@tuxis.nl>
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; version 2 dated June,
+# 1991.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# See http://www.gnu.org/licenses/gpl.txt for the full license
+
+from subprocess import check_output
+import json
+
+def cephdf():
+    cephdf    = check_output(["/usr/bin/ceph", "-f", "json", "df"])
+
+    s = json.loads(cephdf)
+    print("c:%i:%i:%i" % (s['stats']['total_bytes'], s['stats']['total_used_bytes'], s['stats']['total_avail_bytes']))
+
+    for p in s['pools']:
+        b = p['stats']['bytes_used']
+        a = p['stats']['max_avail']
+        o = p['stats']['objects']
+        print("%s:%i:%i:%i" % (p['name'], a, b, o))
+
+
+def osdperf():
+    osdperf   = check_output(["/usr/bin/ceph", "-f", "json", "osd", "perf"])
+
+    for o in json.loads(osdperf)['osd_perf_infos']:
+        print("osd.%s:%i:%i" % (o['id'], o['perf_stats']['apply_latency_ms'], o['perf_stats']['commit_latency_ms']))
+
+def poolstats():
+    poolstats = check_output(["/usr/bin/ceph", "-f", "json", "osd", "pool", "stats"])
+
+    for p in json.loads(poolstats):
+        try: 
+            r = p['client_io_rate']['read_bytes_sec']
+        except:
+            r = 0
+        try: 
+            w = p['client_io_rate']['write_bytes_sec']
+        except:
+            w = 0
+        try: 
+            o = p['client_io_rate']['op_per_sec']
+        except:
+            o = 0
+    
+        print("%s:%i:%i:%i" % (p['pool_name'], o, w, r))
+
+print "<<<app-ceph>>>"
+print "<poolstats>"
+poolstats()
+print "<osdperformance>"
+osdperf()
+print "<df>"
+cephdf()
+
