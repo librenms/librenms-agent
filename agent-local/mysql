@@ -74,10 +74,12 @@ $version = "1.1.7";
 # ============================================================================
 # Include settings from an external config file (issue 39).
 # ============================================================================
+echo("<<<mysql>>>\n");
+
 if (file_exists(__FILE__ . '.cnf' ) ) {
    require(__FILE__ . '.cnf');
 } else {
-  echo("No ".__FILE__ . '.cnf found!');
+  echo("No ".__FILE__ . ".cnf found!\n");
   exit();
 }
 
@@ -131,8 +133,6 @@ if (!isset($called_by_script_server)) {
    else {
       ob_end_flush(); # In debugging mode, print out the errors.
    }
-
-   echo("<<<mysql>>>\n");
 
    # Split the result up and extract only the desired parts of it.
    $options['items'] = "";
