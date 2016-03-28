@@ -1,0 +1,9 @@
+[Unit]
+Description=Check_MK LibreNMS Agent Socket
+ 
+[Socket]
+ListenStream=6556
+Accept=yes
+ 
+[Install]
+WantedBy=sockets.target
