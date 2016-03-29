@@ -1,0 +1,7 @@
+[Unit]
+Description=Check_MK LibreNMS Agent Script
+After=network.target
+ 
+[Service]
+ExecStart=/usr/bin/check_mk_agent
+StandardOutput=socket
