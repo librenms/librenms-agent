@@ -1,5 +1,5 @@
 [Unit]
-Description=Check_MK LibreNMS Agent Script
+Description=Check_MK LibreNMS Agent Service
 After=network.target
  
 [Service]
