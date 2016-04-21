@@ -168,7 +168,7 @@ mount -p -t ufs
 echo '<<<ps>>>'
 COLUMNS=10000
 if [ "$is_jailed" = "0" ]; then
-    ps ax -o state,user,vsz,rss,pcpu,command | sed -e 1d  -e '/\([^ ]*J\) */d' -e 's/ *\([^ ]*\) *\([^ ]*\) *\([^ ]*\) *\([^ ]*\) *\([^ ]*\) */(\2,\3,\4,\5) /'
+    ps ax -o user,vsz,rss,cputime,pid,command |  sed -e 1d -e 's/ *\([^ ]*\) *\([^ ]*\) *\([^ ]*\) *\([^ ]*\) *\([^ ]*\) */(\1,\2,\3,\4,\5) /'
 else
     ps ax -o user,vsz,rss,pcpu,command | sed -e 1d -e 's/ *\([^ ]*\) *\([^ ]*\) *\([^ ]*\) *\([^ ]*\) */(\1,\2,\3,\4) /'
 fi
