@@ -11,12 +11,12 @@ vars = [ 'corrupt-packets', 'deferred-cache-inserts', 'deferred-cache-lookup',
 
 rvars = {}
 
-for l in check_output(['/usr/bin/pdns_control', 'show', '*']).rstrip().split(','):
+for l in check_output(['/usr/bin/pdns_control', 'show', '*']).decode().rstrip().split(','):
     v = l.split('=')
     if len(v) > 1:
     	rvars[v[0]] = v[1]
 
-print "<<<app-powerdns>>>"
+print("<<<app-powerdns>>>")
 
 for k in vars:
-    print rvars[k]
+    print(rvars[k])
