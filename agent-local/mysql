@@ -49,7 +49,7 @@ $mysql_user = '';
 $mysql_pass = '';
 $mysql_host = 'localhost';
 $mysql_port = 3306;
-$mysql_ssl  = FALSE;   # Whether to use SSL to connect to MySQL.
+$mysql_ssl  = FALSE;    # Whether to use SSL to connect to MySQL.
 
 $heartbeat   = '';      # db.tbl in case you use mk-heartbeat from Maatkit.
 $cache_dir  = '/tmp';   # If set, this uses caching to avoid multiple calls.
@@ -62,9 +62,9 @@ $chk_options = array (
    'procs'  => true,    # Do you want to check SHOW PROCESSLIST?
 );
 
-$use_ss    = FALSE; # Whether to use the script server or not
-$debug     = FALSE; # Define whether you want debugging behavior.
-$debug_log = FALSE; # If $debug_log is a filename, it'll be used.
+$use_ss    = FALSE;     # Whether to use the script server or not
+$debug     = FALSE;     # Define whether you want debugging behavior.
+$debug_log = FALSE;     # If $debug_log is a filename, it'll be used.
 
 # ============================================================================
 # You should not need to change anything below this line.
@@ -270,18 +270,18 @@ function ss_get_mysql_stats( $options ) {
    # hostname.
    $host_str  = $host.($port != 3306 ? ":$port" : '');
    debug(array('connecting to', $host_str, $user, $pass));
-   if (!extension_loaded('mysql') ) {
+   if (!extension_loaded('mysqli') ) {
       debug("The MySQL extension is not loaded");
       die("The MySQL extension is not loaded");
    }
    if ($mysql_ssl || (isset($options['mysql_ssl']) && $options['mysql_ssl']) ) {
-      $conn = mysql_connect($host_str, $user, $pass, true, MYSQL_CLIENT_SSL);
+      $conn = mysqli_connect($host_str, $user, $pass, true, MYSQL_CLIENT_SSL);
    }
    else {
-      $conn = mysql_connect($host_str, $user, $pass);
+      $conn = mysqli_connect($host_str, $user, $pass);
    }
    if (!$conn ) {
-      die("MySQL: " . mysql_error());
+      die("MySQL: " . $conn->connect_error);
    }
 
    $sanitized_host = str_replace(array(":", "/"), array("", "_"), $host);
@@ -1123,18 +1123,15 @@ function to_int ( $str ) {
 function run_query($sql, $conn) {
    global $debug;
    debug($sql);
-   $result = @mysql_query($sql, $conn);
+   $result = @$conn->query($sql);
    if ($debug ) {
-      $error = @mysql_error($conn);
+      $error = @$conn->error;
       if ($error ) {
          debug(array($sql, $error));
          die("SQLERR $error in $sql");
       }
    }
-   $array = array();
-   while ( $row = @mysql_fetch_array($result) ) {
-      $array[] = $row;
-   }
+   $array = $result->fetch_all(MYSQLI_BOTH);
    debug(array($sql, $array));
    return $array;
 }
