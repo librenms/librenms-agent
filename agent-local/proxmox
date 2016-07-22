@@ -52,6 +52,20 @@ print "$clustername\n";
 
 foreach my $vm (@{$conn->get("/api2/json/nodes/$hostname/netstat")->{'data'}}) {
 	my $vmid = $vm->{'vmid'};
-	my $vmname = $conn->get("/api2/json/nodes/$hostname/qemu/$vmid/config")->{'data'}->{'name'};
-	print "$vmid/$vm->{'dev'}/$vm->{'in'}/$vm->{'out'}/$vmname\n";
+    eval {
+        my $vmname = $conn->get("/api2/json/nodes/$hostname/qemu/$vmid/config")->{'data'}->{'name'};
+        my $tmpl = $conn->get("/api2/json/nodes/$hostname/qemu/$vmid/config")->{'data'}->{'template'};
+        if (defined($tmpl) && $tmpl == 1) {
+            die;
+        }
+        print "$vmid/$vm->{'dev'}/$vm->{'in'}/$vm->{'out'}/$vmname\n";
+    };
+    eval {
+        my $vmname = $conn->get("/api2/json/nodes/$hostname/lxc/$vmid/config")->{'data'}->{'hostname'};
+        my $tmpl = $conn->get("/api2/json/nodes/$hostname/lxc/$vmid/config")->{'data'}->{'template'};
+        if (defined($tmpl) && $tmpl == 1) {
+            die;
+        }
+        print "$vmid/$vm->{'dev'}/$vm->{'in'}/$vm->{'out'}/$vmname\n";
+    };
 };
