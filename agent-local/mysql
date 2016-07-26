@@ -270,18 +270,20 @@ function ss_get_mysql_stats( $options ) {
    # hostname.
    $host_str  = $host.($port != 3306 ? ":$port" : '');
    debug(array('connecting to', $host_str, $user, $pass));
-   if (!extension_loaded('mysql') ) {
+   if (!extension_loaded('mysqli') ) {
       debug("The MySQL extension is not loaded");
       die("The MySQL extension is not loaded");
    }
    if ($mysql_ssl || (isset($options['mysql_ssl']) && $options['mysql_ssl']) ) {
-      $conn = mysql_connect($host_str, $user, $pass, true, MYSQL_CLIENT_SSL);
+      $conn = ((($GLOBALS["___mysqli_ston"] = mysqli_init()) && (mysqli_real_connect($GLOBALS["___mysqli_ston"], $host_str,
+              $user,  $pass, NULL, 3306, NULL, MYSQLI_CLIENT_SSL))) ? $GLOBALS["___mysqli_ston"] : FALSE);
    }
    else {
-      $conn = mysql_connect($host_str, $user, $pass);
+      $conn = ($GLOBALS["___mysqli_ston"] = mysqli_connect($host_str,  $user,  $pass));
    }
    if (!$conn ) {
-      die("MySQL: " . mysql_error());
+      die("MySQL: " . ((is_object($GLOBALS["___mysqli_ston"])) ? mysqli_error($GLOBALS["___mysqli_ston"]) :
+              (($___mysqli_res = mysqli_connect_error()) ? $___mysqli_res : false)));
    }
 
    $sanitized_host = str_replace(array(":", "/"), array("", "_"), $host);
@@ -1123,16 +1125,16 @@ function to_int ( $str ) {
 function run_query($sql, $conn) {
    global $debug;
    debug($sql);
-   $result = @mysql_query($sql, $conn);
+   $result = @mysqli_query( $conn, $sql);
    if ($debug ) {
-      $error = @mysql_error($conn);
+      $error = @((is_object($conn)) ? mysqli_error($conn) : (($___mysqli_res = mysqli_connect_error()) ? $___mysqli_res : false));
       if ($error ) {
          debug(array($sql, $error));
          die("SQLERR $error in $sql");
       }
    }
    $array = array();
-   while ( $row = @mysql_fetch_array($result) ) {
+   while ( $row = @mysqli_fetch_array($result) ) {
       $array[] = $row;
    }
    debug(array($sql, $array));
@@ -1250,5 +1252,3 @@ function debug($val) {
       $debug_log = FALSE;
    }
 }
-
-?>
