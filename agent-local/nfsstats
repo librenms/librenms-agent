@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #############################################################
 # - put this file on the nfs server somewhere like /opt/    #
 # - edit your snmpd.conf and add line                       #

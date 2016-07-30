@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # LibreNMS agent to read HDD/SDD temperature using hddtemp
 #

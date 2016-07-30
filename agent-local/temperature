@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # example to output some temperatures
 #echo "<<<temperature>>>"
 #echo "/dev/sda:" `hddtemp /dev/hda -n`
