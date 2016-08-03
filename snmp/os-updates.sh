@@ -12,8 +12,9 @@ BIN_ZYPPER='/usr/bin/zypper'
 CMD_ZYPPER='lu'
 BIN_YUM='/usr/bin/yum'
 CMD_YUM='check-update'
-BIN_APT='/usr/bin/apt'
-CMD_APT='list --upgradable'
+BIN_APT='/usr/bin/apt-get'
+CMD_APT='-s upgrade'
+CMD_UPDATE='-qq update'
 
 #general check for os based on /etc/os-release
 if [ -f /etc/os-release ]; then
@@ -32,10 +33,11 @@ if [ -f /etc/os-release ]; then
 		else
 			echo "0";
 		fi
-	elif [ $OS == "ubuntu" ]; then
-		UPDATES=`$BIN_APT $CMD_APT | $BIN_WC $CMD_WC`
+	elif [ $OS == "ubuntu" ] || [ $OS == "debian" ]; then
+		`$BIN_APT $CMD_UPDATE`
+		UPDATES=`$BIN_APT $CMD_APT | grep 'Inst' | $BIN_WC $CMD_WC`
 		if [ $UPDATES -gt 1 ]; then
-			echo $(($UPDATES-1));
+			echo $UPDATES;
 		else
 			echo "0";
 		fi
