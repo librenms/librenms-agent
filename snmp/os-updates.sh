@@ -14,7 +14,6 @@ BIN_YUM='/usr/bin/yum'
 CMD_YUM='check-update'
 BIN_APT='/usr/bin/apt-get'
 CMD_APT='-s upgrade'
-CMD_UPDATE='-qq update'
 
 #general check for os based on /etc/os-release
 if [ -f /etc/os-release ]; then
@@ -34,7 +33,6 @@ if [ -f /etc/os-release ]; then
 			echo "0";
 		fi
 	elif [ $OS == "ubuntu" ] || [ $OS == "debian" ]; then
-		`$BIN_APT $CMD_UPDATE`
 		UPDATES=`$BIN_APT $CMD_APT | grep 'Inst' | $BIN_WC $CMD_WC`
 		if [ $UPDATES -gt 1 ]; then
 			echo $UPDATES;
