@@ -5,41 +5,45 @@
 # extend osupdate /opt/os-updates.sh                           #
 # restart snmpd and activate the app for desired host          #
 ################################################################ 
-BIN_AWK='/usr/bin/awk'
 BIN_WC='/usr/bin/wc'
 CMD_WC='-l'
 BIN_ZYPPER='/usr/bin/zypper'
 CMD_ZYPPER='lu'
 BIN_YUM='/usr/bin/yum'
-CMD_YUM='check-update'
+CMD_YUM='-q check-update'
 BIN_APT='/usr/bin/apt-get'
 CMD_APT='-s upgrade'
+BIN_PACMAN='/usr/bin/pacman'
+CMD_PACMAN='-Sup'
 
-#general check for os based on /etc/os-release
-if [ -f /etc/os-release ]; then
-	OS=`$BIN_AWK -F= '/^ID=/{print $2}' /etc/os-release`
-	if [ $OS == "opensuse" ]; then
-		UPDATES=`$BIN_ZYPPER $CMD_ZYPPER | $BIN_WC $CMD_WC`
-		if [ $UPDATES -gt 3 ]; then
-			echo $(($UPDATES-3));
-		else
-			echo "0";
-		fi
-	elif [ $OS == "\"centos\"" ]; then
-		UPDATES=`$BIN_YUM $CMD_YUM | $BIN_WC $CMD_WC`
-		if [ $UPDATES -gt 6 ]; then
-			echo $(($UPDATES-6));
-		else
-			echo "0";
-		fi
-	elif [ $OS == "ubuntu" ] || [ $OS == "debian" ]; then
-		UPDATES=`$BIN_APT $CMD_APT | grep 'Inst' | $BIN_WC $CMD_WC`
-		if [ $UPDATES -gt 1 ]; then
-			echo $UPDATES;
-		else
-			echo "0";
-		fi
-	fi
+if [ -f $BIN_APT ]; then
+    # Debian / Ubuntu
+    UPDATES=`$BIN_APT $CMD_APT | grep 'Inst' | $BIN_WC $CMD_WC`
+    echo $UPDATES;
+elif [ -f $BIN_YUM ]; then
+    # CentOS / Redhat
+    UPDATES=`$BIN_YUM $CMD_YUM | $BIN_WC $CMD_WC`
+    if [ $UPDATES -gt 1 ]; then
+        echo $(($UPDATES-1));
+    else
+        echo "0";
+    fi
+elif [ -f $BIN_ZYPPER ]; then
+    # OpenSUSE
+    UPDATES=`$BIN_ZYPPER $CMD_ZYPPER | $BIN_WC $CMD_WC`
+    if [ $UPDATES -gt 3 ]; then
+        echo $(($UPDATES-3));
+    else
+        echo "0";
+    fi
+elif [ -f $BIN_PACMAN ]; then
+    # Arch
+    UPDATES=`$BIN_PACMAN $CMD_PACMAN | $BIN_WC $CMD_WC`
+    if [ $UPDATES -gt 1 ]; then
+        echo $(($UPDATES-1));
+    else
+        echo "0";
+    fi
 else
-	echo "0";
+    echo "0";
 fi
