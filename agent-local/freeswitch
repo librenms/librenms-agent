@@ -9,7 +9,7 @@ if [ -f $FSCLI ];
 then
     $FSCLI -x "status" > /dev/null
     if [ $? -ne 0 ]; then
-        echo "Freeswitch is not responding!"
+        # Freeswitch not running, silently exit.
         exit 0
     fi
 
