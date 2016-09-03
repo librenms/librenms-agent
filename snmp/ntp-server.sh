@@ -16,7 +16,7 @@ BIN_SED='/usr/bin/sed'
 ################################################################
 # Don't change anything unless you know what are you doing     #
 ################################################################
-CMD0=`$BIN_NTPQ -c rv | $BIN_GREP -Eow "stratum=[0-9]" | $BIN_CUT -d "=" -f 2`
+CMD0=`$BIN_NTPQ -c rv | $BIN_GREP -Eow "stratum=[0-9]+" | $BIN_CUT -d "=" -f 2`
 echo $CMD0
 
 CMD1=`$BIN_NTPQ -c rv | $BIN_GREP 'jitter' | $BIN_TR '\n' ' '`
