@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 ################################################################
 # copy this script to somewhere like /opt and make chmod +x it #
 # edit your snmpd.conf and include                             #
@@ -7,6 +7,7 @@
 ################################################################ 
 BIN_WC='/usr/bin/wc'
 CMD_WC='-l'
+BIN_GREP='/usr/bin/grep'
 BIN_ZYPPER='/usr/bin/zypper'
 CMD_ZYPPER='lu'
 BIN_YUM='/usr/bin/yum'
@@ -18,7 +19,7 @@ CMD_PACMAN='-Sup'
 
 if [ -f $BIN_APT ]; then
     # Debian / Ubuntu
-    UPDATES=`$BIN_APT $CMD_APT | grep 'Inst' | $BIN_WC $CMD_WC`
+    UPDATES=`$BIN_APT $CMD_APT | $BIN_GREP 'Inst' | $BIN_WC $CMD_WC`
     echo $UPDATES;
 elif [ -f $BIN_YUM ]; then
     # CentOS / Redhat
