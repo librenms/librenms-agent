@@ -33,10 +33,11 @@ done
 
 if [[ "$VER" =~ '4.2.6p5' ]]
 then
-  CMD2=`$BIN_NTPDC -c iostats | $BIN_TR -d ' ' | $BIN_TR '\n' ','`
+  USECMD=`echo $BIN_NTPDC -c iostats`
 else
-  CMD2=`$BIN_NTPQ -c iostats localhost | $BIN_TR -d ' ' | $BIN_TR '\n' ','`
+  USECMD=`echo $BIN_NTPQ -c iostats localhost`
 fi
+CMD2=`$USECMD | $BIN_TR -d ' ' | $BIN_TR '\n' ','`
 
 IFS=',' read -r -a array <<< "$CMD2"
 
