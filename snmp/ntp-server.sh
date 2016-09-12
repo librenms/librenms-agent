@@ -2,7 +2,7 @@
 ################################################################
 # copy this script to somewhere like /opt and make chmod +x it #
 # edit your snmpd.conf and include                             #
-# extend ntpdserver /opt/ntp-server.sh                         #
+# extend ntp-server /opt/ntp-server.sh                         #
 # restart snmpd and activate the app for desired host          #
 # please make sure you have the path/binaries below            #
 ################################################################
