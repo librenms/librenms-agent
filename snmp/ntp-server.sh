@@ -31,11 +31,11 @@ do
 	echo ${array["$value"]} | $BIN_CUT -d "=" -f 2
 done
 
-if [[ "$VER" =~ '4.2.8p8' ]]
+if [[ "$VER" =~ '4.2.6p5' ]]
 then
-  CMD2=`$BIN_NTPQ -c iostats localhost | $BIN_TR -d ' ' | $BIN_TR '\n' ','`
-else
   CMD2=`$BIN_NTPDC -c iostats | $BIN_TR -d ' ' | $BIN_TR '\n' ','`
+else
+  CMD2=`$BIN_NTPQ -c iostats localhost | $BIN_TR -d ' ' | $BIN_TR '\n' ','`
 fi
 
 IFS=',' read -r -a array <<< "$CMD2"
