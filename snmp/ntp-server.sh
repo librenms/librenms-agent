@@ -8,7 +8,9 @@
 ################################################################
 # Binaries and paths required                                  #
 ################################################################ 
+BIN_NTPD='/usr/sbin/ntpd'
 BIN_NTPQ='/usr/sbin/ntpq'
+BIN_NTPDC='/usr/sbin/ntpdc'
 BIN_GREP='/usr/bin/grep'
 BIN_TR='/usr/bin/tr'
 BIN_CUT='/usr/bin/cut'
@@ -16,6 +18,8 @@ BIN_SED='/usr/bin/sed'
 ################################################################
 # Don't change anything unless you know what are you doing     #
 ################################################################
+VER=`$BIN_NTPD --version`
+
 CMD0=`$BIN_NTPQ -c rv | $BIN_GREP -Eow "stratum=[0-9]+" | $BIN_CUT -d "=" -f 2`
 echo $CMD0
 
@@ -27,7 +31,14 @@ do
 	echo ${array["$value"]} | $BIN_CUT -d "=" -f 2
 done
 
-CMD2=`$BIN_NTPQ -c iostats localhost | $BIN_TR -d ' ' | $BIN_TR '\n' ','`
+if [[ "$VER" =~ '4.2.6p5' ]]
+then
+  USECMD=`echo $BIN_NTPDC -c iostats`
+else
+  USECMD=`echo $BIN_NTPQ -c iostats localhost`
+fi
+CMD2=`$USECMD | $BIN_TR -d ' ' | $BIN_TR '\n' ','`
+
 IFS=',' read -r -a array <<< "$CMD2"
 
 for value in 0 1 2 3 5 6 7 8
