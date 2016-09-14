@@ -1,25 +1,34 @@
 #!/usr/bin/env bash
 ################################################################
-# copy this script to somewhere like /opt and make chmod +x it #
-# edit your snmpd.conf and include                             #
-# extend ups-nut /opt/ups-nut.sh                               #
+# copy this script to /etc/snmp/ and make it executable:       #
+# chmod +x ups-nut.sh                                          #
+# ------------------------------------------------------------ #
+# edit your snmpd.conf and include:                            #
+# extend ups-nut /etc/snmp/ups-nut.sh                          #
+#--------------------------------------------------------------#
 # restart snmpd and activate the app for desired host          #
+#--------------------------------------------------------------#
 # please make sure you have the path/binaries below            #
 ################################################################
-# Binaries and paths required                                  #
-################################################################ 
 BIN_UPSC='/usr/bin/upsc'
 UPSC_CMD='APCUPS'
+BIN_CAT='/usr/bin/cat'
+BIN_GREP='/usr/bin/grep'
 BIN_SED='/usr/bin/sed'
 BIN_TR='/usr/bin/tr'
 BIN_CUT='/usr/bin/cut'
+TMP_FILE0='/tmp/output_nut'
 ################################################################
 # Don't change anything unless you know what are you doing     #
 ################################################################
-CMD1=`$BIN_UPSC $UPSC_CMD | $BIN_SED "1 d" | $BIN_TR '\n' '|' | $BIN_TR -d ' '`
-IFS='|' read -r -a array <<< "$CMD1"
+$BIN_UPSC $UPSC_CMD > $TMP_FILE0
 
-for value in 0 1 5 8 11 12 25 26 31
+for value in "battery.charge:[0-9]+" "battery.charge.low:[0-9]+" "battery.runtime:[0-9]+" "battery.voltage:[0-9.]+" "battery.voltage.nominal:[0-9]+" "device.model:[a-zA-Z0-9]+" "device.serial:[a-zA-Z0-9]+" "input.voltage.nominal:[0-9.]+" "input.voltage:[0-9.]+" "ups.load:[0-9]+" 
 do
-   echo ${array["$value"]} | $BIN_CUT -d ":" -f 2
+	OUT=`$BIN_CAT $TMP_FILE0 | $BIN_TR -d ' ' | $BIN_GREP -Eow $value | $BIN_CUT -d ":" -f 2`
+	if [ -n "$OUT" ]; then
+		echo $OUT
+	else
+		echo "Unkown"
+	fi
 done
