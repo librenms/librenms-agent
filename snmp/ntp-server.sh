@@ -13,10 +13,10 @@
 BIN_NTPD='/usr/sbin/ntpd'
 BIN_NTPQ='/usr/sbin/ntpq'
 BIN_NTPDC='/usr/sbin/ntpdc'
+BIN_CAT='/usr/bin/cat'
 BIN_GREP='/usr/bin/grep'
 BIN_TR='/usr/bin/tr'
 BIN_CUT='/usr/bin/cut'
-BIN_SED='/usr/bin/sed'
 TMP_FILE0='/tmp/output-ntpq'
 TMP_FILE1='/tmp/output-ntpserver'
 ################################################################
@@ -36,10 +36,10 @@ $USECMD > $TMP_FILE1
 
 for output in "stratum=[0-9]+" "offset=[0-9.]+" "frequency=[-0-9.]+" "sys_jitter=[0-9.]+" "clk_jitter=[0-9.]+" "clk_wander=[0-9.]+"
 do
-	echo `cat $TMP_FILE0 | $BIN_GREP -Eow $output | $BIN_CUT -d "=" -f 2`
+	echo `$BIN_CAT $TMP_FILE0 | $BIN_GREP -Eow $output | $BIN_CUT -d "=" -f 2`
 done
 
 for output in "timesincereset:[0-9]+" "receivebuffers:[0-9]+" "freereceivebuffers:[0-9]+" "usedreceivebuffers:[0-9]+" "droppedpackets:[0-9]+" "ignoredpackets:[0-9]+" "receivedpackets:[0-9]+" "packetssent:[0-9]+"
 do
-	echo `cat $TMP_FILE1 | $BIN_TR -d ' ' | $BIN_GREP -Eow $output | $BIN_CUT -d ":" -f 2`
+	echo `$BIN_CAT $TMP_FILE1 | $BIN_TR -d ' ' | $BIN_GREP -Eow $output | $BIN_CUT -d ":" -f 2`
 done
