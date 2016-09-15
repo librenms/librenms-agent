@@ -23,8 +23,7 @@ TMP_FILE1='/tmp/output-ntpserver'
 # Don't change anything unless you know what are you doing     #
 ################################################################
 VER=`$BIN_NTPD --version`
-
-if [[ "$VER" =~ '4.2.6p5' ]]
+if [[ $VER =~ .*4.2.6p5.* ]]
 then
   USECMD=`echo $BIN_NTPDC -c iostats`
 else
@@ -34,7 +33,7 @@ fi
 $BIN_NTPQ -c rv > $TMP_FILE0
 $USECMD > $TMP_FILE1
 
-for output in "stratum=[0-9]+" "offset=[0-9.]+" "frequency=[-0-9.]+" "sys_jitter=[0-9.]+" "clk_jitter=[0-9.]+" "clk_wander=[0-9.]+"
+for output in "stratum=[0-9]+" "offset=[-0-9.]+" "frequency=[-0-9.]+" "sys_jitter=[0-9.]+" "clk_jitter=[0-9.]+" "clk_wander=[0-9.]+"
 do
 	echo `$BIN_CAT $TMP_FILE0 | $BIN_GREP -Eow $output | $BIN_CUT -d "=" -f 2`
 done
