@@ -21,7 +21,7 @@ BIN_CUT='/usr/bin/cut'
 ################################################################
 TMP=`$BIN_UPSC $UPSC_CMD 2>/dev/null`
 
-for value in "battery.charge:[0-9]+" "battery.charge.low:[0-9]+" "battery.runtime:[0-9]+" "battery.voltage:[0-9.]+" "device.model:[a-zA-Z0-9]+" "device.serial:[a-zA-Z0-9]+" "battery.voltage.nominal:[0-9]+" "input.voltage.nominal:[0-9.]+" "input.voltage:[0-9.]+" "ups.load:[0-9]+" 
+for value in "battery.charge:[0-9]+" "battery.runtime:[0-9]+" "battery.voltage:[0-9.]+" "device.model:[a-zA-Z0-9]+" "device.serial:[a-zA-Z0-9]+" "battery.voltage.nominal:[0-9]+" "input.voltage.nominal:[0-9.]+" "input.voltage:[0-9.]+" "ups.load:[0-9]+" 
 do
 	OUT=`echo "$TMP" | $BIN_TR -d ' ' | $BIN_GREP -Eow $value | $BIN_CUT -d ":" -f 2`
 	if [ -n "$OUT" ]; then
