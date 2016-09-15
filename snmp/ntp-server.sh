@@ -17,8 +17,6 @@ BIN_CAT='/usr/bin/cat'
 BIN_GREP='/usr/bin/grep'
 BIN_TR='/usr/bin/tr'
 BIN_CUT='/usr/bin/cut'
-TMP_FILE0='/tmp/output-ntpq'
-TMP_FILE1='/tmp/output-ntpserver'
 ################################################################
 # Don't change anything unless you know what are you doing     #
 ################################################################
@@ -30,15 +28,15 @@ else
   USECMD=`echo $BIN_NTPQ -c iostats localhost`
 fi
 
-$BIN_NTPQ -c rv > $TMP_FILE0
-$USECMD > $TMP_FILE1
+TMP0=`$BIN_NTPQ -c rv`
+TMP1=`$USECMD`
 
 for output in "stratum=[0-9]+" "offset=[-0-9.]+" "frequency=[-0-9.]+" "sys_jitter=[0-9.]+" "clk_jitter=[0-9.]+" "clk_wander=[0-9.]+"
 do
-	echo `$BIN_CAT $TMP_FILE0 | $BIN_GREP -Eow $output | $BIN_CUT -d "=" -f 2`
+	echo `echo "$TMP0" | $BIN_GREP -Eow $output | $BIN_CUT -d "=" -f 2`
 done
 
 for output in "timesincereset:[0-9]+" "receivebuffers:[0-9]+" "freereceivebuffers:[0-9]+" "usedreceivebuffers:[0-9]+" "droppedpackets:[0-9]+" "ignoredpackets:[0-9]+" "receivedpackets:[0-9]+" "packetssent:[0-9]+"
 do
-	echo `$BIN_CAT $TMP_FILE1 | $BIN_TR -d ' ' | $BIN_GREP -Eow $output | $BIN_CUT -d ":" -f 2`
+	echo `echo "$TMP1" | $BIN_TR -d ' ' | $BIN_GREP -Eow $output | $BIN_CUT -d ":" -f 2`
 done
