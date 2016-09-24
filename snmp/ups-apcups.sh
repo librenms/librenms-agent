@@ -7,23 +7,22 @@
 # please make sure you have the path/binaries below            #
 ################################################################
 # Binaries and paths required                                  #
-################################################################ 
+################################################################
 BIN_APCS='/sbin/apcaccess'
 BIN_TR='/usr/bin/tr'
 BIN_CUT='/usr/bin/cut'
-BIN_SED='/usr/bin/sed'
+BIN_GREP='/usr/bin/grep'
 ################################################################
 # Don't change anything unless you know what are you doing     #
 ################################################################
-CMD1=`$BIN_APCS | $BIN_TR '\n' '|'`
-IFS='|' read -r -a array <<< "$CMD1"
+TMP=`$BIN_APCS 2>/dev/null`
 
-for value in 11 12 13 14 22 33 34
+for value in "LINEV:[0-9]+" "LOADPCT:[0-9.]+" "BCHARGE:[0-9.]+" "TIMELEFT:[0-9.]+" "^BATTV:[0-9.]+" "NOMINV:[0-9]+" "NOMBATTV:[0-9.]+"
 do
-   echo ${array["$value"]} | $BIN_CUT -d ":" -f 2 | $BIN_SED -e 's/[^0-9.]*//g' | $BIN_SED -e 's/^[ \t]*//'
-done
-
-for value in 9 31 
-do
-   echo ${array["$value"]} | $BIN_CUT -d ":" -f 2 | $BIN_SED 's/ *$//' | $BIN_SED -e 's/^[ \t]*//'
+        OUT=`echo "$TMP" | $BIN_TR -d ' ' | $BIN_GREP -Eo $value | $BIN_CUT -d ":" -f 2`
+        if [ -n "$OUT" ]; then
+                echo $OUT
+        else
+                echo "Unknown"
+        fi
 done
