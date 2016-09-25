@@ -4,7 +4,7 @@
 # chmod +x /etc/snmp/ups-apcups.sh                             #
 # ------------------------------------------------------------ #
 # edit your snmpd.conf and include:                            #
-# extend ups-apcups /etc/snmp/ups-apcups.sh 			       #
+# extend ups-apcups /etc/snmp/ups-apcups.sh                    #
 #--------------------------------------------------------------#
 # restart snmpd and activate the app for desired host          #
 #--------------------------------------------------------------#
