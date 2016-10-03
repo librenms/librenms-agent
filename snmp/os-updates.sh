@@ -12,13 +12,14 @@
 ################################################################ 
 BIN_AWK='/usr/bin/awk'
 BIN_WC='/usr/bin/wc'
+BIN_GREP='/bin/grep'
 CMD_WC='-l'
 BIN_ZYPPER='/usr/bin/zypper'
 CMD_ZYPPER='lu'
 BIN_YUM='/usr/bin/yum'
 CMD_YUM='-q check-update'
 BIN_APT='/usr/bin/apt-get'
-CMD_APT='-s upgrade'
+CMD_APT='-qq -s upgrade'
 BIN_PACMAN='/usr/bin/pacman'
 CMD_PACMAN='-Sup'
 
@@ -42,11 +43,11 @@ if [ -f /etc/os-release ]; then
 			echo "0";
 		fi
 	elif [ $OS == "ubuntu" ]; then
-		UPDATES=`$BIN_APT $CMD_APT | $BIN_WC $CMD_WC`
+		UPDATES=`$BIN_APT $CMD_APT | $BIN_GREP 'Inst' | $BIN_WC $CMD_WC`
 		if [ $UPDATES -gt 1 ]; then
-			echo $(($UPDATES-1));
+			echo $UPDATES;
 		else
-				echo "0";
+			echo "0";
 		fi
 	elif [ $OS == "arch" ]; then
 		UPDATES=`$BIN_PACMAN $CMD_PACMAN | $BIN_WC $CMD_WC`
@@ -59,3 +60,4 @@ if [ -f /etc/os-release ]; then
 else
 	echo "0";
 fi
+
