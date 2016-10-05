@@ -1,10 +1,35 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# hddtemp sensor readings
-# needs hddtemp daemon listening on (at least) localhost
-# requires netcat to be installed and in the path
-# (c) 2012, Tom Laermans for Observium
+# LibreNMS agent to read HDD/SDD temperature using hddtemp
+#
+# Copyright (c) 2016 Exa-Omicron <http://exa.nl>
+#
+# This program is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the
+# Free Software Foundation, either version 3 of the License, or (at your
+# option) any later version.  Please see LICENSE.txt at the top level of
+# the source code distribution for details.
+#
+# requires which, awk and sed
 
-echo '<<<hddtemp>>>'
-nc localhost 7634
-echo
+# If disks are missing, they can be added here:
+disks="/dev/hd? /dev/sd?"
+
+hddtemp=`which hddtemp 2>/dev/null`
+
+if [ "${hddtemp}" != "" ]; then
+	if [ -x "${hddtemp}" ]; then
+		content=`${hddtemp} -w -q ${disks} 2>/dev/null | awk -F": " 'BEGIN{ ORS="" }{ print "|"$1"|"$2"|"$3"|";} ' | sed 's/°/\|/g';`
+		if [ "${content}" != "" ]; then
+			echo '<<<hddtemp>>>'
+			echo ${content}
+			echo
+		else
+			echo "no hddtemp compatible disks found" >&2
+		fi
+	else
+		echo "hddtemp not executable" >&2
+	fi
+else
+	echo "hddtemp not installed" >&2
+fi

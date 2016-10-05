@@ -1,10 +1,7 @@
-#!/usr/bin/php
 <?php
 
 // MYSQL Check - FIXME
 // 1 UNKNOWN
-
-### This script requires php-cli and php-mysql packages
 
 # ============================================================================
 # This is a script to retrieve information from a MySQL server for input to a
@@ -40,21 +37,23 @@ if (!array_key_exists('SCRIPT_FILENAME', $_SERVER)
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-# Define MySQL connection constants in config.php. Instead of defining 
-# parameters here, you can define them in another file named the same as this
-# file, with a .cnf extension.
+# Define MySQL connection constants in config.php.  Arguments explicitly passed
+# in from Cacti will override these.  However, if you leave them blank in Cacti
+# and set them here, you can make life easier.  Instead of defining parameters
+# here, you can define them in another file named the same as this file, with a
+# .cnf extension.
 # ============================================================================
 
-$mysql_user = '';
-$mysql_pass = '';
+# FIXME: why are these not taken from config.php?
+$mysql_user = 'librenms';
+$mysql_pass = 'flobblelibrenms';
 $mysql_host = 'localhost';
 $mysql_port = 3306;
 $mysql_ssl  = FALSE;   # Whether to use SSL to connect to MySQL.
 
-$heartbeat   = '';      # db.tbl in case you use mk-heartbeat from Maatkit.
-$cache_dir  = '/tmp';   # If set, this uses caching to avoid multiple calls.
-$cache_time  = 30;      # How long to cache data.
-
+$heartbeat  = '';      # db.tbl in case you use mk-heartbeat from Maatkit.
+$cache_dir  = '/tmp';  # If set, this uses caching to avoid multiple calls.
+$poll_time  = 300;     # Adjust to match your polling interval.
 $chk_options = array (
    'innodb' => true,    # Do you want to check InnoDB statistics?
    'master' => true,    # Do you want to check binary logging?
@@ -74,13 +73,8 @@ $version = "1.1.7";
 # ============================================================================
 # Include settings from an external config file (issue 39).
 # ============================================================================
-echo("<<<mysql>>>\n");
-
 if (file_exists(__FILE__ . '.cnf' ) ) {
    require(__FILE__ . '.cnf');
-} else {
-  echo("No ".__FILE__ . ".cnf found!\n");
-  exit();
 }
 
 # Make this a happy little script even when there are errors.
@@ -102,18 +96,18 @@ function error_handler($errno, $errstr, $errfile, $errline) {
 # ============================================================================
 # Set up the stuff we need to be called by the script server.
 # ============================================================================
-#if ($use_ss ) {
-#   if (file_exists( dirname(__FILE__) . "/../include/global.php") ) {
-#      # See issue 5 for the reasoning behind this.
-#      debug("including " . dirname(__FILE__) . "/../include/global.php");
-#      include_once(dirname(__FILE__) . "/../include/global.php");
-#   }
-#   elseif (file_exists( dirname(__FILE__) . "/../include/config.php" ) ) {
-#      # Some Cacti installations don't have global.php.
-#      debug("including " . dirname(__FILE__) . "/../include/config.php");
-#      include_once(dirname(__FILE__) . "/../include/config.php");
-#   }
-#}
+if ($use_ss ) {
+   if (file_exists( dirname(__FILE__) . "/../include/global.php") ) {
+      # See issue 5 for the reasoning behind this.
+      debug("including " . dirname(__FILE__) . "/../include/global.php");
+      include_once(dirname(__FILE__) . "/../include/global.php");
+   }
+   elseif (file_exists( dirname(__FILE__) . "/../include/config.php" ) ) {
+      # Some Cacti installations don't have global.php.
+      debug("including " . dirname(__FILE__) . "/../include/config.php");
+      include_once(dirname(__FILE__) . "/../include/config.php");
+   }
+}
 
 # ============================================================================
 # Make sure we can also be called as a script.
@@ -194,7 +188,7 @@ function usage($message) {
 
    $usage = <<<EOF
 $message
-Usage: php mysql_stats.php --host <host> --items <item,...> [OPTION]
+Usage: php ss_get_mysql_stats.php --host <host> --items <item,...> [OPTION]
 
    --host      Hostname to connect to; use host:port syntax to specify a port
                Use :/path/to/socket if you want to connect via a UNIX socket
@@ -256,7 +250,7 @@ function parse_cmdline( $args ) {
 # ============================================================================
 function ss_get_mysql_stats( $options ) {
    # Process connection options and connect to MySQL.
-   global $debug, $mysql_user, $mysql_pass, $heartbeat, $cache_dir, $cache_time,
+   global $debug, $mysql_user, $mysql_pass, $heartbeat, $cache_dir, $poll_time,
           $chk_options, $mysql_host, $mysql_port, $mysql_ssl;
 
    # Connect to MySQL.
@@ -268,26 +262,26 @@ function ss_get_mysql_stats( $options ) {
    $heartbeat = isset($options['heartbeat']) ? $options['heartbeat'] : $heartbeat;
    # If there is a port, or if it's a non-standard port, we add ":$port" to the
    # hostname.
-   $host_str  = $host.($port != 3306 ? ":$port" : '');
+   $host_str  = $host
+              . $port != 3306 ? ":$port" : '';
    debug(array('connecting to', $host_str, $user, $pass));
-   if (!extension_loaded('mysqli') ) {
+   if (!extension_loaded('mysql') ) {
       debug("The MySQL extension is not loaded");
       die("The MySQL extension is not loaded");
    }
    if ($mysql_ssl || (isset($options['mysql_ssl']) && $options['mysql_ssl']) ) {
-      $conn = ((($GLOBALS["___mysqli_ston"] = mysqli_init()) && (mysqli_real_connect($GLOBALS["___mysqli_ston"], $host_str,
-              $user,  $pass, NULL, 3306, NULL, MYSQLI_CLIENT_SSL))) ? $GLOBALS["___mysqli_ston"] : FALSE);
+      $conn = mysql_connect($host_str, $user, $pass, true, MYSQL_CLIENT_SSL);
    }
    else {
-      $conn = ($GLOBALS["___mysqli_ston"] = mysqli_connect($host_str,  $user,  $pass));
+      $conn = mysql_connect($host_str, $user, $pass);
    }
    if (!$conn ) {
-      die("MySQL: " . ((is_object($GLOBALS["___mysqli_ston"])) ? mysqli_error($GLOBALS["___mysqli_ston"]) :
-              (($___mysqli_res = mysqli_connect_error()) ? $___mysqli_res : false)));
+      die("MySQL: " . mysql_error());
    }
 
    $sanitized_host = str_replace(array(":", "/"), array("", "_"), $host);
-   $cache_file = "$cache_dir/agent-local-mysql";
+   $cache_file = "$cache_dir/$sanitized_host-mysql_cacti_stats.txt"
+               . $port != 3306 ? ":$port" : '';
    debug("Cache file is $cache_file");
 
    # First, check the cache.
@@ -297,7 +291,7 @@ function ss_get_mysql_stats( $options ) {
          $locked = flock($fp, 1); # LOCK_SH
          if ($locked ) {
             if (filesize($cache_file) > 0
-               && filectime($cache_file) + ($cache_time) > time()
+               && filectime($cache_file) + ($poll_time/2) > time()
                && ($arr = file($cache_file))
             ) {# The cache file is good to use.
                debug("Using the cache file");
@@ -312,7 +306,7 @@ function ss_get_mysql_stats( $options ) {
                   # another process ran and updated it.  Let's see if we can just
                   # return the data now:
                   if (filesize($cache_file) > 0
-                     && filectime($cache_file) + ($cache_time) > time()
+                     && filectime($cache_file) + ($poll_time/2) > time()
                      && ($arr = file($cache_file))
                   ) {# The cache file is good to use.
                      debug("Using the cache file");
@@ -654,7 +648,6 @@ function ss_get_mysql_stats( $options ) {
        'binary_log_space'           => 'cz',
        'innodb_locked_tables'       => 'd0',
        'innodb_lock_structs'        => 'd1',
-
        'State_closing_tables'       => 'd2',
        'State_copying_to_tmp_table' => 'd3',
        'State_end'                  => 'd4',
@@ -671,7 +664,6 @@ function ss_get_mysql_stats( $options ) {
        'State_writing_to_net'       => 'df',
        'State_none'                 => 'dg',
        'State_other'                => 'dh',
-
        'Handler_commit'             => 'di',
        'Handler_delete'             => 'dj',
        'Handler_discover'           => 'dk',
@@ -687,7 +679,6 @@ function ss_get_mysql_stats( $options ) {
        'Handler_savepoint_rollback' => 'du',
        'Handler_update'             => 'dv',
        'Handler_write'              => 'dw',
-
        # Some InnoDB stats added later...
        'innodb_tables_in_use'    => 'dx',
        'innodb_lock_wait_secs'   => 'dy',
@@ -1125,16 +1116,16 @@ function to_int ( $str ) {
 function run_query($sql, $conn) {
    global $debug;
    debug($sql);
-   $result = @mysqli_query( $conn, $sql);
+   $result = @mysql_query($sql, $conn);
    if ($debug ) {
-      $error = @((is_object($conn)) ? mysqli_error($conn) : (($___mysqli_res = mysqli_connect_error()) ? $___mysqli_res : false));
+      $error = @mysql_error($conn);
       if ($error ) {
          debug(array($sql, $error));
          die("SQLERR $error in $sql");
       }
    }
    $array = array();
-   while ( $row = @mysqli_fetch_array($result) ) {
+   while ( $row = @mysql_fetch_array($result) ) {
       $array[] = $row;
    }
    debug(array($sql, $array));
@@ -1252,3 +1243,5 @@ function debug($val) {
       $debug_log = FALSE;
    }
 }
+
+?>
