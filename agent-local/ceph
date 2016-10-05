@@ -18,7 +18,7 @@ from subprocess import check_output
 import json
 
 def cephdf():
-    cephdf    = check_output(["/usr/bin/ceph", "-f", "json", "df"])
+    cephdf    = check_output(["/usr/bin/ceph", "-f", "json", "df"]).replace('-inf', '0')
 
     s = json.loads(cephdf)
     print("c:%i:%i:%i" % (s['stats']['total_bytes'], s['stats']['total_used_bytes'], s['stats']['total_avail_bytes']))
@@ -31,13 +31,13 @@ def cephdf():
 
 
 def osdperf():
-    osdperf   = check_output(["/usr/bin/ceph", "-f", "json", "osd", "perf"])
+    osdperf   = check_output(["/usr/bin/ceph", "-f", "json", "osd", "perf"]).replace('-inf', '0')
 
     for o in json.loads(osdperf)['osd_perf_infos']:
         print("osd.%s:%i:%i" % (o['id'], o['perf_stats']['apply_latency_ms'], o['perf_stats']['commit_latency_ms']))
 
 def poolstats():
-    poolstats = check_output(["/usr/bin/ceph", "-f", "json", "osd", "pool", "stats"])
+    poolstats = check_output(["/usr/bin/ceph", "-f", "json", "osd", "pool", "stats"]).replace('-inf', '0')
 
     for p in json.loads(poolstats):
         try: 
