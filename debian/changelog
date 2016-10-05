@@ -1,3 +1,10 @@
+librenms-agent (1.0.6) stable; urgency=low
+
+  - Fix a dirty hack to prevent failing of stats when the cluster is rebuilding
+    because Ceph returns '-inf' which the json decompiler doesn't seem to get..
+
+ -- Mark Schouten <mark@tuxis.nl> Tue, 05 Oct 2016 10:57:00 +0200
+
 librenms-agent (1.0.5) stable; urgency=low
 
   - Include a PowerDNS Authoritative agent
