@@ -14,40 +14,40 @@ usleep(1000);
 @fwrite($sock, "?POLL;\n");
 usleep(1000);
 for($tries = 0; $tries < 20; $tries++){
-  $resp = @fread($sock, 2000);
-  if (preg_match('/{"class":"POLL".+}/i', $resp, $m)){
-    $resp = $m[0];
-    break;
-  }
+    $resp = @fread($sock, 2000);
+    if (preg_match('/{"class":"POLL".+}/i', $resp, $m)){
+        $resp = $m[0];
+        break;
+    }
 }
 @fwrite($sock, "?WATCH={\"enable\":false}\n");
 @fclose($sock);
 
 if ($resp) {
-  $resp = json_decode($resp);
+    $resp = json_decode($resp);
 
-  if ($resp) {
-    print "<<<gpsd>>>\n";
+    if ($resp) {
+        print "<<<gpsd>>>\n";
 
-    if (!empty($resp->tpv[0])) {
-      $tpv = $resp->tpv[0];
-      print "mode:{$tpv->mode}\n";
+        if (!empty($resp->tpv[0])) {
+            $tpv = $resp->tpv[0];
+            print "mode:{$tpv->mode}\n";
+        }
+
+        if (!empty($resp->sky[0])) {
+            $sky = $resp->sky[0];
+
+            $sat_count = count($sky->satellites);
+            $sat_used = count(array_filter($sky->satellites, "satellite_used"));
+
+            print "hdop:{$sky->hdop}\n";
+            print "vdop:{$sky->vdop}\n";
+            print "satellites:{$sat_count}\n";
+            print "satellites_used:{$sat_used}\n";
+        }
     }
-
-    if (!empty($resp->sky[0])) {
-      $sky = $resp->sky[0];
-
-      $sat_count = count($sky->satellites);
-      $sat_used = count(array_filter($sky->satellites, "satellite_used"));
-
-      print "hdop:{$sky->hdop}\n";
-      print "vdop:{$sky->vdop}\n";
-      print "satellites:{$sat_count}\n";
-      print "satellites_used:{$sat_used}\n";
-    }
-  }
 }
 
 function satellite_used($sat) {
-  return $sat->used;
+    return $sat->used;
 }
