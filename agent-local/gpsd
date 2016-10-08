@@ -41,6 +41,7 @@ if ($resp) {
       $sat_used = count(array_filter($sky->satellites, "satellite_used"));
 
       print "hdop:{$sky->hdop}\n";
+      print "vdop:{$sky->vdop}\n";
       print "satellites:{$sat_count}\n";
       print "satellites_used:{$sat_used}\n";
     }
