@@ -42,6 +42,13 @@ if [ -f /etc/os-release ]; then
 		else
 			echo "0";
 		fi
+	elif [ $OS == "debian" ]; then
+		UPDATES=`$BIN_APT $CMD_APT | $BIN_GREP 'Inst' | $BIN_WC $CMD_WC`
+		if [ $UPDATES -gt 1 ]; then
+			echo $UPDATES;
+		else
+			echo "0";
+		fi
 	elif [ $OS == "ubuntu" ]; then
 		UPDATES=`$BIN_APT $CMD_APT | $BIN_GREP 'Inst' | $BIN_WC $CMD_WC`
 		if [ $UPDATES -gt 1 ]; then
