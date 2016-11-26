@@ -77,6 +77,10 @@ elif [ "${OS}" = "Linux" ] ; then
     fi
   fi
 
+  if [ "`uname -a | awk '{print $(NF)}'`" = "DD-WRT" ] ; then
+    DIST="dd-wrt"
+  fi
+
   if [ -n "${REV}" ]
   then
     OSSTR="${DIST} ${REV}"
