@@ -18,6 +18,8 @@ BIN_ZYPPER='/usr/bin/zypper'
 CMD_ZYPPER='lu'
 BIN_YUM='/usr/bin/yum'
 CMD_YUM='-q check-update'
+BIN_DNF='/usr/bin/dnf'
+CMD_DNF='-q check-update'
 BIN_APT='/usr/bin/apt-get'
 CMD_APT='-qq -s upgrade'
 BIN_PACMAN='/usr/bin/pacman'
@@ -40,6 +42,13 @@ if [ -f /etc/os-release ]; then
 		if [ $UPDATES -gt 6 ]; then
 			echo $(($UPDATES-6));
 		else
+			echo "0";
+		fi
+	elif [ $OS == "fedora" ]; then
+		UPDATES=`$BIN_DNF $CMD_DNF | $BIN_WC $CMD_WC`
+		if [ $UPDATES -gt 6 ]; then
+			echo $(($UPDATES-6));
+                else
 			echo "0";
 		fi
 	elif [ $OS == "debian" ]; then
