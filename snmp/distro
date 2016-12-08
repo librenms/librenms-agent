@@ -16,7 +16,11 @@ elif [ "${OS}" = "AIX" ] ; then
 elif [ "${OS}" = "Linux" ] ; then
   KERNEL=`uname -r`
 
-  if [ -f /etc/redhat-release ] ; then
+  if [ -f /etc/fedora-release ]; then
+    DIST=$(cat /etc/fedora-release | awk '{print $1}')
+    REV=`cat /etc/fedora-release | sed s/.*release\ // | sed s/\ .*//`
+        
+  elif [ -f /etc/redhat-release ] ; then
     DIST=$(cat /etc/redhat-release | awk '{print $1}')
     if [ "${DIST}" = "CentOS" ]; then
       DIST="CentOS"
