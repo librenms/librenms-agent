@@ -8,13 +8,13 @@
 ################################################################
 # Binaries and paths required                                  #
 ################################################################ 
-BIN_NTPD='/usr/sbin/ntpd'
-BIN_NTPQ='/usr/sbin/ntpq'
-BIN_NTPDC='/usr/sbin/ntpdc'
-BIN_GREP='/usr/bin/grep'
-BIN_TR='/usr/bin/tr'
-BIN_CUT='/usr/bin/cut'
-BIN_SED='/usr/bin/sed'
+BIN_NTPD=`/usr/bin/which ntpd`
+BIN_NTPQ=`/usr/bin/which ntpq`
+BIN_NTPDC=`/usr/bin/which ntpdc`
+BIN_GREP=`/usr/bin/which grep`
+BIN_TR=`/usr/bin/which tr`
+BIN_CUT=`/usr/bin/which cut`
+BIN_SED=`/usr/bin/which sed`
 ################################################################
 # Don't change anything unless you know what are you doing     #
 ################################################################
