@@ -8,10 +8,10 @@
 ################################################################
 # Binaries and paths required                                  #
 ################################################################ 
-BIN_NTPQ='/usr/sbin/ntpq'
-BIN_GREP='/usr/bin/grep'
-BIN_TR='/usr/bin/tr'
-BIN_CUT='/usr/bin/cut'
+BIN_NTPQ=`/usr/bin/which ntpq`
+BIN_GREP=`/usr/bin/which grep`
+BIN_TR=`/usr/bin/which tr`
+BIN_CUT=`/usr/bin/which cut`
 ################################################################
 # Don't change anything unless you know what are you doing     #
 ################################################################
