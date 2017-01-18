@@ -22,10 +22,14 @@
 BIN_EXIM=`which exim`
 BIN_GREP=`which grep`
 BIN_WC=`which wc`
-CFG_EXIM='-bp'
+CFG_EXIM_1='-bp'
+CFG_EXIM_2='-bpc'
 CFG_GREP='frozen'
 CFG_WC='-l'
 #################################################################
 
-FROZEN=`$BIN_EXIM $CFG_EXIM | $BIN_GREP $CFG_GREP | $BIN_WC $CFG_WC`
+FROZEN=`$BIN_EXIM $CFG_EXIM_1 | $BIN_GREP $CFG_GREP | $BIN_WC $CFG_WC`
 echo $FROZEN
+
+QUEUE=`$BIN_EXIM $CFG_EXIM_2`
+echo $QUEUE
