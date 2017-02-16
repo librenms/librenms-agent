@@ -19,7 +19,7 @@ hddtemp=`which hddtemp 2>/dev/null`
 
 if [ "${hddtemp}" != "" ]; then
 	if [ -x "${hddtemp}" ]; then
-		content=`${hddtemp} -w -q ${disks} 2>/dev/null | awk -F": " 'BEGIN{ ORS="" }{ print "|"$1"|"$2"|"$3"|";} ' | sed 's/°/\|/g';`
+		content=`${hddtemp} -w -q ${disks} 2>/dev/null | awk -F": " 'BEGIN{ ORS="" }{ print "|"$1"|"$2"|"$3"|";} ' | sed 's/[° ]C|/|C|/g' | sed 's/[° ]F|/|F|/g'`
 		if [ "${content}" != "" ]; then
 			echo '<<<hddtemp>>>'
 			echo ${content}
