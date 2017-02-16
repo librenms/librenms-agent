@@ -7,11 +7,11 @@
 # please make sure you have the path/binaries below            #
 ################################################################
 # Binaries and paths required                                  #
-################################################################ 
-BIN_NTPQ='/usr/sbin/ntpq'
-BIN_GREP='/usr/bin/grep'
-BIN_TR='/usr/bin/tr'
-BIN_CUT='/usr/bin/cut'
+################################################################
+BIN_NTPQ="$(command -v ntpq)"
+BIN_GREP="$(command -v grep)"
+BIN_TR="$(command -v tr)"
+BIN_CUT="$(command -v cut)"
 ################################################################
 # Don't change anything unless you know what are you doing     #
 ################################################################
