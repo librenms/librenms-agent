@@ -1,0 +1,15 @@
+#!/bin/sh
+
+# Addthis to snmpd.conf as below.
+# extend fail2ban /etc/snmp/fail2ban
+#
+# Also please verify your fail to ban instalation for proper table/chain names.
+
+if [ `uname` = "FreeBSD" ]; then
+	/sbin/pfctl -t fail2ban -T show | /usr/bin/grep -c .
+fi
+if [ `uname` = "Linux" ]; then
+	iptables -L -n | grep -c f2b\-
+fi
+
+exit 0;
