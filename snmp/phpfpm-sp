@@ -1,4 +1,4 @@
-#!/usr/local/bin/bash
+#!/usr/bin/env bash
 
 # add this to snmpd.conf as below... actual path to the script can vary
 # extend phpfpmsp /root/snmp-extends/phpfpm-sp
