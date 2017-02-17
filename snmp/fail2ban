@@ -9,8 +9,8 @@ if [ `uname` = "FreeBSD" ]; then
 	/sbin/pfctl -t fail2ban -T show | /usr/bin/grep -c .
 fi
 if [ `uname` = "Linux" ]; then
-	f2b1=`iptables -L -n | grep -c f2b\-`
-	f2b2=`iptables -L -n | grep -c fail2ban\-`
+	f2b1=`iptables -L -n | grep -c f2b\`
+	f2b2=`iptables -L -n | grep -c fail2ban\`
 	expr $f2b1 + $f2b2
 fi
 
