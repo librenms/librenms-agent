@@ -1,15 +1,61 @@
-#!/bin/sh
+#!/usr/local/bin/perl
 
 # Addthis to snmpd.conf as below.
 # extend fail2ban /etc/snmp/fail2ban
 #
-# Also please verify your fail to ban instalation for proper table/chain names.
+# Please verify that the tables below are correct for your installation
 
-if [ `uname` = "FreeBSD" ]; then
-	/sbin/pfctl -t fail2ban -T show | /usr/bin/grep -c .
-fi
-if [ `uname` = "Linux" ]; then
-	f2b1=`iptables -L -n | grep -c f2b`
-	f2b2=`iptables -L -n | grep -c fail2ban`
-	expr $f2b1 + $f2b2
-fi
+my @linuxChains=('failban','f2b');
+my $freebsdPFtable='fail2ban';
+
+# You should not have to touch anything below this.
+
+my $os=`uname`;
+
+if ( $os =~ '^FreeBSD' ){
+	   print `/sbin/pfctl -t $freebsdPFtable -T show | /usr/bin/grep -c .`;
+	   exit;
+};
+   
+if ( $os =~ '^Linux' ){
+	my $iptables=`iptables -L -n`;
+
+	my @iptablesA=split( /\n/, $iptables );
+
+	#check each line
+	my $int=0;
+	my $banned=0;
+	my $count=0;
+	while( defined( $iptablesA[$int] ) ){
+		my $line=$iptablesA[$int];
+
+		#stop counting if we have a blank line
+		if ( $line =~ /^$/ ){
+			$count=0;
+		}
+
+		#count /^REJECT/ lines, if we are counting
+		if ( ( $line =~ /^REJECT/ ) && ( $count ) ){
+			$banned++;
+		}
+
+		#check if this is a chain we should count
+		if ( $line =~ /^Chain/ ){
+			my $linuxChainsInt=0;
+			# check if any of the specified names hit and if so start counting
+			while( defined( $linuxChains[$linuxChainsInt] ) ){
+				my $chain=$linuxChains[$linuxChainsInt];
+				if ( $line =~ /^Chain $chain/ ){
+					$count=1;
+				}
+				
+				$linuxChainsInt++;
+			}
+		}		
+		
+		$int++;
+	}
+	
+	print $banned."\n";
+}
+
