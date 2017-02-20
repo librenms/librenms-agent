@@ -1,61 +1,43 @@
 #!/usr/local/bin/perl
 
-# Addthis to snmpd.conf as below.
+# Add this to your snmpd.conf as below.
 # extend fail2ban /etc/snmp/fail2ban
-#
-# Please verify that the tables below are correct for your installation
 
-my @linuxChains=('failban','f2b');
-my $freebsdPFtable='fail2ban';
+#make sure this path is correct
+my $f2bc="/usr/local/bin/fail2ban-client";
 
-# You should not have to touch anything below this.
+##
+## you should not have to touch anything below this
+##
+use strict;
+use warnings;
 
-my $os=`uname`;
+#gets a list of jails
+my $jailsOutput=`$f2bc status`;
+my @jailsOutputA=split(/\n/, $jailsOutput);
+my ( $jailsS )=grep( /Jail\ list/, @jailsOutputA );
+$jailsS=~s/.*\://;
+$jailsS=~s/\s//g;
+my @jails=split(/\,/, $jailsS);
 
-if ( $os =~ '^FreeBSD' ){
-	   print `/sbin/pfctl -t $freebsdPFtable -T show | /usr/bin/grep -c .`;
-	   exit;
-};
-   
-if ( $os =~ '^Linux' ){
-	my $iptables=`iptables -L -n`;
+#process jail
+my $int=0;
+my $total=0;
+my $toReturn='';
+while(defined($jails[$int])){
 
-	my @iptablesA=split( /\n/, $iptables );
+        #get the total for this jail
+        my $jailStatusOutput=`fail2ban-client status $jails[$int]`;
+        my @jailStatusOutputA=split(/\n/, $jailStatusOutput);
+        my ( $jailTotal )=grep(/Currently\ banned\:/, @jailStatusOutputA);
+        $jailTotal=~s/.*\://;
+        $jailTotal=~s/\s//g;
 
-	#check each line
-	my $int=0;
-	my $banned=0;
-	my $count=0;
-	while( defined( $iptablesA[$int] ) ){
-		my $line=$iptablesA[$int];
+        #tally the total and add this jail to the list
+        $total=$total+$jailTotal;
+        $toReturn=$toReturn.$jails[$int].' '.$jailTotal."\n";
 
-		#stop counting if we have a blank line
-		if ( $line =~ /^$/ ){
-			$count=0;
-		}
-
-		#count /^REJECT/ lines, if we are counting
-		if ( ( $line =~ /^REJECT/ ) && ( $count ) ){
-			$banned++;
-		}
-
-		#check if this is a chain we should count
-		if ( $line =~ /^Chain/ ){
-			my $linuxChainsInt=0;
-			# check if any of the specified names hit and if so start counting
-			while( defined( $linuxChains[$linuxChainsInt] ) ){
-				my $chain=$linuxChains[$linuxChainsInt];
-				if ( $line =~ /^Chain $chain/ ){
-					$count=1;
-				}
-				
-				$linuxChainsInt++;
-			}
-		}		
-		
-		$int++;
-	}
-	
-	print $banned."\n";
+        $int++;
 }
 
+print $total."\n".$toReturn;
