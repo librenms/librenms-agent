@@ -75,7 +75,7 @@ if (defined( $opts{u} )){
 
 my $old='';
 open(my $readfh, "<", $cache) or die "Can't open '".$cache."'";
-# if this is over 2048, something is most likely wrong
+# if this is over 10240, something is most likely wrong
 read($readfh , $old , 10240);
 close($readfh);
 print $old;
