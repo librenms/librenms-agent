@@ -12,6 +12,9 @@ my $f2bc="/usr/local/bin/fail2ban-client";
 # The cache file to use.
 my $cache='/var/cache/fail2ban';
 
+# Please verify that the tables below are correct for your installation
+my @linuxChains=('failban','f2b');
+my $freebsdPFtable='fail2ban'; 
 
 ##
 ## you should not have to touch anything below this
@@ -64,9 +67,65 @@ if (defined( $opts{u} )){
 		
 		$int++;
 	}
+
+	##
+	## process the firewall
+	##
+ 
+	my $os=`uname`;
+
+	my $firewalled=0;
 	
+	if ( $os =~ '^FreeBSD' ){
+		$firewalled=`/sbin/pfctl -t $freebsdPFtable -T show | /usr/bin/grep -c .`;
+		chomp($firewalled);
+	};
+	
+	if ( $os =~ '^Linux' ){
+		my $iptables=`iptables -L -n`;
+		my @iptablesA=split( /\n/, $iptables );
+
+		#check each line
+		my $int=0;
+		my $firewalled=0;
+		my $count=0;
+		while( defined( $iptablesA[$int] ) ){
+			my $line=$iptablesA[$int];
+			
+			#stop counting if we have a blank line
+			if ( $line =~ /^$/ ){
+				$count=0;
+			}
+			
+			#count /^REJECT/ lines, if we are counting
+			if ( ( $line =~ /^REJECT/ ) && ( $count ) ){
+				$firewalled++;
+			}
+			
+			#check if this is a chain we should count
+			if ( $line =~ /^Chain/ ){
+				my $linuxChainsInt=0;
+				# check if any of the specified names hit and if so start counting
+				while( defined( $linuxChains[$linuxChainsInt] ) ){
+					my $chain=$linuxChains[$linuxChainsInt];
+					if ( $line =~ /^Chain $chain/ ){
+						$count=1;
+					}
+					
+					$linuxChainsInt++;
+				}
+			}		
+			
+			$int++;
+		}
+		
+	}
+
+	##
+	## render the output
+	##
 	open(my $writefh, ">", $cache) or die "Can't open '".$cache."'";
-	print $writefh $total."\n".$toReturn;
+	print $writefh $total."\n".$firewalled."\n".$toReturn;
 	close($writefh);
 	
 	exit 0;
@@ -75,9 +134,8 @@ if (defined( $opts{u} )){
 
 my $old='';
 open(my $readfh, "<", $cache) or die "Can't open '".$cache."'";
-# if this is over 10240, something is most likely wrong
+# if this is over 2048, something is most likely wrong
 read($readfh , $old , 10240);
 close($readfh);
 print $old;
 
-	
