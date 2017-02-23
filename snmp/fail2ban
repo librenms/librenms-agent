@@ -1,4 +1,4 @@
-#!/usr/local/bin/perl
+#!/usr/bin/env perl
 
 # Add this to your snmpd.conf as below.
 # extend fail2ban /etc/snmp/fail2ban
