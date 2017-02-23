@@ -10,7 +10,7 @@
 my $f2bc="/usr/bin/env fail2ban-client";
 
 #make sure this path is correct
-my $iptables="/usr/bin/env iptables";
+my $iptablesPath="/usr/bin/env iptables";
 
 # The cache file to use, if using caching.
 my $cache='/var/cache/fail2ban';
@@ -103,7 +103,7 @@ if (defined( $opts{u} )){
 	};
 	
 	if ( $os =~ '^Linux' ){
-		my $iptables=`$iptables -L -n`;
+		my $iptables=`$iptablesPath -L -n`;
 		my @iptablesA=split( /\n/, $iptables );
 
 		#check each line
