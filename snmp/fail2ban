@@ -45,7 +45,12 @@ getopts('u', \%opts);
 my $noWrite=0;
 
 if ( ! defined( $opts{u} ) ){
-	if ( -f $cache ){
+	my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
+		$atime,$mtime,$ctime,$blksize,$blocks) = stat($cache);
+	my $age=time-$mtime;
+	
+	
+	if (( -f $cache )&&( $age < 360 )){
 		my $old='';
 		open(my $readfh, "<", $cache) or die "Can't open '".$cache."'";
 		# if this is over 2048, something is most likely wrong
@@ -55,7 +60,6 @@ if ( ! defined( $opts{u} ) ){
 	}else{
 		$opts{u}=1;
 		$noWrite=1;
-		
 	}
 }
 
