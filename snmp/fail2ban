@@ -3,13 +3,13 @@
 # Add this to your snmpd.conf as below.
 # extend fail2ban /etc/snmp/fail2ban
 #
-# Then add to your cron tab...
+# Then add to your cron tab, if you wish to use caching.
 # */3 * * * * /root/snmp-extends/fail2ban.pl -u
 
 #make sure this path is correct
 my $f2bc="/usr/local/bin/fail2ban-client";
 
-# The cache file to use.
+# The cache file to use, if using caching.
 my $cache='/var/cache/fail2ban';
 
 # Please verify that the tables below are correct for your installation
@@ -37,6 +37,24 @@ sub main::HELP_MESSAGE {
 #gets the options
 my %opts=();
 getopts('u', \%opts);
+
+#if set to 1, no cache will be written and it will be printed instead
+my $noWrite=0;
+
+if ( ! defined( $opts{u} ) ){
+	if ( -f $cache ){
+		my $old='';
+		open(my $readfh, "<", $cache) or die "Can't open '".$cache."'";
+		# if this is over 2048, something is most likely wrong
+		read($readfh , $old , 10240);
+		close($readfh);
+		print $old;
+	}else{
+		$opts{u}=1;
+		$noWrite=1;
+		
+	}
+}
 
 if (defined( $opts{u} )){
 	
@@ -121,21 +139,17 @@ if (defined( $opts{u} )){
 		
 	}
 
-	##
+		##
 	## render the output
 	##
-	open(my $writefh, ">", $cache) or die "Can't open '".$cache."'";
-	print $writefh $total."\n".$firewalled."\n".$toReturn;
-	close($writefh);
+	if ( ! $noWrite ){
+		open(my $writefh, ">", $cache) or die "Can't open '".$cache."'";
+		print $writefh $total."\n".$firewalled."\n".$toReturn;
+		close($writefh);
+	}else{
+		print $total."\n".$firewalled."\n".$toReturn;
+	}
+	
 	
 	exit 0;
 }
-
-
-my $old='';
-open(my $readfh, "<", $cache) or die "Can't open '".$cache."'";
-# if this is over 2048, something is most likely wrong
-read($readfh , $old , 10240);
-close($readfh);
-print $old;
-
