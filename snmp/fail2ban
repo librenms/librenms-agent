@@ -76,7 +76,7 @@ if (defined( $opts{u} )){
 	while(defined($jails[$int])){
 		
 		#get the total for this jail
-		my $jailStatusOutput=`fail2ban-client status $jails[$int]`;
+		my $jailStatusOutput=`$f2bc status $jails[$int]`;
 		my @jailStatusOutputA=split(/\n/, $jailStatusOutput);
 		my ( $jailTotal )=grep(/Currently\ banned\:/, @jailStatusOutputA);
 		$jailTotal=~s/.*\://;
