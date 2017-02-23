@@ -4,10 +4,10 @@
 # extend fail2ban /etc/snmp/fail2ban
 #
 # Then add to your cron tab, if you wish to use caching.
-# */3 * * * * /root/snmp-extends/fail2ban.pl -u
+# */3 * * * * /etc/snmp/fail2ban.pl -u
 
 #make sure this path is correct
-my $f2bc="/usr/local/bin/fail2ban-client";
+my $f2bc="/usr/bin/env fail2ban-client";
 
 # The cache file to use, if using caching.
 my $cache='/var/cache/fail2ban';
@@ -100,7 +100,7 @@ if (defined( $opts{u} )){
 	};
 	
 	if ( $os =~ '^Linux' ){
-		my $iptables=`iptables -L -n`;
+		my $iptables=`/usr/bin/env iptables -L -n`;
 		my @iptablesA=split( /\n/, $iptables );
 
 		#check each line
