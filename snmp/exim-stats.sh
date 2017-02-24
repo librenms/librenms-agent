@@ -37,9 +37,6 @@ do
 
 done ;
 
-
-BIN_GREP="$(command -v grep)"
-BIN_WC="$(command -v wc)"
 CFG_EXIM_1='-bp'
 CFG_EXIM_2='-bpc'
 CFG_GREP='frozen'

@@ -1,7 +1,23 @@
 #!/usr/bin/env bash
 # Detects which OS and if it is Linux then it will detect which Linux Distribution.
+exists_command()
+{
+  command -v "$1" >/dev/null 2>&1
+}
 
-BIN_UNAME="$(command -v uname)"
+require_commands=("uname") ;
+
+for i in "${require_commands[@]}" ;
+do
+    if exists_command $i; then
+        eval "BIN_${i^^}"="$(command -v $i)";
+    else
+        echo "Your system does not have [$i]";
+        exit
+    fi
+
+done ;
+
 
 OS=`$BIN_UNAME -s`
 REV=`$BIN_UNAME -r`

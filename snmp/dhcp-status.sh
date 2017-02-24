@@ -4,13 +4,33 @@
 # edit your snmpd.conf add the below line and restart snmpd    #
 # extend dhcpstats /opt/dhcp-status.sh                         #
 ################################################################ 
+exists_command()
+{
+  command -v "$1" >/dev/null 2>&1
+}
+
+require_commands=("cat" "grep" "tr" "sed" "sort" "wc") ;
+
+for i in "${require_commands[@]}" ;
+do
+    if exists_command $i; then
+        eval "BIN_${i^^}"="$(command -v $i)";
+    else
+        echo "Your system does not have [$i]";
+        exit
+    fi
+
+done ;
+
 FILE_DHCP='/var/lib/dhcp/db/dhcpd.leases'
-BIN_CAT="$(command -v cat)"
-BIN_GREP="$(command -v grep)"
-BIN_TR="$(command -v tr)"
-BIN_SED="$(command -v sed)"
-BIN_SORT="$(command -v sort)"
-BIN_WC="$(command -v wc)"
+
+
+if [ ! -f $FILE_DHCP ]; then
+   echo "File $FILE_DHCP does not exist.";
+   exit;
+fi
+
+
 DHCP_LEASES='^lease'
 DHCP_ACTIVE='^lease|binding state active'
 DHCP_EXPIRED='^lease|binding state expired'
