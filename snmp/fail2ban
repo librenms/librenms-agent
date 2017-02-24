@@ -112,7 +112,6 @@ if (defined( $opts{u} )){
 
 		#check each line
 		my $int=0;
-		my $firewalled=0;
 		my $count=0;
 		while( defined( $iptablesA[$int] ) ){
 			my $line=$iptablesA[$int];
