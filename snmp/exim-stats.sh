@@ -19,9 +19,27 @@
 # ------------------------------------------------------------- #
 # restart snmpd and activate the app for desired host           #
 #################################################################
-BIN_EXIM=`which exim`
-BIN_GREP=`which grep`
-BIN_WC=`which wc`
+exists_command()
+{
+  command -v "$1" >/dev/null 2>&1
+}
+
+require_commands=("exim" "grep" "wc") ;
+
+for i in "${require_commands[@]}" ;
+do
+    if exists_command $i; then
+        eval "BIN_${i^^}"="$(command -v $i)";
+    else
+        echo "Your system does not have [$i]";
+        exit
+    fi
+
+done ;
+
+
+BIN_GREP="$(command -v grep)"
+BIN_WC="$(command -v wc)"
 CFG_EXIM_1='-bp'
 CFG_EXIM_2='-bpc'
 CFG_GREP='frozen'
@@ -33,3 +51,5 @@ echo $FROZEN
 
 QUEUE=`$BIN_EXIM $CFG_EXIM_2`
 echo $QUEUE
+
+

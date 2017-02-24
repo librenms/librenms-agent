@@ -10,9 +10,23 @@
 #--------------------------------------------------------------#
 # please make sure you have the path/binaries below            #
 ################################################################ 
-BIN_AWK='/usr/bin/awk'
-BIN_WC='/usr/bin/wc'
-BIN_GREP='/bin/grep'
+exists_command()
+{
+  command -v "$1" >/dev/null 2>&1
+}
+require_commands=("awk" "wc" "grep") ;
+
+for i in "${require_commands[@]}" ;
+do
+    if exists_command $i; then
+        eval "BIN_${i^^}"="$(command -v $i)";
+    else
+        echo "Your system does not have [$i]";
+        exit
+    fi
+
+done ;
+
 CMD_WC='-l'
 BIN_ZYPPER='/usr/bin/zypper'
 CMD_ZYPPER='lu'

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" serverName="Angular.34">
+  <component name="PublishConfigData" autoUpload="Always" serverName="Angular.34" promptOnLocalOverwrite="false" autoUploadExternalChanges="true">
     <serverData>
       <paths name="Angular.34">
         <serverdata>
@@ -24,5 +24,6 @@
         </serverdata>
       </paths>
     </serverData>
+    <option name="myAutoUpload" value="ALWAYS" />
   </component>
 </project>

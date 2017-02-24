@@ -8,13 +8,23 @@
 ################################################################
 # Binaries and paths required                                  #
 ################################################################ 
-BIN_NTPD='/usr/sbin/ntpd'
-BIN_NTPQ='/usr/sbin/ntpq'
-BIN_NTPDC='/usr/sbin/ntpdc'
-BIN_GREP='/usr/bin/grep'
-BIN_TR='/usr/bin/tr'
-BIN_CUT='/usr/bin/cut'
-BIN_SED='/usr/bin/sed'
+exists_command()
+{
+  command -v "$1" >/dev/null 2>&1
+}
+require_commands=("ntpd" "ntpq" "ntpdc" "grep" "tr" "cut" "sed") ;
+
+for i in "${require_commands[@]}" ;
+do
+    if exists_command $i; then
+        eval "BIN_${i^^}"="$(command -v $i)";
+    else
+        echo "Your system does not have [$i]";
+        exit
+    fi
+
+done ;
+
 ################################################################
 # Don't change anything unless you know what are you doing     #
 ################################################################

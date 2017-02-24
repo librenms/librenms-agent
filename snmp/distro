@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Detects which OS and if it is Linux then it will detect which Linux Distribution.
 
-OS=`uname -s`
-REV=`uname -r`
-MACH=`uname -m`
+BIN_UNAME="$(command -v uname)"
+
+OS=`$BIN_UNAME -s`
+REV=`$BIN_UNAME -r`
+MACH=`$BIN_UNAME -m`
 
 if [ "${OS}" = "SunOS" ] ; then
   OS=Solaris

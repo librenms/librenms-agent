@@ -8,10 +8,23 @@
 ################################################################
 # Binaries and paths required                                  #
 ################################################################
-BIN_NTPQ="$(command -v ntpq)"
-BIN_GREP="$(command -v grep)"
-BIN_TR="$(command -v tr)"
-BIN_CUT="$(command -v cut)"
+exists_command()
+{
+  command -v "$1" >/dev/null 2>&1
+}
+require_commands=("ntpq" "grep" "tr" "cut") ;
+
+for i in "${require_commands[@]}" ;
+do
+    if exists_command $i; then
+        eval "BIN_${i^^}"="$(command -v $i)";
+    else
+        echo "Your system does not have [$i]";
+        exit
+    fi
+
+done ;
+
 ################################################################
 # Don't change anything unless you know what are you doing     #
 ################################################################

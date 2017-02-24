@@ -10,14 +10,28 @@
 #--------------------------------------------------------------#
 # please make sure you have the path/binaries below            #
 ################################################################
-BIN_APCS='/sbin/apcaccess'
-BIN_TR='/usr/bin/tr'
-BIN_CUT='/usr/bin/cut'
-BIN_GREP='/usr/bin/grep'
+exists_command()
+{
+  command -v "$1" >/dev/null 2>&1
+}
+require_commands=("apcaccess" "tr" "cut" "grep") ;
+
+for i in "${require_commands[@]}" ;
+do
+    if exists_command $i; then
+        eval "BIN_${i^^}"="$(command -v $i)";
+    else
+        echo "Your system does not have [$i]";
+        exit
+    fi
+
+done ;
+
+
 ################################################################
 # Don't change anything unless you know what are you doing     #
 ################################################################
-TMP=`$BIN_APCS 2>/dev/null`
+TMP=`$BIN_APCACCESS 2>/dev/null`
 
 for value in "LINEV:[0-9]+" "LOADPCT:[0-9.]+" "BCHARGE:[0-9.]+" "TIMELEFT:[0-9.]+" "^BATTV:[0-9.]+" "NOMINV:[0-9]+" "NOMBATTV:[0-9.]+"
 do
