@@ -1,0 +1,159 @@
+#!/usr/bin/env perl
+
+# Add this to your snmpd.conf as below.
+# extend fail2ban /etc/snmp/fail2ban
+#
+# Then add to your cron tab, if you wish to use caching.
+# */3 * * * * /etc/snmp/fail2ban.pl -u
+
+#make sure this path is correct
+my $f2bc="/usr/bin/env fail2ban-client";
+
+#make sure this path is correct
+my $iptablesPath="/usr/bin/env iptables";
+
+# The cache file to use, if using caching.
+my $cache='/var/cache/fail2ban';
+
+# Please verify that the tables below are correct for your installation
+my @linuxChains=('failban','f2b');
+my $freebsdPFtable='fail2ban'; 
+
+##
+## you should not have to touch anything below this
+##
+use strict;
+use warnings;
+use Getopt::Std;
+
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
+sub main::VERSION_MESSAGE {
+        print "fail2ban-client SNMP extend 0.0.0\n";
+};
+
+
+sub main::HELP_MESSAGE {
+	print "\n".
+		"-u   Update '".$cache."'\n";
+}
+
+#gets the options
+my %opts=();
+getopts('u', \%opts);
+
+#if set to 1, no cache will be written and it will be printed instead
+my $noWrite=0;
+
+if ( ! defined( $opts{u} ) ){
+	my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
+		$atime,$mtime,$ctime,$blksize,$blocks) = stat($cache);
+	
+	if (( -f $cache ) && defined( $mtime ) && ( (time-$mtime) < 360 )){
+		my $old='';
+		open(my $readfh, "<", $cache) or die "Can't open '".$cache."'";
+		# if this is over 2048, something is most likely wrong
+		read($readfh , $old , 10240);
+		close($readfh);
+		print $old;
+	}else{
+		$opts{u}=1;
+		$noWrite=1;
+	}
+}
+
+if (defined( $opts{u} )){
+	
+	#gets a list of jails
+	my $jailsOutput=`$f2bc status`;
+	my @jailsOutputA=split(/\n/, $jailsOutput);
+	my ( $jailsS )=grep( /Jail\ list/, @jailsOutputA );
+	$jailsS=~s/.*\://;
+	$jailsS=~s/\s//g;
+	my @jails=split(/\,/, $jailsS);
+	
+	#process jail
+	my $int=0;
+	my $total=0;
+	my $toReturn='';
+	while(defined($jails[$int])){
+		
+		#get the total for this jail
+		my $jailStatusOutput=`$f2bc status $jails[$int]`;
+		my @jailStatusOutputA=split(/\n/, $jailStatusOutput);
+		my ( $jailTotal )=grep(/Currently\ banned\:/, @jailStatusOutputA);
+		$jailTotal=~s/.*\://;
+		$jailTotal=~s/\s//g;
+		
+		#tally the total and add this jail to the list
+		$total=$total+$jailTotal;
+		$toReturn=$toReturn.$jails[$int].' '.$jailTotal."\n";
+		
+		$int++;
+	}
+
+	##
+	## process the firewall
+	##
+ 
+	my $os=`uname`;
+
+	my $firewalled=0;
+	
+	if ( $os =~ '^FreeBSD' ){
+		$firewalled=`/sbin/pfctl -t $freebsdPFtable -T show | /usr/bin/grep -c .`;
+		chomp($firewalled);
+	};
+	
+	if ( $os =~ '^Linux' ){
+		my $iptables=`$iptablesPath -L -n`;
+		my @iptablesA=split( /\n/, $iptables );
+
+		#check each line
+		my $int=0;
+		my $count=0;
+		while( defined( $iptablesA[$int] ) ){
+			my $line=$iptablesA[$int];
+			
+			#stop counting if we have a blank line
+			if ( $line =~ /^$/ ){
+				$count=0;
+			}
+			
+			#count /^REJECT/ lines, if we are counting
+			if ( ( $line =~ /^REJECT/ ) && ( $count ) ){
+				$firewalled++;
+			}
+			
+			#check if this is a chain we should count
+			if ( $line =~ /^Chain/ ){
+				my $linuxChainsInt=0;
+				# check if any of the specified names hit and if so start counting
+				while( defined( $linuxChains[$linuxChainsInt] ) ){
+					my $chain=$linuxChains[$linuxChainsInt];
+					if ( $line =~ /^Chain $chain/ ){
+						$count=1;
+					}
+					
+					$linuxChainsInt++;
+				}
+			}		
+			
+			$int++;
+		}
+		
+	}
+
+		##
+	## render the output
+	##
+	if ( ! $noWrite ){
+		open(my $writefh, ">", $cache) or die "Can't open '".$cache."'";
+		print $writefh $total."\n".$firewalled."\n".$toReturn;
+		close($writefh);
+	}else{
+		print $total."\n".$firewalled."\n".$toReturn;
+	}
+	
+	
+	exit 0;
+}
