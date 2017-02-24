@@ -4,17 +4,34 @@
 # edit your snmpd.conf and add the below line and restart: #
 # extend nfs-stats /opt/nfs-stats.sh                       #
 ############################################################
+exists_command()
+{
+  command -v "$1" >/dev/null 2>&1
+}
+require_commands=("cat" "sed" "awk" "tr" "paste" "rm" "mv") ;
+
+for i in "${require_commands[@]}" ;
+do
+    if exists_command $i; then
+        eval "BIN_${i^^}"="$(command -v $i)";
+    else
+        echo "Your system does not have [$i]";
+        exit
+    fi
+
+done ;
+
 CFG_NFSFILE='/proc/net/rpc/nfsd'
-BIN_CAT='/usr/bin/cat'
-BIN_SED='/usr/bin/sed'
-BIN_AWK='/usr/bin/awk'
-BIN_TR='/usr/bin/tr'
-BIN_PASTE='/usr/bin/paste'
-BIN_RM='/usr/bin/rm'
-BIN_MV='/usr/bin/mv'
+
 LOG_OLD='/tmp/nfsio_old'
 LOG_NEW='/tmp/nfsio_new'
 LOG_FIX='/tmp/nfsio_fix'
+
+if [ ! -f $CFG_NFSFILE ]; then
+   echo "File $CFG_NFSFILE does not exist.";
+   exit;
+fi
+
 
 #get reply cache (rc - values: hits, misses, nocache)
 $BIN_CAT $CFG_NFSFILE | $BIN_SED -n 1p | $BIN_AWK '{print $2,$3,$4}' | $BIN_TR " " "\n" > $LOG_NEW

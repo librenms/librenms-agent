@@ -3,8 +3,25 @@
 # please read DOCS to succesfully get #
 # raspberry sensors into your host    #
 #######################################
-picmd='/usr/bin/vcgencmd'
-pised='/bin/sed'
+exists_command()
+{
+  command -v "$1" >/dev/null 2>&1
+}
+
+require_commands=("vcgencmd" "sed") ;
+
+for i in "${require_commands[@]}" ;
+do
+    if exists_command $i; then
+        eval "BIN_${i^^}"="$(command -v $i)";
+    else
+        echo "Your system does not have [$i]";
+        exit
+    fi
+
+done ;
+
+
 getTemp='measure_temp'
 getVoltsCore='measure_volts core'
 getVoltsRamC='measure_volts sdram_c'
@@ -19,16 +36,16 @@ getStatusMPG4='codec_enabled MPG4'
 getStatusMJPG='codec_enabled MJPG'
 getStatusWMV9='codec_enabled WMV9'
 
-sudo $picmd $getTemp | $pised 's|[^0-9.]||g'
-sudo $picmd $getVoltsCore | $pised 's|[^0-9.]||g'
-sudo $picmd $getVoltsRamC | $pised 's|[^0-9.]||g'
-sudo $picmd $getVoltsRamI | $pised 's|[^0-9.]||g'
-sudo $picmd $getVoltsRamP | $pised 's|[^0-9.]||g'
-sudo $picmd $getFreqArm  | $pised 's/frequency(45)=//g'
-sudo $picmd $getFreqCore | $pised 's/frequency(1)=//g'
-sudo $picmd $getStatusH264 | $pised 's/H264=//g'
-sudo $picmd $getStatusMPG2 | $pised 's/MPG2=//g'
-sudo $picmd $getStatusWVC1 | $pised 's/WVC1=//g'
-sudo $picmd $getStatusMPG4 | $pised 's/MPG4=//g'
-sudo $picmd $getStatusMJPG | $pised 's/MJPG=//g'
-sudo $picmd $getStatusWMV9 | $pised 's/WMV9=//g'
+sudo $BIN_VCGENCMD $getTemp | $BIN_SED 's|[^0-9.]||g'
+sudo $BIN_VCGENCMD $getVoltsCore | $BIN_SED 's|[^0-9.]||g'
+sudo $BIN_VCGENCMD $getVoltsRamC | $BIN_SED 's|[^0-9.]||g'
+sudo $BIN_VCGENCMD $getVoltsRamI | $BIN_SED 's|[^0-9.]||g'
+sudo $BIN_VCGENCMD $getVoltsRamP | $BIN_SED 's|[^0-9.]||g'
+sudo $BIN_VCGENCMD $getFreqArm  | $BIN_SED 's/frequency(45)=//g'
+sudo $BIN_VCGENCMD $getFreqCore | $BIN_SED 's/frequency(1)=//g'
+sudo $BIN_VCGENCMD $getStatusH264 | $BIN_SED 's/H264=//g'
+sudo $BIN_VCGENCMD $getStatusMPG2 | $BIN_SED 's/MPG2=//g'
+sudo $BIN_VCGENCMD $getStatusWVC1 | $BIN_SED 's/WVC1=//g'
+sudo $BIN_VCGENCMD $getStatusMPG4 | $BIN_SED 's/MPG4=//g'
+sudo $BIN_VCGENCMD $getStatusMJPG | $BIN_SED 's/MJPG=//g'
+sudo $BIN_VCGENCMD $getStatusWMV9 | $BIN_SED 's/WMV9=//g'
