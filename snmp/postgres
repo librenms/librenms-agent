@@ -32,7 +32,7 @@ DBuser=pgsql
 ignorePG=1;
 
 #make sure the paths are right for your system
-cpg=/usr/bin/env check_postgres.pl
+cpg='/usr/bin/env check_postgres.pl'
 
 $cpg -u $DBuser --action dbstats | awk -F ' ' '
 
