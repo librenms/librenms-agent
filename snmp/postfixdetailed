@@ -1,4 +1,4 @@
-#!/usr/local/bin/perl
+#!/usr/bin/env perl
 
 # add this to your snmpd.conf file as below
 # extend postfixdetailed /etc/snmp/postfixdetailed
