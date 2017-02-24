@@ -23,10 +23,11 @@
 #THE POSSIBILITY OF SUCH DAMAGE.
 
 #set the user here to use
-DBuser=kitsune
+#be sure to set up the user in .pgpass for the user snmpd is running as
+DBuser=pgsql
 
-#
-# 1 = don't total stats for the DB postgress
+# You may want to disable totalling for the postgres DB as that can make the total graphs artificially noisy.
+# 1 = don't total stats for the DB postgres
 # 0 = include postgres in the totals
 ignorePG=1;
 
