@@ -47,10 +47,8 @@ my $noWrite=0;
 if ( ! defined( $opts{u} ) ){
 	my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
 		$atime,$mtime,$ctime,$blksize,$blocks) = stat($cache);
-	my $age=time-$mtime;
 	
-	
-	if (( -f $cache )&&( $age < 360 )){
+	if (( -f $cache ) && defined( $mtime ) && ( (time-$mtime) < 360 )){
 		my $old='';
 		open(my $readfh, "<", $cache) or die "Can't open '".$cache."'";
 		# if this is over 2048, something is most likely wrong
