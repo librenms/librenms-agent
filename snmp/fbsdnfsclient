@@ -14,8 +14,8 @@ my (
 	$Readlink,
 	$Read,
 	$Write,
-    $Create,
-    $Remove,
+	$Create,
+	$Remove,
 	$Rename,
 	$Link,
 	$Symlink,
@@ -23,33 +23,33 @@ my (
 	$Rmdir,
 	$Readdir,
 	$RdirPlus,
-    $Access,
+	$Access,
 	$Mknod,
-    $Fsstat,
-    $Fsinfo,
+	$Fsstat,
+	$Fsinfo,
 	$PathConf,
-    $Commit,
+	$Commit,
 	$TimedOut,
 	$Invalid,
 	$XReplies,
 	$Retries,
 	$Requests,
 	$AttrHits,
-    $AttrMisses,
+	$AttrMisses,
 	$LkupHits,
-    $LkupMisses,
+	$LkupMisses,
 	$BioRHits,
 	$BioRMisses,
 	$BioWHits,
-    $BioWMisses,
+	$BioWMisses,
 	$BioRLHits,
 	$BioRLMisses,
 	$BioDHits,
 	$BioDMisses,
 	$DirEHits,
-    $DirEMisses,
+	$DirEMisses,
 	$AccsHits,
-    $AccsMisses,
+	$AccsMisses,
 	);
 
 while( defined( $nfsstatOutputA[$int] ) ){
@@ -143,8 +143,8 @@ print $Getattr."\n".
 	$Readlink."\n".
 	$Read."\n".
 	$Write."\n".
-    $Create."\n".
-    $Remove."\n".
+	$Create."\n".
+	$Remove."\n".
 	$Rename."\n".
 	$Link."\n".
 	$Symlink."\n".
@@ -152,30 +152,30 @@ print $Getattr."\n".
 	$Rmdir."\n".
 	$Readdir."\n".
 	$RdirPlus."\n".
-    $Access."\n".
+	$Access."\n".
 	$Mknod."\n".
-    $Fsstat."\n".
-    $Fsinfo."\n".
+	$Fsstat."\n".
+	$Fsinfo."\n".
 	$PathConf."\n".
-    $Commit."\n".
+	$Commit."\n".
 	$TimedOut."\n".
 	$Invalid."\n".
 	$XReplies."\n".
 	$Retries."\n".
 	$Requests."\n".
 	$AttrHits."\n".
-    $AttrMisses."\n".
+	$AttrMisses."\n".
 	$LkupHits."\n".
-    $LkupMisses."\n".
+	$LkupMisses."\n".
 	$BioRHits."\n".
 	$BioRMisses."\n".
 	$BioWHits."\n".
-    $BioWMisses."\n".
+	$BioWMisses."\n".
 	$BioRLHits."\n".
 	$BioRLMisses."\n".
 	$BioDHits."\n".
 	$BioDMisses."\n".
 	$DirEHits."\n".
-    $DirEMisses."\n".
+	$DirEMisses."\n".
 	$AccsHits."\n".
-    $AccsMisses."\n";
+	$AccsMisses."\n";
