@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Add this to snmpd.conf as below.
-# extend nvidia /root/snmp-extends/nvidia
+# extend nvidia /etc/snmp/nvidia
 
 # Please verify the following paths are correct
 nvidiasmi='/usr/bin/env nvidia-smi'
