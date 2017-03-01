@@ -1,0 +1,524 @@
+#!/usr/bin/env perl
+
+# add this to your snmpd.conf file as below
+# extend postfixdetailed /etc/snmp/postfixdetailed
+
+# The cache file to use.
+my $cache='/var/cache/postfixdetailed';
+
+# the location of pflogsumm
+my $pflogsumm='/usr/bin/env pflogsumm';
+
+#totals
+#    847   received                 = received
+#    852   delivered                = delivered
+#      0   forwarded                = forwarded
+#      3   deferred  (67  deferrals)= deferred
+#      0   bounced                  = bounced
+#    593   rejected (41%)           = rejected
+#      0   reject warnings          = rejectw
+#      0   held                     = held
+#      0   discarded (0%)           = discarded
+
+#  16899k  bytes received           = bytesr
+#  18009k  bytes delivered          = bytesd
+#    415   senders                  = senders
+#    266   sending hosts/domains    = sendinghd
+#     15   recipients               = recipients
+#      9   recipient hosts/domains  = recipienthd
+
+######message deferral detail
+#Connection refused  = deferralcr
+#Host is down  = deferralhid
+
+########message reject detail
+#Client host rejected                                     = chr
+#Helo command rejected: need fully-qualified hostname     = hcrnfqh
+#Sender address rejected: Domain not found                = sardnf
+#Sender address rejected: not owned by user               = sarnobu
+#blocked using                                            = bu
+#Recipient address rejected: User unknown                 = raruu
+#Helo command rejected: Invalid name                      = hcrin
+#Sender address rejected: need fully-qualified address    = sarnfqa
+#Recipient address rejected: Domain not found             = rardnf
+#Recipient address rejected: need fully-qualified address = rarnfqa
+#Improper use of SMTP command pipelining                  = iuscp
+#Message size exceeds fixed limit                         = msefl
+#Server configuration error                               = sce
+#Server configuration problem                             = scp
+#unknown reject reason                                    = urr
+
+my $old='';
+
+#reads in the old data if it exists
+if ( -f $cache ){
+	open(my $fh, "<", $cache) or die "Can't open '".$cache."'";
+	# if this is over 2048, something is most likely wrong
+	read($fh , $old , 2048);
+	close($fh);
+}
+
+my ( $received,
+	 $delivered,
+	 $forwarded,
+	 $deferred,
+	 $bounced,
+	 $rejected,
+	 $rejectw,
+	 $held,
+	 $discarded,
+	 $bytesr,
+	 $bytesd,
+	 $senders,
+	 $sendinghd,
+	 $recipients,
+	 $recipienthd,
+	 $deferralcr,
+	 $deferralhid,
+	 $chr,
+	 $hcrnfqh,
+	 $sardnf,
+	 $sarnobu,
+	 $bu,
+	 $raruu,
+	 $hcrin,
+	 $sarnfqa,
+	 $rardnf,
+	 $rarnfqa,
+	 $iuscp,
+	 $sce,
+	 $scp,
+	 $urr) = split ( /\n/, $old );
+
+if ( ! defined( $received ) ){ $received=0; }
+if ( ! defined( $delivered ) ){ $delivered=0; }
+if ( ! defined( $forwarded ) ){ $forwarded=0; }
+if ( ! defined( $deferred ) ){ $deferred=0; }
+if ( ! defined( $bounced ) ){ $bounced=0; }
+if ( ! defined( $rejected ) ){ $rejected=0; }
+if ( ! defined( $rejectw ) ){ $rejectw=0; }
+if ( ! defined( $held ) ){ $held=0; }
+if ( ! defined( $discarded ) ){ $discarded=0; }
+if ( ! defined( $bytesr ) ){ $bytesr=0; }
+if ( ! defined( $bytesd ) ){ $bytesd=0; }
+if ( ! defined( $senders ) ){ $senders=0; }
+if ( ! defined( $sendinghd ) ){ $sendinghd=0; }
+if ( ! defined( $recipients ) ){ $recipients=0; }
+if ( ! defined( $recipienthd ) ){ $recipienthd=0; }
+if ( ! defined( $deferralcr ) ){ $deferralcr=0; }
+if ( ! defined( $deferralhid ) ){ $deferralhid=0; }
+if ( ! defined( $chr ) ){ $chr=0; }
+if ( ! defined( $hcrnfqh ) ){ $hcrnfqh=0; }
+if ( ! defined( $sardnf ) ){ $sardnf=0; }
+if ( ! defined( $sarnobu ) ){ $sarnobu=0; }
+if ( ! defined( $bu ) ){ $bu=0; }
+if ( ! defined( $raruu ) ){ $raruu=0; }
+if ( ! defined( $hcrin ) ){ $hcrin=0; }
+if ( ! defined( $sarnfqa ) ){ $sarnfqa=0; }
+if ( ! defined( $rardnf ) ){ $rardnf=0; }
+if ( ! defined( $rarnfqa ) ){ $rarnfqa=0; }
+if ( ! defined( $iuscp ) ){ $iuscp=0; }
+if ( ! defined( $sce ) ){ $sce=0; }
+if ( ! defined( $scp ) ){ $scp=0; }
+if ( ! defined( $urr ) ){ $urr=0; }
+
+#init current variables
+my $receivedC=0;
+my $deliveredC=0;
+my $forwardedC=0;
+my $deferredC=0;
+my $bouncedC=0;
+my $rejectedC=0;
+my $rejectwC=0;
+my $heldC=0;
+my $discardedC=0;
+my $bytesrC=0;
+my $bytesdC=0;
+my $sendersC=0;
+my $sendinghdC=0;
+my $recipientsC=0;
+my $recipienthdC=0;
+my $deferralcrC=0;
+my $deferralhidC=0;
+my $chrC=0;
+my $hcrnfqhC=0;
+my $sardnfC=0;
+my $sarnobuC=0;
+my $buC=0;
+my $raruuC=0;
+my $hcrinC=0;
+my $sarnfqaC=0;
+my $rardnfC=0;
+my $rarnfqaC=0;
+my $iuscpC=0;
+my $sceC=0;
+my $scpC=0;
+my $urrC=0;
+
+sub newValue{
+	my $old=$_[0];
+	my $new=$_[1];
+
+	#if new is undefined, just default to 0... this should never happen
+	if ( !defined( $new ) ){
+		warn('New not defined');
+		return 0;
+	}
+
+	#sets it to 0 if old is not defined
+	if ( !defined( $old ) ){
+		warn('Old not defined');
+		$old=0;
+	}
+
+	#make sure they are both numberic and if not set to zero
+	if( $old !~ /^[0123456789]*$/ ){
+		warn('Old not numeric');
+		$old=0;
+	}
+	if( $new !~ /^[0123456789]*$/ ){
+		warn('New not numeric');
+		$new=0;
+	}
+
+	#log rotation happened
+	if ( $old > $new ){
+		return $new;
+	};
+	
+	return $new - $old;
+}
+
+
+my $output=`$pflogsumm /var/log/maillog`;
+
+#holds RBL values till the end when it is compared to the old one
+my $buNew=0;
+
+#holds the current values for checking later
+my $current='';
+
+my @outputA=split( /\n/, $output );
+my $int=0;
+while ( defined( $outputA[$int] ) ){
+	my $line=$outputA[$int];
+
+	$line=~s/^ *//;
+	$line=~s/ +/ /g;
+	$line=~s/\)$//;
+
+	my $handled=0;
+	
+	#received line
+	if ( ( $line =~ /[0123456789] received$/ ) && ( ! $handled ) ){
+		$line=~s/ .*//;
+		$receivedC=$line;
+		$received=newValue( $received, $line );
+		$handled=1;
+	}
+
+	#delivered line
+	if ( ( $line =~ /[0123456789] delivered$/ ) && ( ! $handled ) ){
+		$line=~s/ .*//;
+		$deliveredC=$line;
+		$delivered=newValue( $delivered, $line );
+		$handled=1;
+	}
+
+	#forward line
+	if ( ( $line =~ /[0123456789] forwarded$/ ) && ( ! $handled ) ){
+		$line=~s/ .*//;
+		$forwardedC=$line;
+		$forwarded=newValue( $forwarded, $line );
+		$handled=1;
+	}
+
+	#defereed line
+	if ( ( $line =~ /[0123456789] deferred \(/ ) && ( ! $handled ) ){
+		$line=~s/ .*//;
+		$deferredC=$line;
+		$deferred=newValue( $deferred, $line );
+		$handled=1;
+	}
+
+	#bounced line
+	if ( ( $line =~ /[0123456789] bounced$/ ) && ( ! $handled ) ){
+		$line=~s/ .*//;
+		$bouncedC=$line;
+		$bounced=newValue( $bounced, $line );
+		$handled=1;
+	}
+
+	#rejected line
+	if ( ( $line =~ /[0123456789] rejected \(/ ) && ( ! $handled ) ){
+		$line=~s/ .*//;
+		$rejectedC=$line;
+		$rejected=newValue( $rejected, $line );
+		$handled=1;
+	}
+
+	#reject warning line
+	if ( ( $line =~ /[0123456789] reject warnings/ ) && ( ! $handled ) ){
+		$line=~s/ .*//;
+		$rejectwC=$line;
+		$rejectw=newValue( $rejectw, $line );
+		$handled=1;
+	}
+
+	#held line
+	if ( ( $line =~ /[0123456789] held$/ ) && ( ! $handled ) ){
+		$line=~s/ .*//;
+		$heldC=$line;
+		$held=newValue( $held, $line );
+		$handled=1;
+	}
+
+	#discarded line
+	if ( ( $line =~ /[0123456789] discarded \(/ ) && ( ! $handled ) ){
+		$line=~s/ .*//;
+		$discardedC=$line;
+		$discarded=newValue( $discarded, $line );
+		$handled=1;
+	}
+
+	#bytes received line
+	if ( ( $line =~ /[0123456789kM] bytes received$/ ) && ( ! $handled ) ){
+		$line=~s/ .*//;
+		$line=~s/k/000/;
+		$line=~s/M/000000/;
+		$bytesrC=$line;
+		$bytesr=newValue( $bytesr, $line );
+		$handled=1;
+	}
+
+	#bytes delivered line
+	if ( ( $line =~ /[0123456789kM] bytes delivered$/ ) && ( ! $handled ) ){
+		$line=~s/ .*//;
+		$line=~s/k/000/;
+		$line=~s/M/000000/;
+		$bytesdC=$line;
+		$bytesd=newValue( $bytesd, $line );
+		$handled=1;
+	}
+
+	#senders line
+	if ( ( $line =~ /[0123456789] senders$/ ) && ( ! $handled ) ){
+		$line=~s/ .*//;
+		$sendersC=$line;
+		$senders=newValue( $senders, $line );
+		$handled=1;
+	}
+
+	#sendering hosts/domains line
+	if ( ( $line =~ /[0123456789] sending hosts\/domains$/ ) && ( ! $handled ) ){
+		$line=~s/ .*//;
+		$sendinghdC=$line;
+		$sendinghd=newValue( $sendinghd, $line );
+		$handled=1;
+	}
+
+	#recipients line
+	if ( ( $line =~ /[0123456789] recipients$/ ) && ( ! $handled ) ){
+		$line=~s/ .*//;
+		$recipientsC=$line;
+		$recipients=newValue( $recipients, $line );
+		$handled=1;
+	}
+
+	#recipients line
+	if ( ( $line =~ /[0123456789] recipient hosts\/domains$/ ) && ( ! $handled ) ){
+		$line=~s/ .*//;
+		$recipienthdC=$line;
+		$recipienthd=newValue( $recipienthd, $line );
+		$handled=1;
+	}
+
+	# deferrals connectios refused
+	if ( ( $line =~ /[0123456789] 25\: Connection refused$/ ) && ( ! $handled ) ){
+		$line=~s/ .*//;
+		$deferralcrC=$line;
+		$deferralcr=newValue( $deferralcr, $line );
+		$handled=1;
+	}
+
+	# deferrals Host is down
+	if ( ( $line =~ /Host is down$/ ) && ( ! $handled ) ){
+		$line=~s/ .*//;
+		$deferralcrC=$line;
+		$deferralcr=newValue( $deferralcr, $line );
+		$handled=1;
+	}
+
+	# Client host rejected
+	if ( ( $line =~ /Client host rejected/ ) && ( ! $handled ) ){
+		$line=~s/.*\: //g;
+		$chrC=$line;
+		$chr=newValue( $chr, $line );
+		$handled=1;
+	}
+	
+	#Helo command rejected: need fully-qualified hostname
+	if ( ( $line =~ /Helo command rejected\: need fully\-qualified hostname/ ) && ( ! $handled ) ){
+		$line=~s/.*\: //g;
+		$hcrnfqhC=$line;
+		$hcrnfqh=newValue( $hcrnfqh, $line );
+		$handled=1;
+	}
+
+	#Sender address rejected: Domain not found
+	if ( ( $line =~ /Sender address rejected\: Domain not found/ ) && ( ! $handled ) ){
+		$line=~s/.*\: //g;
+		$sardnfC=$line;
+		$sardnf=newValue( $sardnf, $line );
+		$handled=1;
+	}
+
+	#Sender address rejected: not owned by user
+	if ( ( $line =~ /Sender address rejected\: not owned by user/ ) && ( ! $handled ) ){
+		$line=~s/.*\: //g;
+		$sarnobuC=$line;
+		$sarnobu=newValue( $sarnobu, $line );
+		$handled=1;
+	}
+
+	#blocked using
+	# These lines are RBLs so there will be more than one.
+	# Use $buNew to add them all up.
+	if ( ( $line =~ /blocked using/ ) && ( ! $handled ) ){
+		$line=~s/.*\: //g;
+		$buNew=$buNew + $line;
+		$handled=1;
+	}
+
+	#Recipient address rejected: User unknown
+	if ( ( $line =~ /Recipient address rejected\: User unknown/ ) && ( ! $handled ) ){
+		$line=~s/.*\: //g;
+		$raruuC=$line;
+		$raruu=newValue( $raruu, $line );
+		$handled=1;
+	}
+
+	#Helo command rejected: Invalid name
+	if ( ( $line =~ /Helo command rejected\: Invalid name/ ) && ( ! $handled ) ){
+		$line=~s/.*\: //g;
+		$hcrinC=$line;
+		$hcrin=newValue( $hcrin, $line );
+	}
+	
+	#Sender address rejected: need fully-qualified address
+	if ( ( $line =~ /Sender address rejected\: need fully-qualified address/ ) && ( ! $handled ) ){
+		$line=~s/.*\: //g;
+		$sarnfqaC=$line;
+		$sarnfqa=newValue( $sarnfqa, $line );
+	}
+
+	#Recipient address rejected: Domain not found
+	if ( ( $line =~ /Recipient address rejected\: Domain not found/ ) && ( ! $handled ) ){
+		$line=~s/.*\: //g;
+		$rardnfC=$line;
+		$rardnf=newValue( $rardnf, $line );
+	}
+
+	#Improper use of SMTP command pipelining
+	if ( ( $line =~ /Improper use of SMTP command pipelining/ ) && ( ! $handled ) ){
+		$line=~s/.*\: //g;
+		$iuoscpC=$line;
+		$iuoscp=newValue( $iuoscp, $line );
+	}
+
+	#Message size exceeds fixed limit
+	if ( ( $line =~ /Message size exceeds fixed limit/ ) && ( ! $handled ) ){
+		$line=~s/.*\: //g;
+		$mseflC=$line;
+		$msefl=newValue( $msefl, $line );
+	}
+
+	#Server configuration error
+	if ( ( $line =~ /Server configuration error/ ) && ( ! $handled ) ){
+		$line=~s/.*\: //g;
+		$sceC=$line;
+		$sce=newValue( $sce, $line );
+	}
+
+	#Server configuration problem
+	if ( ( $line =~ /Server configuration problem/ ) && ( ! $handled ) ){
+		$line=~s/.*\: //g;
+		$scpC=$line;
+		$scp=newValue( $scp, $line );
+	}
+	
+	$int++;
+}
+
+# final RBL total
+$bu=newValue( $bu, $buNew );
+
+my $data=$received."\n".
+	$delivered."\n".
+	$forwarded."\n".
+	$deferred."\n".
+	$bounced."\n".
+	$rejected."\n".
+	$rejectw."\n".
+	$held."\n".
+	$discarded."\n".
+	$bytesr."\n".
+	$bytesd."\n".
+	$senders."\n".
+	$sendinghd."\n".
+	$recipients."\n".
+	$recipienthd."\n".
+	$deferralcr."\n".
+	$deferralhid."\n".
+	$chr."\n".
+	$hcrnfqh."\n".
+	$sardnf."\n".
+	$sarnobu."\n".
+	$bu."\n".
+	$raruu."\n".
+	$hcrin."\n".
+	$sarnfqa."\n".
+	$rardnf."\n".
+	$rarnfqa."\n".
+	$iuscp."\n".
+	$sce."\n".
+	$scp."\n".
+	$urr."\n";
+
+print $data;
+
+my $current=$receivedC."\n".
+	$deliveredC."\n".
+	$forwardedC."\n".
+	$deferredC."\n".
+	$bouncedC."\n".
+	$rejectedC."\n".
+	$rejectwC."\n".
+	$heldC."\n".
+	$discardedC."\n".
+	$bytesrC."\n".
+	$bytesdC."\n".
+	$sendersC."\n".
+	$sendinghdC."\n".
+	$recipientsC."\n".
+	$recipienthdC."\n".
+	$deferralcrC."\n".
+	$deferralhidC."\n".
+	$chrC."\n".
+	$hcrnfqhC."\n".
+	$sardnfC."\n".
+	$sarnobuC."\n".
+	$buNew."\n".
+	$raruuC."\n".
+	$hcrinC."\n".
+	$sarnfqaC."\n".
+	$rardnfC."\n".
+	$rarnfqaC."\n".
+	$iuscpC."\n".
+	$sceC."\n".
+	$scpC."\n".
+	$urrC."\n";
+
+open(my $fh, ">", $cache) or die "Can't open '".$cache."'";
+print $fh $current;
+close($fh);
