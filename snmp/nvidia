@@ -1,0 +1,39 @@
+#!/bin/sh
+
+# Add this to snmpd.conf as below.
+# extend nvidia /etc/snmps/nvidia
+
+# Please verify the following paths are correct
+nvidiasmi='/usr/bin/env nvidia-smi'
+grep='/usr/bin/env grep'
+sed='/usr/bin/env sed'
+
+##
+## Nothing below here should need touched.
+##
+
+## gpu   pwr  temp    sm   mem   enc   dec  mclk  pclk pviol tviol    fb  bar1 sbecc dbecc   pci rxpci txpci
+## Idx     W     C     %     %     %     %   MHz   MHz     %  bool    MB    MB  errs  errs  errs  MB/s  MB/s
+#    0     1    43     3     2     0     0  2700   862     0     0   462     4     -     -     0    26     3
+$nvidiasmi dmon -c 1 -s pucvmet | $grep -v ^# | $sed 's/^ *//' | $sed 's/  */,/g' | $sed 's/-/0/g'
+
+lines=`$nvidiasmi dmon -c 1 -s pucvmet | $grep -v ^# | $sed 's/^ *//' | $sed 's/  */,/g' | $sed 's/-/0/g' | wc -l`
+
+# if we are less than 5 then all GPUs were printed
+if [ $lines -lt 5 ]; then
+	exit 0;
+fi	
+
+gpu=5
+loop=1
+while [ $loop -eq 1 ]
+do
+	$nvidiasmi dmon -c 1 -i $gpu > /dev/null
+	if [ $? -eq 0 ]; then
+		$nvidiasmi dmon -c 1 -s pucvmet -i $gpu | $grep -v ^# | $sed 's/^ *//' | $sed 's/  */,/g' | $sed 's/-/0/g'
+	else
+		loop=0
+	fi
+	
+	gpu=`expr $gpu + 1`
+done
