@@ -1,0 +1,177 @@
+#!/usr/bin/env perl
+#Copyright (c) 2017, Zane C. Bowers-Hadley
+#All rights reserved.
+#
+#Redistribution and use in source and binary forms, with or without modification,
+#are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+#THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+#WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+#IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, 
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, 
+#DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+#LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+#THE POSSIBILITY OF SUCH DAMAGE.
+
+# Add this to snmpd.conf like below.
+# extend smart /etc/snmp/smart
+
+# This is the drives you want to check for.
+my @disks=(
+	'da0',
+	'da1',
+	'da2',
+	'da3',
+	'da4',
+	'da5',
+	'da6',
+	'da7',
+	'da8',
+	'da9',
+	'da10',
+	'da11',
+	'da12',
+	);
+
+# This is the path to smartctl
+my $smartctl='/usr/bin/env smartctl';
+
+##
+## Youi should not need to touch anything below here.
+##
+use warnings;
+use strict;
+
+#
+# big ones... 5,187,188,197,198
+#
+
+# items being check for...
+
+# 5 - Reallocated_Sector_Count.
+# 5 Reallocated_Sector_Ct   0x0033   100   100   010    Pre-fail  Always       -       0
+# 5 Reallocated_Sector_Ct   0x0033   021   021   036    Pre-fail  Always   FAILING_NOW 51912
+#
+#
+# 187 - Reported_Uncorrectable_Errors.
+# 187 Reported_Uncorrect      0x0032   100   100   000    Old_age   Always       -       0
+# 
+# 188 - Command_Timeout.
+# 188 Command_Timeout         0x0032   100   100   000    Old_age   Always       -       0 0 0
+#
+# 197 - Current_Pending_Sector_Count.
+# 197 Current_Pending_Sector  0x0012   100   100   000    Old_age   Always       -       0
+# 
+# 198 - Offline_Uncorrectable
+# 198 Offline_Uncorrectable   0x0010   100   100   000    Old_age   Offline      -       0
+#
+# 190 Airflow_Temperature_Cel 0x0022   070   045   045    Old_age   Always   In_the_past 30 (Min/Max 27/34)
+# 194 Temperature_Celsius     0x0022   030   055   000    Old_age   Always       -       30 (0 24 0 0 0)
+# 199 UDMA_CRC_Error_Count    0x003e   200   200   000    Old_age   Always       -       0
+# 199 CRC_Error_Count         0x003e   100   100   000    Old_age   Always       -       0
+#  10 Spin_Retry_Count        0x0013   100   100   097    Pre-fail  Always       -       0
+# 183 Runtime_Bad_Block       0x0032   100   100   000    Old_age   Always       -       0
+# 184 End-to-End_Error        0x0032   100   100   099    Old_age   Always       -       0
+# 196 Reallocated_Event_Count 0x0032   100   100   000    Old_age   Always       -       0
+# 194 Temperature_Celsius     0x0022   030   046   000    Old_age   Always       -       30 (0 22 0 0 0)
+# 183 Runtime_Bad_Block       0x0032   100   100   000    Old_age   Always       -       0
+#
+# 231 - SSD Life Left - Indicates the approximate SSD life left, in terms of program/erase cycles or Flash blocks currently available for use.
+# 233 - Media Wearout Indicator - Intel SSD reports a normalized value of 100 (when the SSD is new) and declines to a minimum value of 1. It decreases while the NAND erase cycles increase from 0 to the maximum-rated cycles.
+# 173 - SSD Wear Leveling Count - Counts the maximum worst erase count on any block.
+# 177 - Wear Range Delta - Delta between most-worn and least-worn Flash blocks. It describes how good/bad the wearleveling of the SSD works on a more technical way.
+
+my $toReturn='';
+my $int=0;
+while ( defined($disks[$int]) ) {
+	my $disk=$disks[$int];
+	my $output=`$smartctl -A /dev/$disk`;
+
+	my %IDs=( '5'=>0,
+			  '10'=>0,
+			  '173'=>0,
+			  '177'=>0,
+			  '183'=>0,
+			  '184'=>0,
+			  '187'=>0,
+			  '188'=>0,
+			  '190'=>0,
+			  '194'=>0,
+			  '196'=>0,
+			  '197'=>0,
+			  '198'=>0,
+			  '199'=>0,
+			  '231'=>0,
+			  '233'=>0,
+	);
+    
+    my @outputA=split( /\n/, $output );
+	my $outputAint=0;
+	while ( defined($outputA[$outputAint]) ) {
+		my $line=$outputA[$outputAint];
+		$line=~s/^ +//;
+		$line=~s/  +/ /g;
+
+		if ( $line =~ /^[0123456789]+ / ) {
+			my @lineA=split(/\ /, $line, 10);
+			my $raw=$lineA[9];
+			my $id=$lineA[0];
+
+			# single int raw values
+			if ( 
+				( $id == 5 ) ||
+				( $id == 10 ) ||
+				( $id == 173 ) ||
+				( $id == 177 ) ||
+				( $id == 183 ) ||
+				( $id == 184 ) ||
+				( $id == 187 ) ||
+				( $id == 198 ) ||
+				( $id == 199 ) ||
+				( $id == 231 ) ||
+				( $id == 233 )
+				) {
+				$IDs{$id}=$raw;
+			}
+
+			# 188, Command_Timeout
+			if ( $id == 188 ) {
+				my $total=0;
+				my @rawA=split( /\ /, $raw );
+				my $rawAint=0;
+				while ( defined( $rawA[$rawAint] ) ) {
+					$total=$total+$rawA[$rawAint];
+					$rawAint++;
+				}
+				
+			}
+
+			# 190, airflow temp
+			# 194, temp
+			if ( 
+				( $id == 190 ) ||
+				( $id == 194 )
+				) {
+				my ( $temp )=split(/\ /, $raw);
+				$IDs{$id}=$temp;
+			}			
+			
+		}
+
+		$outputAint++;
+	}
+
+	print $disk.','.$IDs{'5'}.','.$IDs{'10'}.','.$IDs{'173'}.','.$IDs{'177'}.','.$IDs{'183'}.','.$IDs{'184'}.','.$IDs{'187'}.','.$IDs{'188'}
+	      .','.$IDs{'190'} .','.$IDs{'194'}.','.$IDs{'196'}.','.$IDs{'197'}.','.$IDs{'198'}.','.$IDs{'199'}.','.$IDs{'231'}.','.$IDs{'233'}."\n";
+
+    $int++;
+}
