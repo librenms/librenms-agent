@@ -37,7 +37,7 @@ my @disks=(
 my $smartctl='/usr/bin/env smartctl';
 
 ##
-## Youi should not need to touch anything below here.
+## You should not need to touch anything below here.
 ##
 use warnings;
 use strict;
