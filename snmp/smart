@@ -26,20 +26,11 @@
 # extend smart /etc/snmp/smart
 
 # This is the drives you want to check for.
+# These are thier names as below /dev/.
 my @disks=(
 	'da0',
-	'da1',
-	'da2',
-	'da3',
-	'da4',
-	'da5',
-	'da6',
-	'da7',
-	'da8',
-	'da9',
-	'da10',
-	'da11',
-	'da12',
+	'sda',
+	'ada0',
 	);
 
 # This is the path to smartctl
