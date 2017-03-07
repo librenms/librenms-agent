@@ -1,13 +1,14 @@
+#!/usr/bin/env php
 <?php
-
-// MYSQL Check - FIXME
-// 1 UNKNOWN
+# Add this to your snmpd.conf as below and then verify the user/pass/host are correct below.
+# extend mysql /etc/snmp/mysql_stats.php
+#
+# If you want it to just connect as the user running snmpd locally, set it as below.
+# $mysql_user = '';
+# $mysql_pass = '';
+# $mysql_host = '';
 
 # ============================================================================
-# This is a script to retrieve information from a MySQL server for input to a
-# Cacti graphing process.  It is hosted at
-# http://code.google.com/p/mysql-cacti-templates/.
-#
 # This program is copyright (c) 2007 Baron Schwartz. Feedback and improvements
 # are welcome.
 #
@@ -37,14 +38,7 @@ if (!array_key_exists('SCRIPT_FILENAME', $_SERVER)
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-# Define MySQL connection constants in config.php.  Arguments explicitly passed
-# in from Cacti will override these.  However, if you leave them blank in Cacti
-# and set them here, you can make life easier.  Instead of defining parameters
-# here, you can define them in another file named the same as this file, with a
-# .cnf extension.
-# ============================================================================
 
-# FIXME: why are these not taken from config.php?
 $mysql_user = 'librenms';
 $mysql_pass = 'flobblelibrenms';
 $mysql_host = 'localhost';
