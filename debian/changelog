@@ -1,4 +1,4 @@
-librenms-agent (1.0.67) stable; urgency=low
+librenms-agent (1.0.7) stable; urgency=low
 
   - New upstream versions
   - Enable IPv6 for Xinetd
