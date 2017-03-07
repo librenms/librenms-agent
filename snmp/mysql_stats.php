@@ -39,9 +39,9 @@ if (!array_key_exists('SCRIPT_FILENAME', $_SERVER)
 # CONFIGURATION
 # ============================================================================
 
-$mysql_user = 'librenms';
-$mysql_pass = 'flobblelibrenms';
-$mysql_host = 'localhost';
+$mysql_user = '';
+$mysql_pass = '';
+$mysql_host = '';
 $mysql_port = 3306;
 $mysql_ssl  = FALSE;   # Whether to use SSL to connect to MySQL.
 
