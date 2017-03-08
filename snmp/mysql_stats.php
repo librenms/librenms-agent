@@ -3,12 +3,8 @@
 # Add this to your snmpd.conf as below and then verify the user/pass/host are correct below.
 # extend mysql /etc/snmp/mysql_stats.php
 #
-# Enter the correct information to connect to your mysql server here.
-$mysql_user = 'root';
-$mysql_pass = '';
-$mysql_host = 'localhost';
-$mysql_port = 3306;
-$mysql_ssl  = FALSE;   # Whether to use SSL to connect to MySQL.
+# Enter the correct information to connect to your mysql server in mysql.cnf or below.
+
 
 # ============================================================================
 # This program is copyright (c) 2007 Baron Schwartz. Feedback and improvements
@@ -41,6 +37,11 @@ if (!array_key_exists('SCRIPT_FILENAME', $_SERVER)
 # CONFIGURATION
 # ============================================================================
 
+$mysql_user = 'root';
+$mysql_pass = '';
+$mysql_host = 'localhost';
+$mysql_port = 3306;
+$mysql_ssl  = FALSE;   # Whether to use SSL to connect to MySQL.
 $heartbeat  = '';      # db.tbl in case you use mk-heartbeat from Maatkit.
 $cache_dir  = '/tmp';  # If set, this uses caching to avoid multiple calls.
 $poll_time  = 300;     # Adjust to match your polling interval.
