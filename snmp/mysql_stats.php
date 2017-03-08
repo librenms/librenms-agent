@@ -6,7 +6,7 @@
 # If you want it to just connect as the user running snmpd locally, set it as below.
 # $mysql_user = '';
 # $mysql_pass = '';
-# $mysql_host = '';
+# $mysql_host = 'localhost';
 
 # ============================================================================
 # This program is copyright (c) 2007 Baron Schwartz. Feedback and improvements
