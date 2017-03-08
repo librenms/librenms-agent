@@ -1,7 +1,7 @@
 #!/usr/bin/env php
 <?php
 # Add this to your snmpd.conf as below and then verify the user/pass/host are correct below.
-# extend mysql /etc/snmp/mysql_stats.php
+# extend mysql /etc/snmp/mysql
 #
 # Enter the correct information to connect to your mysql server in mysql.cnf or below.
 
