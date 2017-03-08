@@ -1,13 +1,12 @@
+#!/usr/bin/env php
 <?php
+# Add this to your snmpd.conf as below and then verify the user/pass/host are correct below.
+# extend mysql /etc/snmp/mysql_stats.php
+#
+# Enter the correct information to connect to your mysql server in mysql.cnf or below.
 
-// MYSQL Check - FIXME
-// 1 UNKNOWN
 
 # ============================================================================
-# This is a script to retrieve information from a MySQL server for input to a
-# Cacti graphing process.  It is hosted at
-# http://code.google.com/p/mysql-cacti-templates/.
-#
 # This program is copyright (c) 2007 Baron Schwartz. Feedback and improvements
 # are welcome.
 #
@@ -37,20 +36,12 @@ if (!array_key_exists('SCRIPT_FILENAME', $_SERVER)
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-# Define MySQL connection constants in config.php.  Arguments explicitly passed
-# in from Cacti will override these.  However, if you leave them blank in Cacti
-# and set them here, you can make life easier.  Instead of defining parameters
-# here, you can define them in another file named the same as this file, with a
-# .cnf extension.
-# ============================================================================
 
-# FIXME: why are these not taken from config.php?
-$mysql_user = 'librenms';
-$mysql_pass = 'flobblelibrenms';
+$mysql_user = 'root';
+$mysql_pass = '';
 $mysql_host = 'localhost';
 $mysql_port = 3306;
 $mysql_ssl  = FALSE;   # Whether to use SSL to connect to MySQL.
-
 $heartbeat  = '';      # db.tbl in case you use mk-heartbeat from Maatkit.
 $cache_dir  = '/tmp';  # If set, this uses caching to avoid multiple calls.
 $poll_time  = 300;     # Adjust to match your polling interval.
