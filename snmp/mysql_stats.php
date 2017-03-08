@@ -4,8 +4,8 @@
 # extend mysql /etc/snmp/mysql_stats.php
 #
 # If you want it to just connect as the user running snmpd locally, set it as below.
-# $mysql_user = '';
-# $mysql_pass = '';
+# $mysql_user = 'username';
+# $mysql_pass = 'password';
 # $mysql_host = 'localhost';
 
 # ============================================================================
@@ -39,9 +39,9 @@ if (!array_key_exists('SCRIPT_FILENAME', $_SERVER)
 # CONFIGURATION
 # ============================================================================
 
-$mysql_user = '';
+$mysql_user = 'root';
 $mysql_pass = '';
-$mysql_host = '';
+$mysql_host = 'localhost';
 $mysql_port = 3306;
 $mysql_ssl  = FALSE;   # Whether to use SSL to connect to MySQL.
 
