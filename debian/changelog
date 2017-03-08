@@ -1,3 +1,10 @@
+librenms-agent (1.0.7) stable; urgency=low
+
+  - New upstream versions
+  - Enable IPv6 for Xinetd
+
+ -- Mark Schouten <mark@tuxis.nl> Wed, 08 Mar 2017 00:36:00 +0200
+
 librenms-agent (1.0.6) stable; urgency=low
 
   - Fix a dirty hack to prevent failing of stats when the cluster is rebuilding
