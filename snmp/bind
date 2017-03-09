@@ -1,0 +1,72 @@
+#!/usr/bin/env perl
+#Copyright (c) 2017, Zane C. Bowers-Hadley
+#All rights reserved.
+#
+#Redistribution and use in source and binary forms, with or without modification,
+#are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+#THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+#WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+#IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, 
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, 
+#DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+#LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+#THE POSSIBILITY OF SUCH DAMAGE.
+
+# Add this to snmpd.conf as below
+# extend bind /etc/snmp/bind
+
+#make sure this points to your named stats file
+my $stats_file='/var/run/named/stats';
+
+# This is the location of the rndc program
+my $rndc='/usr/bin/env rndc';
+
+# If you wish to call rndc or not. In general you don't need to touch this.
+# If you have netdata polling as well, you may want to set this to 0;
+my $call_rndc=1;
+
+##
+## You should not need to touch anything below here.
+##
+
+use strict;
+use warnings;
+use File::ReadBackwards;
+
+# call rndc if needed and die if it failes
+if ( $call_rndc ){
+	system($rndc.' stats');
+	if ( $? != 0 ){
+		die ("'$rndc stats' failed with a system return value of $?");
+	}
+}
+
+my $bw=File::ReadBackwards->new( $stats_file ) or
+	die( "con't read '$stats_file': $!" );
+
+#read backwards till we find the start of the last stats entry
+my $read=1;
+my $data='';
+until (
+	($bw->eof) ||
+	( ! $read )
+	){
+	my $new_line=$bw->readline;
+	$data=$new_line.$data;
+	
+	if ($new_line =~ /^\+\+\+\ Statistics\ Dump\ \+\+\+/){
+		$read=0;
+	}
+}
+
+print $data;
