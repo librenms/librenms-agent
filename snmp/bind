@@ -56,17 +56,586 @@ my $bw=File::ReadBackwards->new( $stats_file ) or
 
 #read backwards till we find the start of the last stats entry
 my $read=1;
-my $data='';
+my @data;
 until (
 	($bw->eof) ||
 	( ! $read )
 	){
+
 	my $new_line=$bw->readline;
-	$data=$new_line.$data;
+	$data[$#data++]=$new_line;
 	
 	if ($new_line =~ /^\+\+\+\ Statistics\ Dump\ \+\+\+/){
 		$read=0;
 	}
 }
 
-print $data;
+my %incoming=(
+	'A'=>0,
+	'AAAA'=>0,
+	'AFSDB'=>0,
+	'APL'=>0,
+	'CAA'=>0,
+	'CDNSKEY'=>0,
+	'CDS'=>0,
+	'CERT'=>0,
+	'CNAME'=>0,
+	'DHCID'=>0,
+	'DLV'=>0,
+	'DNSKEY'=>0,
+	'DS'=>0,
+	'IPSECKEY'=>0,
+	'KEY'=>0,
+	'KX'=>0,
+	'LOC'=>0,
+	'MX'=>0,
+	'NAPTR'=>0,
+	'NS'=>0,
+	'NSEC'=>0,
+	'NSEC3'=>0,
+	'NSEC3PARAM'=>0,
+	'PTR'=>0,
+	'RRSIG'=>0,
+	'RP'=>0,
+	'SIG'=>0,
+	'SOA'=>0,
+	'SRV'=>0,
+	'SSHFP'=>0,
+	'TA'=>0,
+	'TKEY'=>0,
+	'TLSA'=>0,
+	'TSIG'=>0,
+	'TXT'=>0,
+	'URI'=>0,
+	'DNAME'=>0,
+	);
+
+my %outgoing=(
+	'A'=>0,
+	'AAAA'=>0,
+	'AFSDB'=>0,
+	'APL'=>0,
+	'CAA'=>0,
+	'CDNSKEY'=>0,
+	'CDS'=>0,
+	'CERT'=>0,
+	'CNAME'=>0,
+	'DHCID'=>0,
+	'DLV'=>0,
+	'DNSKEY'=>0,
+	'DS'=>0,
+	'IPSECKEY'=>0,
+	'KEY'=>0,
+	'KX'=>0,
+	'LOC'=>0,
+	'MX'=>0,
+	'NAPTR'=>0,
+	'NS'=>0,
+	'NSEC'=>0,
+	'NSEC3'=>0,
+	'NSEC3PARAM'=>0,
+	'PTR'=>0,
+	'RRSIG'=>0,
+	'RP'=>0,
+	'SIG'=>0,
+	'SOA'=>0,
+	'SRV'=>0,
+	'SSHFP'=>0,
+	'TA'=>0,
+	'TKEY'=>0,
+	'TLSA'=>0,
+	'TSIG'=>0,
+	'TXT'=>0,
+	'URI'=>0,
+	'DNAME'=>0,
+	);
+
+my %server=(
+	'IPv4 requests received'=>0,
+	'IPv6 requests received'=>0,
+	'requests with EDNS(0) received'=>0,
+	'TCP requests received'=>0,
+	'auth queries rejected'=>0,
+	'recursive queries rejected'=>0,
+	'responses sent'=>0,
+	'truncated responses sent'=>0,
+	'responses with EDNS(0) sent'=>0,
+	'queries resulted in successful answer'=>0,
+	'queries resulted in authoritative answer'=>0,
+	'queries resulted in non authoritative answer'=>0,
+	'queries resulted in nxrrset'=>0,
+	'queries resulted in SERVFAIL'=>0,
+	'queries resulted in NXDOMAIN'=>0,
+	'queries caused recursion'=>0,
+	'duplicate queries received'=>0,
+	'other query failures'=>0,
+	'UDP queries received'=>0,
+	'TCP queries received'=>0,
+	'Other EDNS option received'=>0,
+	);
+
+my %resolver=(
+	'IPv4 queries sent'=>0,
+	'IPv6 queries sent'=>0,
+	'IPv4 responses received'=>0,
+	'NXDOMAIN received'=>0,
+	'SERVFAIL received'=>0,
+	'FORMERR received'=>0,
+	'EDNS(0) query failures'=>0,
+	'truncated responses received'=>0,
+	'lame delegations received'=>0,
+	'query retries'=>0,
+	'query timeouts'=>0,
+	'IPv4 NS address fetches'=>0,
+	'IPv6 NS address fetches'=>0,
+	'IPv4 NS address fetch failed'=>0,
+	'IPv6 NS address fetch failed'=>0,
+	'queries with RTT < 10ms'=>0,
+	'queries with RTT 10-100ms'=>0,
+	'queries with RTT 100-500ms'=>0,
+	'queries with RTT 500-800ms'=>0,
+	'queries with RTT 800-1600ms'=>0,
+	'queries with RTT > 1600ms'=>0,
+	'bucket size'=>0,
+	'REFUSED received'=>0
+	);
+
+my %cache=(
+	'cache hits'=>0,
+	'cache misses'=>0,
+	'cache hits (from query)'=>0,
+	'cache misses (from query)'=>0,
+	'cache records deleted due to memory exhaustion'=>0,
+	'cache records deleted due to TTL expiration'=>0,
+	'cache database nodes'=>0,
+	'cache database hash buckets'=>0,
+	'cache tree memory total'=>0,
+	'cache tree memory in use'=>0,
+	'cache tree highest memory in use'=>0,
+	'cache heap memory total'=>0,
+	'cache heap memory in use'=>0,
+	'cache heap highest memory in use'=>0,
+	);
+
+my %RRsets=(
+	'A'=>0,
+	'AAAA'=>0,
+	'AFSDB'=>0,
+	'APL'=>0,
+	'CAA'=>0,
+	'CDNSKEY'=>0,
+	'CDS'=>0,
+	'CERT'=>0,
+	'CNAME'=>0,
+	'DHCID'=>0,
+	'DLV'=>0,
+	'DNSKEY'=>0,
+	'DS'=>0,
+	'IPSECKEY'=>0,
+	'KEY'=>0,
+	'KX'=>0,
+	'LOC'=>0,
+	'MX'=>0,
+	'NAPTR'=>0,
+	'NS'=>0,
+	'NSEC'=>0,
+	'NSEC3'=>0,
+	'NSEC3PARAM'=>0,
+	'PTR'=>0,
+	'RRSIG'=>0,
+	'RP'=>0,
+	'SIG'=>0,
+	'SOA'=>0,
+	'SRV'=>0,
+	'SSHFP'=>0,
+	'TA'=>0,
+	'TKEY'=>0,
+	'TLSA'=>0,
+	'TSIG'=>0,
+	'TXT'=>0,
+	'URI'=>0,
+	'DNAME'=>0,
+	'NXDOMAIN'=>0,
+	'!A'=>0,
+	'!AAAA'=>0,
+	'!AFSDB'=>0,
+	'!APL'=>0,
+	'!CAA'=>0,
+	'!CDNSKEY'=>0,
+	'!CDS'=>0,
+	'!CERT'=>0,
+	'!CNAME'=>0,
+	'!DHCID'=>0,
+	'!DLV'=>0,
+	'!DNSKEY'=>0,
+	'!DS'=>0,
+	'!IPSECKEY'=>0,
+	'!KEY'=>0,
+	'!KX'=>0,
+	'!LOC'=>0,
+	'!MX'=>0,
+	'!NAPTR'=>0,
+	'!NS'=>0,
+	'!NSEC'=>0,
+	'!NSEC3'=>0,
+	'!NSEC3PARAM'=>0,
+	'!PTR'=>0,
+	'!RRSIG'=>0,
+	'!RP'=>0,
+	'!SIG'=>0,
+	'!SOA'=>0,
+	'!SRV'=>0,
+	'!SSHFP'=>0,
+	'!TA'=>0,
+	'!TKEY'=>0,
+	'!TLSA'=>0,
+	'!TSIG'=>0,
+	'!TXT'=>0,
+	'!URI'=>0,
+	'!DNAME'=>0,
+	'!NXDOMAIN'=>0,
+	);
+
+my %ADB=(
+	'Address hash table size'=>0,
+	'Addresses in hash table'=>0,
+	'Name hash table size'=>0,
+	'Names in hash table'=>0,
+	);
+
+my %sockets=(
+	'UDP/IPv4 sockets opened'=>0,
+	'UDP/IPv6 sockets opened'=>0,
+	'TCP/IPv4 sockets opened'=>0,
+	'TCP/IPv6 sockets opened'=>0,
+	'Raw sockets opened'=>0,
+	'UDP/IPv4 sockets closed'=>0,
+	'UDP/IPv6 sockets closed'=>0,
+	'TCP/IPv4 sockets closed'=>0,
+	'TCP/IPv6 sockets closed'=>0,
+	'UDP/IPv4 socket bind failures'=>0,
+	'TCP/IPv4 socket bind failures'=>0,
+	'UDP/IPv6 socket bind failures'=>0,
+	'TCP/IPv6 socket bind failures'=>0,
+	'UDP/IPv4 socket connect failures'=>0,
+	'TCP/IPv4 socket connect failures'=>0,
+	'UDP/IPv6 socket connect failures'=>0,
+	'TCP/IPv6 socket connect failures'=>0,
+	'UDP/IPv4 connections established'=>0,
+	'TCP/IPv4 connections established'=>0,
+	'UDP/IPv6 connections established'=>0,
+	'TCP/IPv6 connections established'=>0,
+	'TCP/IPv4 connections accepted'=>0,
+	'UDP/IPv4 send errors'=>0,
+	'TCP/IPv4 send errors'=>0,
+	'UDP/IPv6 send errors'=>0,
+	'TCP/IPv6 send errors'=>0,
+	'UDP/IPv4 recv errors'=>0,
+	'UDP/IPv4 sockets active'=>0,
+	'UDP/IPv6 sockets active'=>0,
+	'TCP/IPv4 sockets active'=>0,
+	'TCP/IPv6 sockets active'=>0,
+	'Raw sockets active'=>0,
+	);
+
+my $int=$#data-1;
+my $section='';
+while ( defined( $data[$int] ) ){
+	my $line=$data[$int];
+	my $done=0;
+	
+	if ( $line =~ /^\+\+\ Incoming\ Queries\ \+\+/ ){
+		$section='incoming';
+		$done=1;
+	}elsif( $line =~ /\+\+\ Outgoing\ Queries\ \+\+/ ){
+		$section='outgoing';
+		$done=1;
+	}elsif( $line =~ /^\+\+\ Name\ Server\ Statistics\ \+\+/ ){
+		$section='server';
+		$done=1;
+	}elsif( $line =~ /^\+\+\ Resolver\ Statistics\ \+\+/ ){
+		$section='resolver';
+		$done=1;
+	}elsif( $line =~ /^\+\+\ Cache\ Statistics\ \+\+/ ){
+		$section='cache';
+		$done=1;
+	}elsif( $line =~ /^\+\+\ Cache\ DB\ RRsets\ \+\+/ ){
+		$section='RRsets';
+		$done=1;
+	}elsif( $line =~ /^\+\+\ ADB\ stats\ \+\+/ ){
+		$section='ADB';
+		$done=1;
+	}elsif( $line =~ /^\+\+\ Socket\ I\/O\ Statistics\ \+\+/ ){
+		$section='sockets';
+		$done=1;
+	}elsif( $line =~ /^\[/ ){
+		$done=1;
+	}elsif( $line !~ /^[\s\t]/){
+		$section='';
+	}
+
+	if (
+		( $section ne '' ) && 
+		( ! $done )
+		) {
+		$line=~s/^[\t\s]+//;
+		chomp($line);
+		my ( $count, $type )=split(/ /, $line, 2);
+		my $to_eval='$'.$section.'{$type}=$'.$section.'{$type}+$count;';
+		eval( $to_eval );
+	}
+
+	$int--;
+}
+
+print $incoming{'A'}.','.
+	$incoming{'AAAA'}.','.
+	$incoming{'AFSDB'}.','.
+	$incoming{'APL'}.','.
+	$incoming{'CAA'}.','.
+	$incoming{'CDNSKEY'}.','.
+	$incoming{'CDS'}.','.
+	$incoming{'CERT'}.','.
+	$incoming{'CNAME'}.','.
+	$incoming{'DHCID'}.','.
+	$incoming{'DLV'}.','.
+	$incoming{'DNSKEY'}.','.
+	$incoming{'DS'}.','.
+	$incoming{'IPSECKEY'}.','.
+	$incoming{'KEY'}.','.
+	$incoming{'KX'}.','.
+	$incoming{'LOC'}.','.
+	$incoming{'MX'}.','.
+	$incoming{'NAPTR'}.','.
+	$incoming{'NS'}.','.
+	$incoming{'NSEC'}.','.
+	$incoming{'NSEC3'}.','.
+	$incoming{'NSEC3PARAM'}.','.
+	$incoming{'PTR'}.','.
+	$incoming{'RRSIG'}.','.
+	$incoming{'RP'}.','.
+	$incoming{'SIG'}.','.
+	$incoming{'SOA'}.','.
+	$incoming{'SRV'}.','.
+	$incoming{'SSHFP'}.','.
+	$incoming{'TA'}.','.
+	$incoming{'TKEY'}.','.
+	$incoming{'TLSA'}.','.
+	$incoming{'TSIG'}.','.
+	$incoming{'TXT'}.','.
+	$incoming{'URI'}.','.
+	$incoming{'DNAME'}."\n";
+
+print $outgoing{'A'}.','.
+	$outgoing{'AAAA'}.','.
+	$outgoing{'AFSDB'}.','.
+	$outgoing{'APL'}.','.
+	$outgoing{'CAA'}.','.
+	$outgoing{'CDNSKEY'}.','.
+	$outgoing{'CDS'}.','.
+	$outgoing{'CERT'}.','.
+	$outgoing{'CNAME'}.','.
+	$outgoing{'DHCID'}.','.
+	$outgoing{'DLV'}.','.
+	$outgoing{'DNSKEY'}.','.
+	$outgoing{'DS'}.','.
+	$outgoing{'IPSECKEY'}.','.
+	$outgoing{'KEY'}.','.
+	$outgoing{'KX'}.','.
+	$outgoing{'LOC'}.','.
+	$outgoing{'MX'}.','.
+	$outgoing{'NAPTR'}.','.
+	$outgoing{'NS'}.','.
+	$outgoing{'NSEC'}.','.
+	$outgoing{'NSEC3'}.','.
+	$outgoing{'NSEC3PARAM'}.','.
+	$outgoing{'PTR'}.','.
+	$outgoing{'RRSIG'}.','.
+	$outgoing{'RP'}.','.
+	$outgoing{'SIG'}.','.
+	$outgoing{'SOA'}.','.
+	$outgoing{'SRV'}.','.
+	$outgoing{'SSHFP'}.','.
+	$outgoing{'TA'}.','.
+	$outgoing{'TKEY'}.','.
+	$outgoing{'TLSA'}.','.
+	$outgoing{'TSIG'}.','.
+	$outgoing{'TXT'}.','.
+	$outgoing{'URI'}.','.
+	$outgoing{'DNAME'}."\n";
+
+print $server{'IPv4 requests received'}.','.
+	$server{'IPv6 requests received'}.','.
+	$server{'requests with EDNS(0) received'}.','.
+	$server{'TCP requests received'}.','.
+	$server{'auth queries rejected'}.','.
+	$server{'recursive queries rejected'}.','.
+	$server{'responses sent'}.','.
+	$server{'truncated responses sent'}.','.
+	$server{'responses with EDNS(0) sent'}.','.
+	$server{'queries resulted in successful answer'}.','.
+	$server{'queries resulted in authoritative answer'}.','.
+	$server{'queries resulted in non authoritative answer'}.','.
+	$server{'queries resulted in nxrrset'}.','.
+	$server{'queries resulted in SERVFAIL'}.','.
+	$server{'queries resulted in NXDOMAIN'}.','.
+	$server{'queries caused recursion'}.','.
+	$server{'duplicate queries received'}.','.
+	$server{'other query failures'}.','.
+	$server{'UDP queries received'}.','.
+	$server{'TCP queries received'}.','.
+	$server{'Other EDNS option received'}."\n";
+
+print $resolver{'IPv4 queries sent'}.','.
+	$resolver{'IPv6 queries sent'}.','.
+	$resolver{'IPv4 responses received'}.','.
+	$resolver{'NXDOMAIN received'}.','.
+	$resolver{'SERVFAIL received'}.','.
+	$resolver{'FORMERR received'}.','.
+	$resolver{'EDNS(0) query failures'}.','.
+	$resolver{'truncated responses received'}.','.
+	$resolver{'lame delegations received'}.','.
+	$resolver{'query retries'}.','.
+	$resolver{'query timeouts'}.','.
+	$resolver{'IPv4 NS address fetches'}.','.
+	$resolver{'IPv6 NS address fetches'}.','.
+	$resolver{'IPv4 NS address fetch failed'}.','.
+	$resolver{'IPv6 NS address fetch failed'}.','.
+	$resolver{'queries with RTT < 10ms'}.','.
+	$resolver{'queries with RTT 10-100ms'}.','.
+	$resolver{'queries with RTT 100-500ms'}.','.
+	$resolver{'queries with RTT 500-800ms'}.','.
+	$resolver{'queries with RTT 800-1600ms'}.','.
+	$resolver{'queries with RTT > 1600ms'}.','.
+	$resolver{'bucket size'}.','.
+	$resolver{'REFUSED received'}."\n";
+
+print $cache{'cache hits'}.','.
+	$cache{'cache misses'}.','.
+	$cache{'cache hits (from query)'}.','.
+	$cache{'cache misses (from query)'}.','.
+	$cache{'cache records deleted due to memory exhaustion'}.','.
+	$cache{'cache records deleted due to TTL expiration'}.','.
+	$cache{'cache database nodes'}.','.
+	$cache{'cache database hash buckets'}.','.
+	$cache{'cache tree memory total'}.','.
+	$cache{'cache tree memory in use'}.','.
+	$cache{'cache tree highest memory in use'}.','.
+	$cache{'cache heap memory total'}.','.
+	$cache{'cache heap memory in use'}.','.
+	$cache{'cache heap highest memory in use'}."\n";
+
+print $RRsets{'A'}.','.
+	$RRsets{'AAAA'}.','.
+	$RRsets{'AFSDB'}.','.
+	$RRsets{'APL'}.','.
+	$RRsets{'CAA'}.','.
+	$RRsets{'CDNSKEY'}.','.
+	$RRsets{'CDS'}.','.
+	$RRsets{'CERT'}.','.
+	$RRsets{'CNAME'}.','.
+	$RRsets{'DHCID'}.','.
+	$RRsets{'DLV'}.','.
+	$RRsets{'DNSKEY'}.','.
+	$RRsets{'DS'}.','.
+	$RRsets{'IPSECKEY'}.','.
+	$RRsets{'KEY'}.','.
+	$RRsets{'KX'}.','.
+	$RRsets{'LOC'}.','.
+	$RRsets{'MX'}.','.
+	$RRsets{'NAPTR'}.','.
+	$RRsets{'NS'}.','.
+	$RRsets{'NSEC'}.','.
+	$RRsets{'NSEC3'}.','.
+	$RRsets{'NSEC3PARAM'}.','.
+	$RRsets{'PTR'}.','.
+	$RRsets{'RRSIG'}.','.
+	$RRsets{'RP'}.','.
+	$RRsets{'SIG'}.','.
+	$RRsets{'SOA'}.','.
+	$RRsets{'SRV'}.','.
+	$RRsets{'SSHFP'}.','.
+	$RRsets{'TA'}.','.
+	$RRsets{'TKEY'}.','.
+	$RRsets{'TLSA'}.','.
+	$RRsets{'TSIG'}.','.
+	$RRsets{'TXT'}.','.
+	$RRsets{'URI'}.','.
+	$RRsets{'DNAME'}.','.
+	$RRsets{'NXDOMAIN'}.','.
+	$RRsets{'!A'}.','.
+	$RRsets{'!AAAA'}.','.
+	$RRsets{'!AFSDB'}.','.
+	$RRsets{'!APL'}.','.
+	$RRsets{'!CAA'}.','.
+	$RRsets{'!CDNSKEY'}.','.
+	$RRsets{'!CDS'}.','.
+	$RRsets{'!CERT'}.','.
+	$RRsets{'!CNAME'}.','.
+	$RRsets{'!DHCID'}.','.
+	$RRsets{'!DLV'}.','.
+	$RRsets{'!DNSKEY'}.','.
+	$RRsets{'!DS'}.','.
+	$RRsets{'!IPSECKEY'}.','.
+	$RRsets{'!KEY'}.','.
+	$RRsets{'!KX'}.','.
+	$RRsets{'!LOC'}.','.
+	$RRsets{'!MX'}.','.
+	$RRsets{'!NAPTR'}.','.
+	$RRsets{'!NS'}.','.
+	$RRsets{'!NSEC'}.','.
+	$RRsets{'!NSEC3'}.','.
+	$RRsets{'!NSEC3PARAM'}.','.
+	$RRsets{'!PTR'}.','.
+	$RRsets{'!RRSIG'}.','.
+	$RRsets{'!RP'}.','.
+	$RRsets{'!SIG'}.','.
+	$RRsets{'!SOA'}.','.
+	$RRsets{'!SRV'}.','.
+	$RRsets{'!SSHFP'}.','.
+	$RRsets{'!TA'}.','.
+	$RRsets{'!TKEY'}.','.
+	$RRsets{'!TLSA'}.','.
+	$RRsets{'!TSIG'}.','.
+	$RRsets{'!TXT'}.','.
+	$RRsets{'!URI'}.','.
+	$RRsets{'!DNAME'}.','.
+	$RRsets{'!NXDOMAIN'}."\n";
+
+print $ADB{'Address hash table size'}.','.
+	$ADB{'Addresses in hash table'}.','.
+	$ADB{'Name hash table size'}.','.
+	$ADB{'Names in hash table'}."\n";
+
+print $sockets{'UDP/IPv4 sockets opened'}.','.
+	$sockets{'UDP/IPv6 sockets opened'}.','.
+	$sockets{'TCP/IPv4 sockets opened'}.','.
+	$sockets{'TCP/IPv6 sockets opened'}.','.
+	$sockets{'Raw sockets opened'}.','.
+	$sockets{'UDP/IPv4 sockets closed'}.','.
+	$sockets{'UDP/IPv6 sockets closed'}.','.
+	$sockets{'TCP/IPv4 sockets closed'}.','.
+	$sockets{'TCP/IPv6 sockets closed'}.','.
+	$sockets{'UDP/IPv4 socket bind failures'}.','.
+	$sockets{'TCP/IPv4 socket bind failures'}.','.
+	$sockets{'UDP/IPv6 socket bind failures'}.','.
+	$sockets{'TCP/IPv6 socket bind failures'}.','.
+	$sockets{'UDP/IPv4 socket connect failures'}.','.
+	$sockets{'TCP/IPv4 socket connect failures'}.','.
+	$sockets{'UDP/IPv6 socket connect failures'}.','.
+	$sockets{'TCP/IPv6 socket connect failures'}.','.
+	$sockets{'UDP/IPv4 connections established'}.','.
+	$sockets{'TCP/IPv4 connections established'}.','.
+	$sockets{'UDP/IPv6 connections established'}.','.
+	$sockets{'TCP/IPv6 connections established'}.','.
+	$sockets{'TCP/IPv4 connections accepted'}.','.
+	$sockets{'UDP/IPv4 send errors'}.','.
+	$sockets{'TCP/IPv4 send errors'}.','.
+	$sockets{'UDP/IPv6 send errors'}.','.
+	$sockets{'TCP/IPv6 send errors'}.','.
+	$sockets{'UDP/IPv4 recv errors'}.','.
+	$sockets{'UDP/IPv4 sockets active'}.','.
+	$sockets{'UDP/IPv6 sockets active'}.','.
+	$sockets{'TCP/IPv4 sockets active'}.','.
+	$sockets{'TCP/IPv6 sockets active'}.','.
+	$sockets{'Raw sockets active'}."\n";
