@@ -50,7 +50,9 @@ The variables are as below.
 
     cache = The path to the cache file to use. Default: /var/cache/smart
     smartctl = The path to use for smartctl. Default: /usr/bin/env smartctl
-    
+
+If you want to guess at the configuration, call it with -g and it will print out what it thinks
+it should be.    
 
 =cut
 
@@ -74,12 +76,85 @@ sub main::VERSION_MESSAGE {
 sub main::HELP_MESSAGE {
 	print "\n".
 		"-u   Update '".$cache."'\n".
+		"-g   Guess at the config and print it to STDOUT.\n".
 		"-c <config>   The config file to use.\n";
 }
 
 #gets the options
 my %opts=();
-getopts('uc:', \%opts);
+getopts('ugc:', \%opts);
+
+# guess if asked
+if ( defined( $opts{g} ) ){
+
+	#get what path to use for smartctl
+	$smartctl=`which smartctl`;
+	chomp($smartctl);
+	if ( $? != 0 ){
+		warn("'which smartctl' failed with a exit code of $?");
+		exit 1;
+	}
+
+	#try to touch the default cache location and warn if it can't be done
+	system('touch '.$cache.'>/dev/null');
+	if ( $? != 0 ){
+		$cache='#Could not touch '.$cache. "You will need to manually set it\n".
+			"cache=?\n";
+	}else{
+		$cache='cache='.$cache."\n";
+	}
+
+	#check for drives named /dev/sd*
+	my @matches=glob('/dev/sd*');
+	grep(!/[0-9]/, @matches);
+	my $matches_int=0;
+	while ( defined( $matches[$matches_int] ) ){
+		my $device=$matches[$matches_int];
+		system( $smartctl.' -A '.$device.' > /dev/null' );
+		if ( $? == 0 ){
+			$device =~ s/\/dev\///;
+			push( @disks, $device );
+		}
+		
+		$matches_int++;
+	}
+
+	#check for drives named /dev/ada*
+	@matches=glob('/dev/ada*');
+	grep(!/[ps]/, @matches);
+	$matches_int=0;
+	while ( defined( $matches[$matches_int] ) ){
+		my $device=$matches[$matches_int];
+		system( $smartctl.' -A '.$device.' > /dev/null' );
+		if ( $? == 0 ){
+			$device =~ s/\/dev\///;
+			push( @disks, $device );
+		}
+		
+		$matches_int++;
+	}
+
+	#check for drives named /dev/da*
+	@matches=glob('/dev/da*');
+	grep(!/[ps]/, @matches);
+	$matches_int=0;
+	while ( defined( $matches[$matches_int] ) ){
+		my $device=$matches[$matches_int];
+		system( $smartctl.' -A '.$device.' > /dev/null' );
+		if ( $? == 0 ){
+			$device =~ s/\/dev\///;
+			push( @disks, $device );
+		}
+		
+		$matches_int++;
+	}
+	
+	print 'smartctl='.$smartctl."\n".
+		$cache.
+		join( "\n", @disks );
+	
+	exit 0;
+}
 
 #get which config file to use
 my $config=$0.'.config';
