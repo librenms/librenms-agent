@@ -190,7 +190,7 @@ function usage($message) {
 
    $usage = <<<EOF
 $message
-Usage: php mysql --host <host> --items <item,...> [OPTION]
+Usage: ./mysql --host <host> --items <item,...> [OPTION]
 
    --host      Hostname to connect to; use host:port syntax to specify a port
                Use :/path/to/socket if you want to connect via a UNIX socket
