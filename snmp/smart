@@ -22,28 +22,45 @@
 #OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 #THE POSSIBILITY OF SUCH DAMAGE.
 
-# Add this to snmpd.conf like below.
-# extend smart /etc/snmp/smart
-#
-# Then add to root's cron tab, if you have more than a few disks.
-# */3 * * * * /etc/snmp/smart -u
+=for comment
 
-# This is the drives you want to check for.
-my @disks=(
-	'da0',
-	'ada1',
-	'sda2',
-	);
+Add this to snmpd.conf like below.
 
-# This is the path to smartctl
-my $smartctl='/usr/bin/env smartctl';
+    extend smart /etc/snmp/smart
 
-# The cache file to use.
-my $cache='/var/cache/smart';
+Then add to root's cron tab, if you have more than a few disks.
+
+    */3 * * * * /etc/snmp/smart -u
+
+You will also need to create the config file, which defaults to the same path as the script,
+but with .config appended. So if the script is located at /etc/snmp/smart, the config file
+will be /etc/snmp/smart.config. Alternatively you can also specific a config via -c.
+
+Anything starting with a # is comment. The format for variables is $variable=$value. Empty
+lines are ignored. Spaces and tabes at either the start or end of a line are ignored. Any
+line with out a = or # are treated as a disk.
+
+    #This is a comment
+    cache=/var/cache/smart
+    smartctl=/usr/bin/env smartctl
+    ada0
+    ada1
+
+The variables are as below.
+
+    cache = The path to the cache file to use. Default: /var/cache/smart
+    smartctl = The path to use for smartctl. Default: /usr/bin/env smartctl
+    
+
+=cut
 
 ##
 ## You should not need to touch anything below here.
 ##
+my $cache='/var/cache/smart';
+my $smartctl='/usr/bin/env smartctl';
+my @disks;
+
 use warnings;
 use strict;
 use Getopt::Std;
@@ -56,12 +73,53 @@ sub main::VERSION_MESSAGE {
 
 sub main::HELP_MESSAGE {
 	print "\n".
-		"-u   Update '".$cache."'\n";
+		"-u   Update '".$cache."'\n".
+		"-c <config>   The config file to use.\n";
 }
 
 #gets the options
 my %opts=();
-getopts('u', \%opts);
+getopts('uc:', \%opts);
+
+#get which config file to use
+my $config=$0.'.config';
+if ( defined( $opts{c} ) ){
+	$config=$opts{c};
+}
+
+#reads the config file, optionally
+my $config_file='';
+open(my $readfh, "<", $config) or die "Can't open '".$config."'";
+read($readfh , $config_file , 1000000);
+close($readfh);
+
+#parse the config file and remove comments and empty lines
+my @configA=split(/\n/, $config_file);
+@configA=grep(!/^$/, @configA);
+@configA=grep(!/^\#/, @configA);
+@configA=grep(!/^[\s\t]*$/, @configA);
+my $configA_int=0;
+while ( defined( $configA[$configA_int] ) ){
+	my $line=$configA[$configA_int];
+	$line=~s/^[\t\s]+//;
+	$line=~s/[\t\s]+$//;
+
+	my ( $var, $val )=split(/=/, $line, 2);
+
+	if ( $var eq 'cache' ){
+		$cache=1;
+	}
+	
+	if ( $var eq 'smartctl' ){
+		$smartctl=$val;
+	}
+
+	if ( !defined( $val ) ){
+		push(@disks, $var);
+	}
+	
+	$configA_int++;
+}
 
 #if set to 1, no cache will be written and it will be printed instead
 my $noWrite=0;
