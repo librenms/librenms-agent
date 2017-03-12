@@ -89,7 +89,7 @@ my ( $received,
 	 $sce,
 	 $scp,
 	 $urr,
-         $msefl) = split ( /\n/, $old );
+	 $msefl) = split ( /\n/, $old );
 
 
 if ( ! defined( $received ) ){ $received=0; }
