@@ -88,7 +88,9 @@ my ( $received,
 	 $iuscp,
 	 $sce,
 	 $scp,
-	 $urr) = split ( /\n/, $old );
+	 $urr,
+         $msefl) = split ( /\n/, $old );
+
 
 if ( ! defined( $received ) ){ $received=0; }
 if ( ! defined( $delivered ) ){ $delivered=0; }
@@ -121,6 +123,7 @@ if ( ! defined( $iuscp ) ){ $iuscp=0; }
 if ( ! defined( $sce ) ){ $sce=0; }
 if ( ! defined( $scp ) ){ $scp=0; }
 if ( ! defined( $urr ) ){ $urr=0; }
+if ( ! defined( $msefl ) ){ $msefl=0; }
 
 #init current variables
 my $receivedC=0;
@@ -422,8 +425,8 @@ while ( defined( $outputA[$int] ) ){
 	#Improper use of SMTP command pipelining
 	if ( ( $line =~ /Improper use of SMTP command pipelining/ ) && ( ! $handled ) ){
 		$line=~s/.*\: //g;
-		$iuoscpC=$line;
-		$iuoscp=newValue( $iuoscp, $line );
+		$iuscpC=$line;
+		$iuscp=newValue( $iuoscp, $line );
 	}
 
 	#Message size exceeds fixed limit
@@ -483,7 +486,8 @@ my $data=$received."\n".
 	$iuscp."\n".
 	$sce."\n".
 	$scp."\n".
-	$urr."\n";
+	$urr."\n".
+	$msefl."\n";
 
 print $data;
 
@@ -517,7 +521,8 @@ my $current=$receivedC."\n".
 	$iuscpC."\n".
 	$sceC."\n".
 	$scpC."\n".
-	$urrC."\n";
+	$urrC."\n".
+	$mseflC."\n";
 
 open(my $fh, ">", $cache) or die "Can't open '".$cache."'";
 print $fh $current;
