@@ -22,27 +22,134 @@
 #OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 #THE POSSIBILITY OF SUCH DAMAGE.
 
-# Add this to snmpd.conf as below
-# extend bind /etc/snmp/bind
+=for comment
 
-#make sure this points to your named stats file
-my $stats_file='/var/run/named/stats';
+Add this to snmpd.conf as below and restart it.
 
-# This is the location of the rndc program
-my $rndc='/usr/bin/env rndc';
+    extend bind /etc/snmp/bind
 
-# If you wish to call rndc or not. In general you don't need to touch this.
-# If you have netdata polling as well, you may want to set this to 0;
-my $call_rndc=1;
+You may also need to create the config file, which defaults to the same path as the script,
+but with .config appended. So if the script is located at /etc/snmp/bind, the config file
+will be /etc/snmp/bind.config. Alternatively you can also specific a config via -c.
+
+Anything starting with a # is comment. The format for variables is $variable=$value. Empty
+lines are ignored. Spaces and tabes at either the start or end of a line are ignored.
+
+The variables are as below.
+
+    rndc = The path to rndc. Default: /usr/bin/env rndc
+    call_rndc = A 0/1 boolean on weather to call rndc stats. Suggest to set to 0 if using netdata. Default: 1
+    stats_file = The path to the named stats file. Default: /var/run/named/stats
+
+If you want to guess at the configuration, call it with -g and it will print out what it thinks
+it should be.
+
+
+=cut
 
 ##
 ## You should not need to touch anything below here.
 ##
+my $call_rndc=1;
+my $rndc='/usr/bin/env rndc';
+my $stats_file='/var/run/named/stats';
 
 use strict;
 use warnings;
 use File::ReadBackwards;
+use Getopt::Std;
 
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
+sub main::VERSION_MESSAGE {
+        print "BIND named stats extend 0.0.0\n";
+};
+
+
+sub main::HELP_MESSAGE {
+	print "\n".
+		"-c <config>   The config file to use.\n".
+		"-g            Guess at the config and print it to STDOUT.\n";
+}
+
+#gets the options
+my %opts=();
+getopts('gc:', \%opts);
+
+# guess if asked
+if ( defined( $opts{g} ) ){
+	#get what path to use for rndc
+	$rndc=`which rndc`;
+	chomp($rndc);
+	if ( $? != 0 ){
+		warn("'which rndc' failed with a exit code of $?");
+		exit 1;
+	}else{
+		$rndc="# This is the path to rndc.\n".
+			'rndc='.$rndc."\n";
+	}
+
+	#make a basic guess at the stats file
+	if ( -f $stats_file ){
+		$stats_file="# This is the the path to the named stats file.\n".
+			'stats_file='.$stats_file."\n";
+	}else{
+		$stats_file="# This is the the path to the named stats file.\n".
+			"# Please make sure this has been set to the value of statistics-file in named.conf.\n".
+			"stats_file=?\n";
+	}
+
+	print "# The default config file is... ".$0.".config\n".
+		$rndc.
+		$stats_file.
+		"# This is a 0/1 boolean for if rndc should be called.\n".
+		"# If you are using netdata, you most likely want to set this to 0.\n".
+		"call_rndc=1\n";
+	
+	exit 0;
+}
+
+#get which config file to use
+my $config=$0.'.config';
+if ( defined( $opts{c} ) ){
+	$config=$opts{c};
+}
+
+#reads the config file
+my $config_file='';
+if ( -f $config ){
+	open(my $readfh, "<", $config) or die "Can't open '".$config."'";
+	read($readfh , $config , 1000000);
+	close($readfh);
+
+	#parse the config file and remove comments and empty lines
+	my @configA=split(/\n/, $config_file);
+	@configA=grep(!/^$/, @configA);
+	@configA=grep(!/^\#/, @configA);
+	@configA=grep(!/^[\s\t]*$/, @configA);
+	my $configA_int=0;
+	while ( defined( $configA[$configA_int] ) ){
+		my $line=$configA[$configA_int];
+		$line=~s/^[\t\s]+//;
+		$line=~s/[\t\s]+$//;
+
+		my ( $var, $val )=split(/=/, $line, 2);
+		
+		if ( $var eq 'call_rndc' ){
+			$call_rndc=$val;
+		}
+
+		if ( $var eq 'rndc' ){
+			$rndc=$val;
+		}
+
+		if ( $var eq 'stats_file' ){
+			$stats_file=$val;
+		}
+
+		$configA_int++;
+	}
+}
+	
 # call rndc if needed and die if it failes
 if ( $call_rndc ){
 	system($rndc.' stats');
@@ -108,6 +215,11 @@ my %incoming=(
 	'TXT'=>0,
 	'URI'=>0,
 	'DNAME'=>0,
+	'ANY'=>0,
+	'AXFR'=>0,
+	'IXFR'=>0,
+	'OPT'=>0,
+	'SPF'=>0,
 	);
 
 my %outgoing=(
@@ -148,73 +260,80 @@ my %outgoing=(
 	'TXT'=>0,
 	'URI'=>0,
 	'DNAME'=>0,
+	'ANY'=>0,
+	'AXFR'=>0,
+	'IXFR'=>0,
+	'OPT'=>0,
+	'SPF'=>0,
 	);
 
 my %server=(
-	'IPv4 requests received'=>0,
-	'IPv6 requests received'=>0,
-	'requests with EDNS(0) received'=>0,
-	'TCP requests received'=>0,
-	'auth queries rejected'=>0,
-	'recursive queries rejected'=>0,
-	'responses sent'=>0,
-	'truncated responses sent'=>0,
-	'responses with EDNS(0) sent'=>0,
-	'queries resulted in successful answer'=>0,
-	'queries resulted in authoritative answer'=>0,
-	'queries resulted in non authoritative answer'=>0,
-	'queries resulted in nxrrset'=>0,
-	'queries resulted in SERVFAIL'=>0,
-	'queries resulted in NXDOMAIN'=>0,
-	'queries caused recursion'=>0,
-	'duplicate queries received'=>0,
-	'other query failures'=>0,
-	'UDP queries received'=>0,
-	'TCP queries received'=>0,
-	'Other EDNS option received'=>0,
+	'IPv4 requests received'=>0, #i4rr
+	'IPv6 requests received'=>0, #i6rr
+	'requests with EDNS(0) received'=>0, #rwer
+	'TCP requests received'=>0, #trr
+	'auth queries rejected'=>0, #aqr
+	'recursive queries rejected'=>0, #rqr
+	'responses sent'=>0, #rs
+	'truncated responses sent'=>0, #trs
+	'responses with EDNS(0) sent'=>0, #rwes
+	'queries resulted in successful answer'=>0, #qrisa
+	'queries resulted in authoritative answer'=>0, #qriaa
+	'queries resulted in non authoritative answer'=>0, #qrinaa
+	'queries resulted in nxrrset'=>0, #qrin
+	'queries resulted in SERVFAIL'=>0, #qris
+	'queries resulted in NXDOMAIN'=>0, #qrind
+	'queries caused recursion'=>0, #qcr
+	'duplicate queries received'=>0, #dqr
+	'other query failures'=>0, #oqf
+	'UDP queries received'=>0, #uqr
+	'TCP queries received'=>0, #tqr
+	'Other EDNS option received'=>0, #oeor
+	'queries dropped'=>0, #qd
 	);
 
 my %resolver=(
-	'IPv4 queries sent'=>0,
-	'IPv6 queries sent'=>0,
-	'IPv4 responses received'=>0,
-	'NXDOMAIN received'=>0,
-	'SERVFAIL received'=>0,
-	'FORMERR received'=>0,
-	'EDNS(0) query failures'=>0,
-	'truncated responses received'=>0,
-	'lame delegations received'=>0,
-	'query retries'=>0,
-	'query timeouts'=>0,
-	'IPv4 NS address fetches'=>0,
-	'IPv6 NS address fetches'=>0,
-	'IPv4 NS address fetch failed'=>0,
-	'IPv6 NS address fetch failed'=>0,
-	'queries with RTT < 10ms'=>0,
-	'queries with RTT 10-100ms'=>0,
-	'queries with RTT 100-500ms'=>0,
-	'queries with RTT 500-800ms'=>0,
-	'queries with RTT 800-1600ms'=>0,
-	'queries with RTT > 1600ms'=>0,
-	'bucket size'=>0,
-	'REFUSED received'=>0
+	'IPv4 queries sent'=>0, #i4qs
+	'IPv6 queries sent'=>0, #i6qs
+	'IPv4 responses received'=>0, #i4rr
+	'IPv6 responses received'=>0, #i6rr
+	'NXDOMAIN received'=>0, #nr
+	'SERVFAIL received'=>0, #sr
+	'FORMERR received'=>0, #fr
+	'EDNS(0) query failures'=>0, #eqf
+	'truncated responses received'=>0, #trr
+	'lame delegations received'=>0, #ldr
+	'query retries'=>0, #qr
+	'query timeouts'=>0, #qt
+	'IPv4 NS address fetches'=>0, #i4naf
+	'IPv6 NS address fetches'=>0, #i6naf
+	'IPv4 NS address fetch failed'=>0, #i4naff
+	'IPv6 NS address fetch failed'=>0, #i6naff
+	'queries with RTT < 10ms'=>0, #rttl10
+	'queries with RTT 10-100ms'=>0, #rtt10t100
+	'queries with RTT 100-500ms'=>0, #rtt100t500
+	'queries with RTT 500-800ms'=>0, #rtt500t800
+	'queries with RTT 800-1600ms'=>0, #rtt800t1600
+	'queries with RTT > 1600ms'=>0, #rttg1600
+	'bucket size'=>0, #bs
+	'REFUSED received'=>0 #rr
 	);
 
 my %cache=(
-	'cache hits'=>0,
-	'cache misses'=>0,
-	'cache hits (from query)'=>0,
-	'cache misses (from query)'=>0,
-	'cache records deleted due to memory exhaustion'=>0,
-	'cache records deleted due to TTL expiration'=>0,
-	'cache database nodes'=>0,
-	'cache database hash buckets'=>0,
-	'cache tree memory total'=>0,
-	'cache tree memory in use'=>0,
-	'cache tree highest memory in use'=>0,
-	'cache heap memory total'=>0,
-	'cache heap memory in use'=>0,
-	'cache heap highest memory in use'=>0,
+	'cache hits'=>0, #ch
+	'cache misses'=>0, #cm
+	'cache hits (from query)'=>0, #chfq
+	'cache misses (from query)'=>0, #cmfq
+	'cache records deleted due to memory exhaustion'=>0, #crddtme
+	'cache records deleted due to TTL expiration'=>0, #crddtte
+	'cache database nodes'=>0, #cdn
+	'cache database hash buckets'=>0, #cdhb
+	'cache tree memory total'=>0, #ctmt
+	'cache tree memory in use'=>0, #ctmiu
+	'cache tree highest memory in use'=>0, #cthmiu
+	'cache heap memory total'=>0, #chmt
+	'cache heap memory in use'=>0, #chmiu
+	'cache heap highest memory in use'=>0,#chhmiu
 	);
 
 my %RRsets=(
@@ -256,6 +375,11 @@ my %RRsets=(
 	'URI'=>0,
 	'DNAME'=>0,
 	'NXDOMAIN'=>0,
+	'ANY'=>0,
+	'AXFR'=>0,
+	'IXFR'=>0,
+	'OPT'=>0,
+	'SPF'=>0,
 	'!A'=>0,
 	'!AAAA'=>0,
 	'!AFSDB'=>0,
@@ -294,48 +418,57 @@ my %RRsets=(
 	'!URI'=>0,
 	'!DNAME'=>0,
 	'!NXDOMAIN'=>0,
+	'!ANY'=>0,
+	'!AXFR'=>0,
+	'!IXFR'=>0,
+	'!OPT'=>0,
+	'!SPF'=>0,
 	);
 
 my %ADB=(
-	'Address hash table size'=>0,
-	'Addresses in hash table'=>0,
-	'Name hash table size'=>0,
-	'Names in hash table'=>0,
+	'Address hash table size'=>0, #ahts
+	'Addresses in hash table'=>0, #aiht
+	'Name hash table size'=>0, #nhts
+	'Names in hash table'=>0, #niht
 	);
 
 my %sockets=(
-	'UDP/IPv4 sockets opened'=>0,
-	'UDP/IPv6 sockets opened'=>0,
-	'TCP/IPv4 sockets opened'=>0,
-	'TCP/IPv6 sockets opened'=>0,
-	'Raw sockets opened'=>0,
-	'UDP/IPv4 sockets closed'=>0,
-	'UDP/IPv6 sockets closed'=>0,
-	'TCP/IPv4 sockets closed'=>0,
-	'TCP/IPv6 sockets closed'=>0,
-	'UDP/IPv4 socket bind failures'=>0,
-	'TCP/IPv4 socket bind failures'=>0,
-	'UDP/IPv6 socket bind failures'=>0,
-	'TCP/IPv6 socket bind failures'=>0,
-	'UDP/IPv4 socket connect failures'=>0,
-	'TCP/IPv4 socket connect failures'=>0,
-	'UDP/IPv6 socket connect failures'=>0,
-	'TCP/IPv6 socket connect failures'=>0,
-	'UDP/IPv4 connections established'=>0,
-	'TCP/IPv4 connections established'=>0,
-	'UDP/IPv6 connections established'=>0,
-	'TCP/IPv6 connections established'=>0,
-	'TCP/IPv4 connections accepted'=>0,
-	'UDP/IPv4 send errors'=>0,
-	'TCP/IPv4 send errors'=>0,
-	'UDP/IPv6 send errors'=>0,
-	'TCP/IPv6 send errors'=>0,
-	'UDP/IPv4 recv errors'=>0,
-	'UDP/IPv4 sockets active'=>0,
-	'UDP/IPv6 sockets active'=>0,
-	'TCP/IPv4 sockets active'=>0,
-	'TCP/IPv6 sockets active'=>0,
-	'Raw sockets active'=>0,
+	'UDP/IPv4 sockets opened'=>0, #ui4so
+	'UDP/IPv6 sockets opened'=>0, #ui6so
+	'TCP/IPv4 sockets opened'=>0, #ti4so
+	'TCP/IPv6 sockets opened'=>0, #ti6so
+	'Raw sockets opened'=>0, #rso
+	'UDP/IPv4 sockets closed'=>0, #ui4sc
+	'UDP/IPv6 sockets closed'=>0, #ui6sc
+	'TCP/IPv4 sockets closed'=>0, #ti4sc
+	'TCP/IPv6 sockets closed'=>0, #ti6sc
+	'UDP/IPv4 socket bind failures'=>0, #ui4sbf
+	'TCP/IPv4 socket bind failures'=>0, #ti4sbf
+	'UDP/IPv6 socket bind failures'=>0, #ui6sbf
+	'TCP/IPv6 socket bind failures'=>0, #ti6sbf
+	'UDP/IPv4 socket connect failures'=>0, #ui4scf
+	'TCP/IPv4 socket connect failures'=>0, #ti4scf
+	'UDP/IPv6 socket connect failures'=>0, #ui6scf
+	'TCP/IPv6 socket connect failures'=>0, #ti6scf
+	'UDP/IPv4 connections established'=>0, #ui4ce
+	'TCP/IPv4 connections established'=>0, #ti4ce
+	'UDP/IPv6 connections established'=>0, #ui6ce
+	'TCP/IPv6 connections established'=>0, #ti6ce
+	'TCP/IPv4 connections accepted'=>0, #ti4ca
+	'TCP/IPv6 connections accepted'=>0, #ti6ca
+	'UDP/IPv4 send errors'=>0, #ui4se
+	'TCP/IPv4 send errors'=>0, #ti4se
+	'UDP/IPv6 send errors'=>0, #ui6se
+	'TCP/IPv6 send errors'=>0, #ti6se
+	'UDP/IPv4 recv errors'=>0, #ui4re
+	'TCP/IPv4 recv errors'=>0, #ti4re
+	'UDP/IPv6 recv errors'=>0, #ui6re
+	'TCP/IPv6 recv errors'=>0, #ti6re
+	'UDP/IPv4 sockets active'=>0, #ui4sa
+	'UDP/IPv6 sockets active'=>0, #ui6sa
+	'TCP/IPv4 sockets active'=>0, #ti4sa
+	'TCP/IPv6 sockets active'=>0, #ti6sa
+	'Raw sockets active'=>0, #rsa
 	);
 
 my $int=$#data-1;
@@ -381,7 +514,8 @@ while ( defined( $data[$int] ) ){
 		$line=~s/^[\t\s]+//;
 		chomp($line);
 		my ( $count, $type )=split(/ /, $line, 2);
-		my $to_eval='$'.$section.'{$type}=$'.$section.'{$type}+$count;';
+#		eval( 'if (! defined($'.$section.'{$type} ) ){ print $section.",".$type.",".$count."\n";}' );
+		my $to_eval='if( defined($'.$section.'{$type}) ){$'.$section.'{$type}=$'.$section.'{$type}+$count;}';
 		eval( $to_eval );
 	}
 
@@ -424,7 +558,12 @@ print $incoming{'A'}.','.
 	$incoming{'TSIG'}.','.
 	$incoming{'TXT'}.','.
 	$incoming{'URI'}.','.
-	$incoming{'DNAME'}."\n";
+	$incoming{'DNAME'}.','.
+	$incoming{'ANY'}.','.
+	$incoming{'AXFR'}.','.
+	$incoming{'IXFR'}.','.
+	$incoming{'OPT'}.','.
+	$incoming{'SPF'}."\n";
 
 print $outgoing{'A'}.','.
 	$outgoing{'AAAA'}.','.
@@ -462,7 +601,12 @@ print $outgoing{'A'}.','.
 	$outgoing{'TSIG'}.','.
 	$outgoing{'TXT'}.','.
 	$outgoing{'URI'}.','.
-	$outgoing{'DNAME'}."\n";
+	$outgoing{'DNAME'}.','.
+	$outgoing{'ANY'}.','.
+	$outgoing{'AXFR'}.','.
+	$outgoing{'IXFR'}.','.
+	$outgoing{'OPT'}.','.
+	$outgoing{'SPF'}."\n";
 
 print $server{'IPv4 requests received'}.','.
 	$server{'IPv6 requests received'}.','.
@@ -484,11 +628,13 @@ print $server{'IPv4 requests received'}.','.
 	$server{'other query failures'}.','.
 	$server{'UDP queries received'}.','.
 	$server{'TCP queries received'}.','.
-	$server{'Other EDNS option received'}."\n";
+	$server{'Other EDNS option received'}.','.
+	$server{'queries dropped'}."\n";
 
 print $resolver{'IPv4 queries sent'}.','.
 	$resolver{'IPv6 queries sent'}.','.
 	$resolver{'IPv4 responses received'}.','.
+	$resolver{'IPv6 responses received'}.','.
 	$resolver{'NXDOMAIN received'}.','.
 	$resolver{'SERVFAIL received'}.','.
 	$resolver{'FORMERR received'}.','.
@@ -563,6 +709,11 @@ print $RRsets{'A'}.','.
 	$RRsets{'URI'}.','.
 	$RRsets{'DNAME'}.','.
 	$RRsets{'NXDOMAIN'}.','.
+	$RRsets{'ANY'}.','.
+	$RRsets{'AXFR'}.','.
+	$RRsets{'IXFR'}.','.
+	$RRsets{'OPT'}.','.
+	$RRsets{'SPF'}."\n";
 	$RRsets{'!A'}.','.
 	$RRsets{'!AAAA'}.','.
 	$RRsets{'!AFSDB'}.','.
@@ -600,8 +751,13 @@ print $RRsets{'A'}.','.
 	$RRsets{'!TXT'}.','.
 	$RRsets{'!URI'}.','.
 	$RRsets{'!DNAME'}.','.
-	$RRsets{'!NXDOMAIN'}."\n";
-
+	$RRsets{'!NXDOMAIN'}.','.
+	$RRsets{'!ANY'}.','.
+	$RRsets{'!AXFR'}.','.
+	$RRsets{'!IXFR'}.','.
+	$RRsets{'!OPT'}.','.
+	$RRsets{'!SPF'}."\n";
+	
 print $ADB{'Address hash table size'}.','.
 	$ADB{'Addresses in hash table'}.','.
 	$ADB{'Name hash table size'}.','.
@@ -629,11 +785,15 @@ print $sockets{'UDP/IPv4 sockets opened'}.','.
 	$sockets{'UDP/IPv6 connections established'}.','.
 	$sockets{'TCP/IPv6 connections established'}.','.
 	$sockets{'TCP/IPv4 connections accepted'}.','.
+	$sockets{'TCP/IPv6 connections accepted'}.','.
 	$sockets{'UDP/IPv4 send errors'}.','.
 	$sockets{'TCP/IPv4 send errors'}.','.
 	$sockets{'UDP/IPv6 send errors'}.','.
 	$sockets{'TCP/IPv6 send errors'}.','.
 	$sockets{'UDP/IPv4 recv errors'}.','.
+	$sockets{'TCP/IPv4 recv errors'}.','.
+	$sockets{'UDP/IPv6 recv errors'}.','.
+	$sockets{'TCP/IPv6 recv errors'}.','.
 	$sockets{'UDP/IPv4 sockets active'}.','.
 	$sockets{'UDP/IPv6 sockets active'}.','.
 	$sockets{'TCP/IPv4 sockets active'}.','.
