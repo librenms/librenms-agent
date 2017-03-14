@@ -713,7 +713,7 @@ print $RRsets{'A'}.','.
 	$RRsets{'AXFR'}.','.
 	$RRsets{'IXFR'}.','.
 	$RRsets{'OPT'}.','.
-	$RRsets{'SPF'}."\n";
+	$RRsets{'SPF'}.','.
 	$RRsets{'!A'}.','.
 	$RRsets{'!AAAA'}.','.
 	$RRsets{'!AFSDB'}.','.
