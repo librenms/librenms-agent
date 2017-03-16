@@ -154,8 +154,8 @@ if ( defined( $opts{g} ) ){
 	#have smartctl scan and see if it finds anythings not get found
 	my $scan_output=`$smartctl --scan-open`;
 	my @scan_outputA=split(/\n/, $scan_output);
-	@scan_outputA=grep(!/ses[0-9]/, @scan_outputA);
-	@scan_outputA=grep(!/pass[0-9]/, @scan_outputA);
+	@scan_outputA=grep(!/ses[0-9]/, @scan_outputA);  # not a disk, but may or may not have SMART attributes
+	@scan_outputA=grep(!/pass[0-9]/, @scan_outputA); # very likely a duplicate and a disk under another name
 	$matches_int=0;
 	while ( defined( $scan_outputA[$matches_int] ) ){
 		my $device=$scan_outputA[$matches_int];
