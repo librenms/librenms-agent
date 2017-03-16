@@ -151,9 +151,27 @@ if ( defined( $opts{g} ) ){
 		$matches_int++;
 	}
 
+	#have smartctl scan and see if it finds anythings not get found
+	my $scan_output=`$smartctl --scan-open`;
+	my @scan_outputA=split(/\n/, $scan_output);
+	@scan_outputA=grep(!/ses[0-9]/, @scan_outputA);
+	@scan_outputA=grep(!/pass[0-9]/, @scan_outputA);
+	$matches_int=0;
+	while ( defined( $scan_outputA[$matches_int] ) ){
+		my $device=$scan_outputA[$matches_int];
+		$device =~ s/ .*//;
+		system( $smartctl.' -A '.$device.' > /dev/null' );
+		if ( $? == 0 ){
+			$device =~ s/\/dev\///;
+			$found_disks{$device}=1;
+		}
+		
+		$matches_int++;
+	}
+	
 	print 'smartctl='.$smartctl."\n".
 		$cache.
-		join( "\n", keys(%found_disks) );
+		join( "\n", keys(%found_disks) )."\n";
 	
 	exit 0;
 }
