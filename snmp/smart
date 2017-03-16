@@ -104,16 +104,18 @@ if ( defined( $opts{g} ) ){
 		$cache='cache='.$cache."\n";
 	}
 
+	my %found_disks;
+	
 	#check for drives named /dev/sd*
 	my @matches=glob('/dev/sd*');
-	grep(!/[0-9]/, @matches);
+	@matches=grep(!/[0-9]/, @matches);
 	my $matches_int=0;
 	while ( defined( $matches[$matches_int] ) ){
 		my $device=$matches[$matches_int];
 		system( $smartctl.' -A '.$device.' > /dev/null' );
 		if ( $? == 0 ){
 			$device =~ s/\/dev\///;
-			push( @disks, $device );
+			$found_disks{$device}=1;
 		}
 		
 		$matches_int++;
@@ -121,14 +123,14 @@ if ( defined( $opts{g} ) ){
 
 	#check for drives named /dev/ada*
 	@matches=glob('/dev/ada*');
-	grep(!/[ps]/, @matches);
+	@matches=grep(!/[ps]/, @matches);
 	$matches_int=0;
 	while ( defined( $matches[$matches_int] ) ){
 		my $device=$matches[$matches_int];
 		system( $smartctl.' -A '.$device.' > /dev/null' );
 		if ( $? == 0 ){
 			$device =~ s/\/dev\///;
-			push( @disks, $device );
+			$found_disks{$device}=1;
 		}
 		
 		$matches_int++;
@@ -136,22 +138,22 @@ if ( defined( $opts{g} ) ){
 
 	#check for drives named /dev/da*
 	@matches=glob('/dev/da*');
-	grep(!/[ps]/, @matches);
+	@matches=grep(!/[ps]/, @matches);
 	$matches_int=0;
 	while ( defined( $matches[$matches_int] ) ){
 		my $device=$matches[$matches_int];
 		system( $smartctl.' -A '.$device.' > /dev/null' );
 		if ( $? == 0 ){
 			$device =~ s/\/dev\///;
-			push( @disks, $device );
+			$found_disks{$device}=1;
 		}
 		
 		$matches_int++;
 	}
-	
+
 	print 'smartctl='.$smartctl."\n".
 		$cache.
-		join( "\n", @disks );
+		join( "\n", keys(%found_disks) );
 	
 	exit 0;
 }
