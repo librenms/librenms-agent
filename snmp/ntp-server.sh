@@ -21,7 +21,6 @@
 
 # Lets define some required binaries
 # These can be hard coded, but using "which" to make compatable with other distros
-BIN_NTPD=`which ntpd`
 BIN_NTPQ=`which ntpq`
 BIN_NTPDC=`which ntpdc`
 BIN_GREP=`which grep`
@@ -74,7 +73,7 @@ fi
 #
 # So lets remove that space so we dont need
 # to worry about spaces later
-NTP_IO_OUTPUT=`echo $NTP_IO_OUTPUT | sed 's/: /:/g'`
+NTP_IO_OUTPUT=`echo $NTP_IO_OUTPUT | $BIN_SED 's/: /:/g'`
 
 NTP_UPTIME=`echo $NTP_IO_OUTPUT | $BIN_GREP -Eow "time since reset:[0-9]+" | $BIN_CUT -d ":" -f 2`
 NTP_BUF_RX=`echo $NTP_IO_OUTPUT | $BIN_GREP -Eow "receive buffers:[0-9]+" | $BIN_HEAD -1 | $BIN_CUT -d ":" -f 2`
