@@ -500,10 +500,10 @@ my $data=$received."\n".
 	$rardnf."\n".
 	$rarnfqa."\n".
 	$iuscp."\n".
-	$msefl."\n".
 	$sce."\n".
 	$scp."\n".
 	$urr."\n";
+	$msefl."\n".
 
 print $data;
 
