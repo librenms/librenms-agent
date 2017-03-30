@@ -142,7 +142,6 @@ my $recipientsC=0;
 my $recipienthdC=0;
 my $deferralcrC=0;
 my $deferralhidC=0;
-my $chrC=0;
 my $hcrnfqhC=0;
 my $sardnfC=0;
 my $sarnobuC=0;
@@ -157,7 +156,6 @@ my $mseflC=0;
 my $sceC=0;
 my $scpC=0;
 my $urrC=0;
-
 
 sub newValue{
 	my $old=$_[0];
@@ -189,7 +187,7 @@ sub newValue{
 	if ( $old > $new ){
 		return $new;
 	};
-	
+
 	return $new - $old;
 }
 
@@ -205,8 +203,6 @@ my $chrNew=0;
 
 # holds recipient address rejected values till the end when it is compared to the old one
 my $raruuNew=0;
-
-
 
 #holds the current values for checking later
 my $current='';
