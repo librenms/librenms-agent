@@ -119,10 +119,10 @@ if ( ! defined( $sarnfqa ) ){ $sarnfqa=0; }
 if ( ! defined( $rardnf ) ){ $rardnf=0; }
 if ( ! defined( $rarnfqa ) ){ $rarnfqa=0; }
 if ( ! defined( $iuscp ) ){ $iuscp=0; }
+if ( ! defined( $msefl ) ){ $msefl=0; }
 if ( ! defined( $sce ) ){ $sce=0; }
 if ( ! defined( $scp ) ){ $scp=0; }
 if ( ! defined( $urr ) ){ $urr=0; }
-if ( ! defined( $msefl ) ){ $msefl=0; }
 
 #init current variables
 my $receivedC=0;
@@ -153,10 +153,11 @@ my $sarnfqaC=0;
 my $rardnfC=0;
 my $rarnfqaC=0;
 my $iuscpC=0;
+my $mseflC=0;
 my $sceC=0;
 my $scpC=0;
 my $urrC=0;
-my $mseflC=0;
+
 
 sub newValue{
 	my $old=$_[0];
