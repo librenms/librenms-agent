@@ -119,10 +119,10 @@ if ( ! defined( $sarnfqa ) ){ $sarnfqa=0; }
 if ( ! defined( $rardnf ) ){ $rardnf=0; }
 if ( ! defined( $rarnfqa ) ){ $rarnfqa=0; }
 if ( ! defined( $iuscp ) ){ $iuscp=0; }
-if ( ! defined( $msefl ) ){ $msefl=0; }
 if ( ! defined( $sce ) ){ $sce=0; }
 if ( ! defined( $scp ) ){ $scp=0; }
 if ( ! defined( $urr ) ){ $urr=0; }
+if ( ! defined( $msefl ) ){ $msefl=0; }
 
 #init current variables
 my $receivedC=0;
@@ -153,10 +153,10 @@ my $sarnfqaC=0;
 my $rardnfC=0;
 my $rarnfqaC=0;
 my $iuscpC=0;
-my $mseflC=0;
 my $sceC=0;
 my $scpC=0;
 my $urrC=0;
+my $mseflC=0;
 
 sub newValue{
 	my $old=$_[0];
@@ -188,21 +188,24 @@ sub newValue{
 	if ( $old > $new ){
 		return $new;
 	};
-
+	
 	return $new - $old;
 }
 
 
 my $output=`$pflogsumm /var/log/maillog`;
 
-#holds client host rejected values till the end when it is compared to the old one
-my $chrNew=0;
-
 #holds RBL values till the end when it is compared to the old one
 my $buNew=0;
 
+
+#holds client host rejected values till the end when it is compared to the old one
+my $chrNew=0;
+
 # holds recipient address rejected values till the end when it is compared to the old one
 my $raruuNew=0;
+
+
 
 #holds the current values for checking later
 my $current='';
@@ -353,6 +356,7 @@ while ( defined( $outputA[$int] ) ){
 	# deferrals Host is down
 	if ( ( $line =~ /Host is down$/ ) && ( ! $handled ) ){
 		$line=~s/ .*//;
+		$deferralcrC=$line;
 		$deferralhidC=$line;
 		$deferralhid=newValue( $deferralhid, $line );
 		$handled=1;
@@ -401,7 +405,7 @@ while ( defined( $outputA[$int] ) ){
 	#Recipient address rejected: User unknown
 	if ( ( $line =~ /Recipient address rejected\: User unknown/ ) && ( ! $handled ) ){
 		$line=~s/.*\: //g;
-		$raruuNew=$raruuNew + $line;
+		$raruuNew=$raruuNew + $line; 
 		$handled=1;
 	}
 
@@ -429,8 +433,8 @@ while ( defined( $outputA[$int] ) ){
 	#Improper use of SMTP command pipelining
 	if ( ( $line =~ /Improper use of SMTP command pipelining/ ) && ( ! $handled ) ){
 		$line=~s/.*\: //g;
-		$iuoscpC=$line;
-		$iuoscp=newValue( $iuoscp, $line );
+		$iuscpC=$line;
+		$iuscp=newValue( $iuoscp, $line );
 	}
 
 	#Message size exceeds fixed limit
@@ -453,24 +457,26 @@ while ( defined( $outputA[$int] ) ){
 		$scpC=$line;
 		$scp=newValue( $scp, $line );
 	}
-	
+
 	#unknown reject reason
 	if ( ( $line =~ /unknown reject reason/ ) && ( ! $handled ) ){
 		$line=~s/.*\: //g;
 		$urrC=$line;
 		$urr=newValue( $urr, $line );
 	}
+
 	$int++;
 }
 
+
 # final client host rejected total
-$chr=newValue( $chr, $chrNew );
+$chr=newValue( $chr, $chrNew ); 
 
 # final RBL total
 $bu=newValue( $bu, $buNew );
 
 # final recipient address rejected total
-$raruu=newValue( $raruu, $raruuNew );
+$raruu=newValue( $raruu, $raruuNew ); 
 
 my $data=$received."\n".
 	$delivered."\n".
@@ -500,10 +506,10 @@ my $data=$received."\n".
 	$rardnf."\n".
 	$rarnfqa."\n".
 	$iuscp."\n".
+	$msefl."\n".
 	$sce."\n".
 	$scp."\n".
 	$urr."\n";
-	$msefl."\n".
 
 print $data;
 
@@ -524,7 +530,7 @@ my $current=$receivedC."\n".
 	$recipienthdC."\n".
 	$deferralcrC."\n".
 	$deferralhidC."\n".
-	$chrNew."\n".
+	$chrC."\n".
 	$hcrnfqhC."\n".
 	$sardnfC."\n".
 	$sarnobuC."\n".
