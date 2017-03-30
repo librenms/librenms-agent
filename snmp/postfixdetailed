@@ -431,7 +431,7 @@ while ( defined( $outputA[$int] ) ){
 	if ( ( $line =~ /Improper use of SMTP command pipelining/ ) && ( ! $handled ) ){
 		$line=~s/.*\: //g;
 		$iuscpC=$line;
-		$iuscp=newValue( $iuoscp, $line );
+		$iuscp=newValue( $iuscp, $line );
 	}
 
 	#Message size exceeds fixed limit
