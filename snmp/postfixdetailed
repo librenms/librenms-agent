@@ -86,10 +86,10 @@ my ( $received,
 	 $rardnf,
 	 $rarnfqa,
 	 $iuscp,
+	 $msefl,
 	 $sce,
 	 $scp,
-	 $urr,
-	 $msefl) = split ( /\n/, $old );
+	 $urr) = split ( /\n/, $old );
 
 if ( ! defined( $received ) ){ $received=0; }
 if ( ! defined( $delivered ) ){ $delivered=0; }
@@ -506,10 +506,10 @@ my $data=$received."\n".
 	$rardnf."\n".
 	$rarnfqa."\n".
 	$iuscp."\n".
+	$msefl."\n".
 	$sce."\n".
 	$scp."\n".
-	$urr."\n".
-	$msefl."\n";
+	$urr."\n";
 
 print $data;
 
@@ -541,10 +541,10 @@ my $current=$receivedC."\n".
 	$rardnfC."\n".
 	$rarnfqaC."\n".
 	$iuscpC."\n".
+	$mseflC."\n".
 	$sceC."\n".
 	$scpC."\n".
-	$urrC."\n".
-	$mseflC."\n";
+	$urrC."\n";
 
 open(my $fh, ">", $cache) or die "Can't open '".$cache."'";
 print $fh $current;
