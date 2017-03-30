@@ -402,7 +402,7 @@ while ( defined( $outputA[$int] ) ){
 	#Recipient address rejected: User unknown
 	if ( ( $line =~ /Recipient address rejected\: User unknown/ ) && ( ! $handled ) ){
 		$line=~s/.*\: //g;
-		$raruuNew=$raruuNew + $line; 
+		$raruuNew=$raruuNew + $line;
 		$handled=1;
 	}
 
@@ -467,13 +467,13 @@ while ( defined( $outputA[$int] ) ){
 
 
 # final client host rejected total
-$chr=newValue( $chr, $chrNew ); 
+$chr=newValue( $chr, $chrNew );
 
 # final RBL total
 $bu=newValue( $bu, $buNew );
 
 # final recipient address rejected total
-$raruu=newValue( $raruu, $raruuNew ); 
+$raruu=newValue( $raruu, $raruuNew );
 
 my $data=$received."\n".
 	$delivered."\n".
