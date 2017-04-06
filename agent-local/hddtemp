@@ -13,7 +13,7 @@
 # requires which, awk and sed
 
 # If disks are missing, they can be added here:
-disks="/dev/hd? /dev/sd?"
+disks="/dev/hd* /dev/sd*"
 
 hddtemp=`which hddtemp 2>/dev/null`
 
