@@ -10,10 +10,14 @@
 # option) any later version.  Please see LICENSE.txt at the top level of
 # the source code distribution for details.
 #
-# requires which, awk and sed
+# requires which, find, awk and sed
 
-# If disks are missing, they can be added here:
-disks="/dev/hd? /dev/sd?"
+# Try to use lsblk if available. Otherwise, use find.
+if type lsblk >/dev/null 2>&1; then
+  disks=`lsblk -dnp|cut -d' ' -f1 | tr '\n' ' '`
+else
+  disks=`find /dev -name '[sh]d[a-z]' -or -name '[sh]d[a-z][a-z]' | tr '\n' ' '`
+fi
 
 hddtemp=`which hddtemp 2>/dev/null`
 
