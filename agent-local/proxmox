@@ -19,7 +19,7 @@ use constant {
 };
 
 use strict;
-use PVE::API2Client;
+use PVE::APIClient::LWP;
 use PVE::AccessControl;
 use PVE::INotify;
 use Data::Dumper;
@@ -29,14 +29,14 @@ my $hostname = PVE::INotify::read_file("hostname");
 my $ticket = PVE::AccessControl::assemble_ticket('root@pam');
 my $csrftoken = PVE::AccessControl::assemble_csrf_prevention_token('root@pam');
 
-my $conn = PVE::API2Client->new(
+my $conn = PVE::APIClient::LWP->new(
     ticket => $ticket,
     csrftoken => $csrftoken,
 );
 
 my $clustername;
 
-foreach my $child (@{$conn->get("/api2/json/cluster/status")->{'data'}}) {
+foreach my $child (@{$conn->get("/api2/json/cluster/status")}) {
     if ($child->{'type'} eq "cluster") {
         $clustername = $child->{'name'};
     }
@@ -50,19 +50,19 @@ print "<<<app-proxmox>>>\n";
 
 print "$clustername\n";
 
-foreach my $vm (@{$conn->get("/api2/json/nodes/$hostname/netstat")->{'data'}}) {
+foreach my $vm (@{$conn->get("/api2/json/nodes/$hostname/netstat")}) {
 	my $vmid = $vm->{'vmid'};
     eval {
-        my $vmname = $conn->get("/api2/json/nodes/$hostname/qemu/$vmid/config")->{'data'}->{'name'};
-        my $tmpl = $conn->get("/api2/json/nodes/$hostname/qemu/$vmid/config")->{'data'}->{'template'};
+        my $vmname = $conn->get("/api2/json/nodes/$hostname/qemu/$vmid/config")->{'name'};
+        my $tmpl = $conn->get("/api2/json/nodes/$hostname/qemu/$vmid/config")->{'template'};
         if (defined($tmpl) && $tmpl == 1) {
             die;
         }
         print "$vmid/$vm->{'dev'}/$vm->{'in'}/$vm->{'out'}/$vmname\n";
     };
     eval {
-        my $vmname = $conn->get("/api2/json/nodes/$hostname/lxc/$vmid/config")->{'data'}->{'hostname'};
-        my $tmpl = $conn->get("/api2/json/nodes/$hostname/lxc/$vmid/config")->{'data'}->{'template'};
+        my $vmname = $conn->get("/api2/json/nodes/$hostname/lxc/$vmid/config")->{'hostname'};
+        my $tmpl = $conn->get("/api2/json/nodes/$hostname/lxc/$vmid/config")->{'template'};
         if (defined($tmpl) && $tmpl == 1) {
             die;
         }
