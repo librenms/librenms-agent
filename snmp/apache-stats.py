@@ -58,7 +58,7 @@ for line in data.splitlines():
 	elif fields[0] == 'Total kBytes':
 		# turn into base (byte) value
 		params[fields[0]] = int(fields[1])*1024
-	else:
+	elif len(fields) > 1:
 		# just store everything else
 		params[fields[0]] = fields[1]
 
