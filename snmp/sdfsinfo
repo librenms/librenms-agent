@@ -1,32 +1,24 @@
-#!/usr/bin/env php
-<?php
+#!/usr/bin/env bash
 
-/*
+##################################################################
+#
+# SDFS info SNMP extend script
+# datapoint -> info (type, descr):
+# 00 -> files (int)
+# 01 -> volume capacity (float, GB)
+# 02 -> volume logical size (float, GB)
+# 03 -> volume max load (float, %)
+# 04 -> volume duplicate data (float, GB)
+# 05 -> unique blocks stored (float, GB)
+# 06 -> unique blocks stored after compression (float, GB)
+# 07 -> cluster block copies (int)
+# 08 -> volume dedup rate (float, %)
+# 09 -> volume savings (float, %)
+# 10 -> compression rate (float, %)
+#
+##################################################################
 
-SDFS info SNMP extend script
-
- datapoint -> info (type, descr):
- 00 -> files (int)
- 01 -> volume capacity (float, GB)
- 02 -> volume logical size (float, GB)
- 03 -> volume max load (float, %)
- 04 -> volume duplicate data (float, GB)
- 05 -> unique blocks stored (float, GB)
- 06 -> unique blocks stored after compression (float, GB)
- 07 -> cluster block copies (int)
- 08 -> volume dedup rate (float, %)
- 09 -> volume savings (float, %)
- 10 -> compression rate (float, %)
-
-*/
-
-$sdfscli = preg_replace('/\s+/', ' ', shell_exec('which sdfscli'));
-$sdfscli_cmd = ' --volume-info';
-
-$output = shell_exec($sdfscli.$sdfscli_cmd);
-preg_match_all("/(\d+(\.\d+)?)/", $output, $sdfs_values);
-
-$datapoints = 11;
-for ($datapoint = 0; $datapoint < $datapoints; $datapoint++) {
-	echo $sdfs_values[0][$datapoint].PHP_EOL;
-}
+SDFSCLI=`which sdfscli`
+SDFSCLI_CMD=' --volume-info'
+DATAPOINTS=`$SDFSCLI $SDFSCLI_CMD | grep -o -E "(([0-9]+)\.?([0-9]+)?)"`
+echo $DATAPOINTS
