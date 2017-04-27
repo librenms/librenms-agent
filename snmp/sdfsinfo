@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+##################################################################
+#
+# SDFS info SNMP extend script
+# datapoint -> info (type, descr):
+# 00 -> files (int)
+# 01 -> volume capacity (float, GB)
+# 02 -> volume logical size (float, GB)
+# 03 -> volume max load (float, %)
+# 04 -> volume duplicate data (float, GB)
+# 05 -> unique blocks stored (float, GB)
+# 06 -> unique blocks stored after compression (float, GB)
+# 07 -> cluster block copies (int)
+# 08 -> volume dedup rate (float, %)
+# 09 -> volume savings (float, %)
+# 10 -> compression rate (float, %)
+#
+##################################################################
+
+SDFSCLI_BIN=`which sdfscli`
+SDFSCLI_CMD=' --volume-info'
+GREP_BIN=`which grep`
+GREP_CMD=' -o -E '
+DATAPOINTS=`$SDFSCLI_BIN $SDFSCLI_CMD | $GREP_BIN $GREP_CMD "(([0-9]+)\.?([0-9]+)?)"`
+echo $DATAPOINTS
