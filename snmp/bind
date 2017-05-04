@@ -139,7 +139,7 @@ if ( defined( $opts{c} ) ){
 my $config_file='';
 if ( -f $config ){
 	open(my $readfh, "<", $config) or die "Can't open '".$config."'";
-	read($readfh , $config , 1000000);
+	read($readfh , $config_file , 1000000);
 	close($readfh);
 
 	#parse the config file and remove comments and empty lines
