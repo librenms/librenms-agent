@@ -48,7 +48,9 @@ scoreboardkey = [ '_', 'S', 'R', 'W', 'K', 'D', 'C', 'L', 'G', 'I', '.' ]
 params = {}
 for line in data.splitlines():
 	fields = line.split( ': ' )
-	if fields[0] == 'Scoreboard':
+	if len(fields) <= 1:
+                continue  # "localhost" as first line cause out of index error
+	elif fields[0] == 'Scoreboard':
 		# count up the scoreboard into states
 		states = {}
 		for state in scoreboardkey:
