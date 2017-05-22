@@ -1,0 +1,17 @@
+#!/bin/sh
+
+# Unbound statistics
+# (c) 2012, Tom Laermans for Observium (www.observium.org)
+
+# Required server configuration:
+#
+#         statistics-cumulative: yes
+#         extended-statistics: yes
+
+unboundctl=`which unbound-control`
+
+if [ $? -eq 0 ]
+then
+  echo '<<<app-unbound>>>'
+  $unboundctl stats
+fi
