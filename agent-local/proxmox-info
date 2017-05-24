@@ -1,0 +1,47 @@
+#!/bin/bash
+
+print_data() {
+    declare -a array=("${!1}")
+    CNT=`echo ${array[@]} | jq length`
+    for ((i=0; i<CNT; i++))
+    do
+        PID=""
+        MEM=""
+        MAXMEM=""
+        DISK=""
+        MAXDISK=""
+        CPUS=""
+        UPTIME=""
+        ID=`echo ${array[@]} | jq .[$i] | jq -r '.vmid'`
+        STATUS=`echo ${array[@]} | jq .[$i] | jq -r '.status'`
+        NAME=`echo ${array[@]} | jq .[$i] | jq -r '.name'`
+        TYPE=`echo ${array[@]} | jq .[$i] | jq -r '.type'`
+        if [[ $TYPE == "null" ]]; then
+           TYPE="qemu"
+        fi
+        if [[ $STATUS == "running" ]]; then
+                PID=`echo ${array[@]} | jq .[$i] | jq -r '.pid'`
+                MEM=`echo ${array[@]} | jq .[$i] | jq -r '.mem' | xargs -i echo "({}*0.95367431640625)/1000000" | bc`
+                MAXMEM=`echo ${array[@]} | jq .[$i] | jq -r '.maxmem' | xargs -i echo "({}*0.95367431640625)/1000000" | bc`
+                DISK=`echo ${array[@]} | jq .[$i] | jq -r '.disk' | xargs -i echo "({}*0.95367431640625)/1000000" | bc`
+                MAXDISK=`echo ${array[@]} | jq .[$i] | jq -r '.maxdisk' | xargs -i echo "({}*0.95367431640625)/1000000" | bc`
+                CPUS=`echo ${array[@]} | jq .[$i] | jq -r '.cpus'`
+                UPTIME=`echo ${array[@]} | jq .[$i] | jq -r '.uptime'`
+        fi
+        echo "$ID $STATUS $NAME $TYPE $CPUS $UPTIME $PID $MEM $MAXMEM $DISK $MAXDISK"
+    done
+    unset array
+}
+
+main() {
+    echo '<<<app-proxmox-info>>>'
+    HOSTNAME=`hostname`
+    echo $HOSTNAME
+    declare local DATA
+    DATA=`pvesh get /nodes/pve/lxc/ 2>/dev/null`;
+    print_data DATA[@]
+    DATA=`pvesh get /nodes/pve/qemu/ 2>/dev/null`;
+    print_data DATA[@]
+}
+
+main "$@"
