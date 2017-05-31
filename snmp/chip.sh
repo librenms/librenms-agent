@@ -1,5 +1,5 @@
 #!/bin/bash
-
+# Based on https://github.com/Photonicsguy/CHIP 
 # Enable ADC registers
 i2cset -y -f 0 0x34 0x82 0xff
 
