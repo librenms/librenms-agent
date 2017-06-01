@@ -24,7 +24,7 @@ if [ $STATUS_ACIN == 1 ]; then
         # ACIN Current
         REG=`i2cget -y -f 0 0x34 0x58 w|awk '{print "0x"substr($0,5,2)substr($0,4,1)}'`
         REG=`printf "%d" "$REG"`
-        ACIN_C=`echo "$REG*0.000375"|bc`
+        ACIN_C=`echo "$REG*0.000625"|bc`
 else
         ACIN=0
         ACIN_C=0
