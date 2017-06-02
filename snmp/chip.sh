@@ -55,12 +55,12 @@ if [ $STATUS_BATCON  ==  1 ]; then
                 # Battery Charging Current
                 REG=`i2cget -y -f 0 0x34 0x7A w|awk '{print "0x"substr($0,5,2)substr($0,4,1)}'`
                 REG_C=`printf "%d" "$REG"`
-                BAT_C=`echo "scale=2;$REG_C*0.0005"|bc`
+                BAT_C=`echo "scale=2;$REG_C*0.001"|bc`
         else
                 # Battery Discharge Current
                 REG=`i2cget -y -f 0 0x34 0x7C w|awk '{print "0x"substr($0,5,2)substr($0,4,1)}'`
                 REG_D=`printf "%d" "$REG"`
-                BAT_D=`echo "scale=2;$REG_D*0.0005"|bc`
+                BAT_D=`echo "scale=2;$REG_D*0.001"|bc`
         fi
         # Battery %
         REG=`i2cget -y -f 0 0x34 0xB9`
