@@ -22,13 +22,10 @@ print_data() {
     CNT=`echo ${array[@]} | jq length`
     for ((i=0; i<CNT; i++))
     do
-        PID=""
-        MEM=""
-        MAXMEM=""
-        DISK=""
-        MAXDISK=""
-        CPUS=""
-        UPTIME=""
+        PID="0"
+        MEM="0"
+        DISK="0"
+        UPTIME="0"
         ID=`echo ${array[@]} | jq .[$i] | jq -r '.vmid'`
         STATUS=`echo ${array[@]} | jq .[$i] | jq -r '.status'`
         NAME=`echo ${array[@]} | jq .[$i] | jq -r '.name'`
@@ -36,13 +33,13 @@ print_data() {
         if [[ $TYPE == "null" ]]; then
            TYPE="qemu"
         fi
+        MAXMEM=`echo ${array[@]} | jq .[$i] | jq -r '.maxmem' | xargs -i echo "({}*0.95367431640625)/1000000" | bc`
+        MAXDISK=`echo ${array[@]} | jq .[$i] | jq -r '.maxdisk' | xargs -i echo "({}*0.95367431640625)/1000000" | bc`
+        CPUS=`echo ${array[@]} | jq .[$i] | jq -r '.cpus'`
         if [[ $STATUS == "running" ]]; then
                 PID=`echo ${array[@]} | jq .[$i] | jq -r '.pid'`
                 MEM=`echo ${array[@]} | jq .[$i] | jq -r '.mem' | xargs -i echo "({}*0.95367431640625)/1000000" | bc`
-                MAXMEM=`echo ${array[@]} | jq .[$i] | jq -r '.maxmem' | xargs -i echo "({}*0.95367431640625)/1000000" | bc`
                 DISK=`echo ${array[@]} | jq .[$i] | jq -r '.disk' | xargs -i echo "({}*0.95367431640625)/1000000" | bc`
-                MAXDISK=`echo ${array[@]} | jq .[$i] | jq -r '.maxdisk' | xargs -i echo "({}*0.95367431640625)/1000000" | bc`
-                CPUS=`echo ${array[@]} | jq .[$i] | jq -r '.cpus'`
                 UPTIME=`echo ${array[@]} | jq .[$i] | jq -r '.uptime'`
         fi
         echo "$ID $STATUS $NAME $TYPE $CPUS $UPTIME $PID $MEM $MAXMEM $DISK $MAXDISK"
