@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -euo pipefail
+IFS=$'\n\t'
+
+API_AUTH_KEY=""
+API_URL="localhost/admin/api.php"
+URL_READ_ONLY="?summaryRaw"
+URL_QUERY_TYPE="?getQueryTypes&auth="
+
+
+#/ Description: BASH script to get Pi-hole stats
+#/ Examples: ./pi-hole-stats.sh
+#/ Options:
+#/   --help: Display this help message
+#/   --debug: Brief check of system env and script vars
+usage() {
+	grep '^#/' "$0" | cut -c4- ;
+	exit 0 ;
+}
+
+debug() {
+	if ! [ -x "$(command -v tr)" ]; then
+		echo '[error] tr binary not available, please install it'
+	else
+		echo '[ok] tr bin';
+	fi
+
+	if ! [ -x "$(command -v jq)" ]; then
+		echo '[error] jq binary not available, please install it'
+	else
+		echo '[ok] jq bin';
+	fi
+
+	if ! [ -x "$(command -v curl)" ]; then
+		echo '[error] curl binary not available, please install it'
+	else
+		echo '[ok] curl bin'
+	fi
+
+	if [ -z "$API_URL" ]; then
+		echo '[error] API_URL is not set'
+	else
+		echo '[ok] API_URL is set'
+	fi
+
+	if [ -z $API_AUTH_KEY ]; then
+		echo '[warning] API_AUTH_KEY is not set, some values will not be available'
+	else
+		echo '[ok] API_AUTH_KEY is set'
+	fi
+
+	if [ -z ${URL_READ_ONLY} ]; then
+		echo '[error] URL_READ_ONLY is not set'
+	else
+		echo '[ok] URL_READ_ONLY is set'
+	fi
+
+	if [ -z ${URL_QUERY_TYPE} ]; then
+		echo '[error] URL_QUERY_TYPE is not set'
+	else
+		echo '[ok] URL_QUERY_TYPE not set'
+	fi
+}
+
+exportdata() {
+	# domains_being_blocked / dns_query_total / ads_blocked_today / ads_percentage_today
+	# unique_domains / queries_forwarded / queries_cached
+	GET_STATS=$(curl -s $API_URL$URL_READ_ONLY | jq '.[]')
+	echo $GET_STATS | tr " " "\n"
+	# A / AAAA / PTR / SRV
+	GET_QUERY_TYPE=$(curl -s $API_URL$URL_QUERY_TYPE$API_AUTH_KEY | jq '.[][]')
+	echo $GET_QUERY_TYPE | tr " " "\n"
+}
+
+if [ -z $* ]; then
+        exportdata
+fi
+expr "$*" : ".*--help" > /dev/null && usage
+expr "$*" : ".*--debug" > /dev/null && debug
