@@ -32,7 +32,7 @@ if [ "${hddtemp}" != "" ]; then
 		else
 			output=`${hddtemp} -w -q ${disks} 2>/dev/null`
 		fi
-		content=`echo "$output" | awk -F": " 'BEGIN{ ORS="" }{ print "|"$1"|"$2"|"$3"|";} ' | sed 's/[° ]C|/|C|/g' | sed 's/[° ]F|/|F|/g'`
+		content=`echo "$output" | awk -F": " 'BEGIN{ ORS="" }{ print "|"$1"|"$2"|"$3"|";} ' | sed 's/[° ]C|/|C|/g' | sed 's/[° ]F|/|F|/g' | tr -cd '\12\14\40-\176'`
 		if [ "${content}" != "" ]; then
 			echo '<<<hddtemp>>>'
 			echo ${content}
