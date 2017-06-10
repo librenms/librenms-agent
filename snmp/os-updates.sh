@@ -13,6 +13,7 @@
 BIN_AWK='/usr/bin/awk'
 BIN_WC='/usr/bin/wc'
 BIN_GREP='/bin/grep'
+CMD_GREP='-c'
 CMD_WC='-l'
 BIN_ZYPPER='/usr/bin/zypper'
 CMD_ZYPPER='lu'
@@ -52,7 +53,7 @@ if [ -f /etc/os-release ]; then
 			echo "0";
 		fi
 	elif [ $OS == "debian" ] || [ $OS == "devuan" ] || [ $OS == "ubuntu" ]; then
-		UPDATES=`$BIN_APT $CMD_APT | $BIN_GREP -c 'Inst'`
+		UPDATES=`$BIN_APT $CMD_APT | $BIN_GREP $CMD_GREP 'Inst'`
 		if [ $UPDATES -gt 1 ]; then
 			echo $UPDATES;
 		else
