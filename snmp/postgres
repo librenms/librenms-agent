@@ -108,6 +108,7 @@ BEGIN{
 	toAdd=1;
 }
 END{
+	OFMT = "%.0f"
 	print backends;
 	print commits;
 	print rollbacks;
