@@ -19,7 +19,7 @@ elif [ "${OS}" = "Linux" ] ; then
   if [ -f /etc/fedora-release ]; then
     DIST=$(cat /etc/fedora-release | awk '{print $1}')
     REV=`cat /etc/fedora-release | sed s/.*release\ // | sed s/\ .*//`
-        
+
   elif [ -f /etc/redhat-release ] ; then
     DIST=$(cat /etc/redhat-release | awk '{print $1}')
     if [ "${DIST}" = "CentOS" ]; then
@@ -28,6 +28,9 @@ elif [ "${OS}" = "Linux" ] ; then
       DIST="Mandriva"
       PSEUDONAME=`cat /etc/mandriva-release | sed s/.*\(// | sed s/\)//`
       REV=`cat /etc/mandriva-release | sed s/.*release\ // | sed s/\ .*//`
+    elif [ "${DIST}" = "Red" ]; then
+      DIST="RedHat"
+      IGNORE_LSB=1
     else
       DIST="RedHat"
     fi
