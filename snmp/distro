@@ -28,6 +28,8 @@ elif [ "${OS}" = "Linux" ] ; then
       DIST="Mandriva"
       PSEUDONAME=`cat /etc/mandriva-release | sed s/.*\(// | sed s/\)//`
       REV=`cat /etc/mandriva-release | sed s/.*release\ // | sed s/\ .*//`
+    elif [ -f /etc/oracle-release ]; then
+      DIST="Oracle"
     else
       DIST="RedHat"
     fi
