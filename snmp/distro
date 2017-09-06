@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Detects which OS and if it is Linux then it will detect which Linux Distribution.
+# curl -o distro https://raw.githubusercontent.com/librenms/librenms-agent/master/snmp/distro
 
 OS=`uname -s`
 REV=`uname -r`
@@ -28,6 +29,8 @@ elif [ "${OS}" = "Linux" ] ; then
       DIST="Mandriva"
       PSEUDONAME=`cat /etc/mandriva-release | sed s/.*\(// | sed s/\)//`
       REV=`cat /etc/mandriva-release | sed s/.*release\ // | sed s/\ .*//`
+    elif [ -f /etc/oracle-release ]; then
+      DIST="Oracle"
     else
       DIST="RedHat"
     fi
