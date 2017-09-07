@@ -1,6 +1,6 @@
 # Lokale Einzelchecks
 export MUNIN_LIBDIR=/usr/share/munin
-if cd munin-scripts
+if cd /usr/share/munin/munin-scripts
 then
   for skript in $(ls)
   do
