@@ -21,7 +21,20 @@ def cephdf():
     cephdf    = check_output(["/usr/bin/ceph", "-f", "json", "df"]).replace('-inf', '0')
 
     s = json.loads(cephdf)
-    print("c:%i:%i:%i" % (s['stats']['total_bytes'], s['stats']['total_used_bytes'], s['stats']['total_avail_bytes']))
+    try:
+        ts = s['stats']['total_bytes']
+    except:
+        ts = s['stats']['total_space']
+    try:
+        tu = s['stats']['total_used_bytes']
+    except:
+        tu = s['stats']['total_used']
+    try:
+        ta = s['stats']['total_avail_bytes']
+    except:
+        ta = s['stats']['total_avail']
+
+    print("c:%i:%i:%i" % (ts, tu, ta))
 
     for p in s['pools']:
         b = p['stats']['bytes_used']
