@@ -36,7 +36,7 @@ if [ -f $BIN_ZYPPER ]; then
     else
         echo "0";
     fi
-if [ -f $BIN_DNF ]; then
+elif [ -f $BIN_DNF ]; then
     # Fedora
     UPDATES=`$BIN_DNF $CMD_DNF | $BIN_WC $CMD_WC`
     if [ $UPDATES -gt 1 ]; then
@@ -62,12 +62,12 @@ elif [ -f $BIN_YUM ]; then
     fi
 elif [ -f $BIN_APT ]; then
     # Debian / Devuan / Ubuntu
-	UPDATES=`$BIN_APT $CMD_APT | $BIN_GREP $CMD_GREP 'Inst'`
-	if [ $UPDATES -gt 1 ]; then
-		echo $UPDATES;
-	else
-		echo "0";
-	fi
+    UPDATES=`$BIN_APT $CMD_APT | $BIN_GREP $CMD_GREP 'Inst'`
+    if [ $UPDATES -gt 1 ]; then
+        echo $UPDATES;
+    else
+        echo "0";
+    fi
 else
-	echo "0";
+    echo "0";
 fi
