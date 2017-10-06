@@ -15,7 +15,7 @@ BIN_GREP='/bin/grep'
 CMD_GREP='-c'
 CMD_WC='-l'
 BIN_ZYPPER='/usr/bin/zypper'
-CMD_ZYPPER='lu'
+CMD_ZYPPER='-q lu'
 BIN_YUM='/usr/bin/yum'
 CMD_YUM='-q check-update'
 BIN_DNF='/usr/bin/dnf'
@@ -31,14 +31,14 @@ CMD_PACMAN='-Sup'
 if [ -f $BIN_ZYPPER ]; then
     # OpenSUSE
     UPDATES=`$BIN_ZYPPER $CMD_ZYPPER | $BIN_WC $CMD_WC`
-    if [ $UPDATES -gt 3 ]; then
-        echo $(($UPDATES-3));
+    if [ $UPDATES -gt 2 ]; then
+        echo $(($UPDATES-2));
     else
         echo "0";
     fi
-elif [ -f $BIN_YUM ]; then
-    # CentOS / Redhat
-    UPDATES=`$BIN_YUM $CMD_YUM | $BIN_WC $CMD_WC`
+if [ -f $BIN_DNF ]; then
+    # Fedora
+    UPDATES=`$BIN_DNF $CMD_DNF | $BIN_WC $CMD_WC`
     if [ $UPDATES -gt 1 ]; then
         echo $(($UPDATES-1));
     else
@@ -47,6 +47,14 @@ elif [ -f $BIN_YUM ]; then
 elif [ -f $BIN_PACMAN ]; then
     # Arch
     UPDATES=`$BIN_PACMAN $CMD_PACMAN | $BIN_WC $CMD_WC`
+    if [ $UPDATES -gt 1 ]; then
+        echo $(($UPDATES-1));
+    else
+        echo "0";
+    fi
+elif [ -f $BIN_YUM ]; then
+    # CentOS / Redhat
+    UPDATES=`$BIN_YUM $CMD_YUM | $BIN_WC $CMD_WC`
     if [ $UPDATES -gt 1 ]; then
         echo $(($UPDATES-1));
     else
