@@ -10,7 +10,6 @@
 #--------------------------------------------------------------#
 # please make sure you have the path/binaries below            #
 ################################################################ 
-BIN_AWK='/usr/bin/awk'
 BIN_WC='/usr/bin/wc'
 BIN_GREP='/bin/grep'
 CMD_GREP='-c'
@@ -29,45 +28,38 @@ CMD_PACMAN='-Sup'
 ################################################################
 # Don't change anything unless you know what are you doing     #
 ################################################################
-if [ -f /etc/os-release ]; then
-	OS=`$BIN_AWK -F= '/^ID=/{print $2}' /etc/os-release`
-	if [ $OS == "opensuse" ]; then
-		UPDATES=`$BIN_ZYPPER $CMD_ZYPPER | $BIN_WC $CMD_WC`
-		if [ $UPDATES -gt 3 ]; then
-			echo $(($UPDATES-3));
-		else
-			echo "0";
-		fi
-	elif [ $OS == "\"centos\"" ]; then
-		UPDATES=`$BIN_YUM $CMD_YUM | $BIN_WC $CMD_WC`
-		if [ $UPDATES -gt 6 ]; then
-			echo $(($UPDATES-6));
-		else
-			echo "0";
-		fi
-	elif [ $OS == "fedora" ]; then
-		UPDATES=`$BIN_DNF $CMD_DNF | $BIN_WC $CMD_WC`
-		if [ $UPDATES -gt 6 ]; then
-			echo $(($UPDATES-6));
-                else
-			echo "0";
-		fi
-	elif [ $OS == "debian" ] || [ $OS == "devuan" ] || [ $OS == "ubuntu" ]; then
-		UPDATES=`$BIN_APT $CMD_APT | $BIN_GREP $CMD_GREP 'Inst'`
-		if [ $UPDATES -gt 1 ]; then
-			echo $UPDATES;
-		else
-			echo "0";
-		fi
-	elif [ $OS == "arch" ]; then
-		UPDATES=`$BIN_PACMAN $CMD_PACMAN | $BIN_WC $CMD_WC`
-		if [ $UPDATES -gt 1 ]; then
-        		echo $(($UPDATES-1));
-    		else
-        		echo "0";
-		fi
+if [ -f $BIN_ZYPPER ]; then
+    # OpenSUSE
+    UPDATES=`$BIN_ZYPPER $CMD_ZYPPER | $BIN_WC $CMD_WC`
+    if [ $UPDATES -gt 3 ]; then
+        echo $(($UPDATES-3));
+    else
+        echo "0";
+    fi
+elif [ -f $BIN_YUM ]; then
+    # CentOS / Redhat
+    UPDATES=`$BIN_YUM $CMD_YUM | $BIN_WC $CMD_WC`
+    if [ $UPDATES -gt 1 ]; then
+        echo $(($UPDATES-1));
+    else
+        echo "0";
+    fi
+elif [ -f $BIN_PACMAN ]; then
+    # Arch
+    UPDATES=`$BIN_PACMAN $CMD_PACMAN | $BIN_WC $CMD_WC`
+    if [ $UPDATES -gt 1 ]; then
+        echo $(($UPDATES-1));
+    else
+        echo "0";
+    fi
+elif [ -f $BIN_APT ]; then
+    # Debian / Devuan / Ubuntu
+	UPDATES=`$BIN_APT $CMD_APT | $BIN_GREP $CMD_GREP 'Inst'`
+	if [ $UPDATES -gt 1 ]; then
+		echo $UPDATES;
+	else
+		echo "0";
 	fi
 else
 	echo "0";
 fi
-
