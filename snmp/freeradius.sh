@@ -73,6 +73,13 @@ if [ ${#AUTH_MAL} -le 20 ]; then AUTH_MAL='FreeRADIUS-Total-Auth-Malformed-Reque
 if [ ${#AUTH_INV} -le 20 ]; then AUTH_INV='FreeRADIUS-Total-Auth-Invalid-Requests = 0'; fi
 if [ ${#AUTH_DRP} -le 20 ]; then AUTH_DRP='FreeRADIUS-Total-Auth-Dropped-Requests = 0'; fi
 if [ ${#AUTH_UNK} -le 20 ]; then AUTH_UNK='FreeRADIUS-Total-Auth-Unknown-Types = 0'; fi
+if [ ${#ACCT_REQ} -le 20 ]; then ACCT_REQ='FreeRADIUS-Total-Accounting-Requests = 0'; fi
+if [ ${#ACCT_RES} -le 20 ]; then ACCT_RES='FreeRADIUS-Total-Accounting-Responses = 0'; fi
+if [ ${#ACCT_DUP} -le 20 ]; then ACCT_DUP='FreeRADIUS-Total-Acct-Duplicate-Requests = 0'; fi
+if [ ${#ACCT_MAL} -le 20 ]; then ACCT_MAL='FreeRADIUS-Total-Acct-Malformed-Requests = 0'; fi
+if [ ${#ACCT_INV} -le 20 ]; then ACCT_INV='FreeRADIUS-Total-Acct-Invalid-Requests = 0'; fi
+if [ ${#ACCT_DRP} -le 20 ]; then ACCT_DRP='FreeRADIUS-Total-Acct-Dropped-Requests = 0'; fi
+if [ ${#ACCT_UNK} -le 20 ]; then ACCT_UNK='FreeRADIUS-Total-Acct-Unknown-Types = 0'; fi
 if [ ${#PROXY_ACCESS_REQ} -le 20 ]; then PROXY_ACCESS_REQ='FreeRADIUS-Total-Proxy-Access-Requests = 0'; fi
 if [ ${#PROXY_ACCESS_ACC} -le 20 ]; then PROXY_ACCESS_ACC='FreeRADIUS-Total-Proxy-Access-Accepts = 0'; fi
 if [ ${#PROXY_ACCESS_REJ} -le 20 ]; then PROXY_ACCESS_REJ='FreeRADIUS-Total-Proxy-Access-Rejects = 0'; fi
@@ -108,6 +115,13 @@ echo $AUTH_MAL
 echo $AUTH_INV
 echo $AUTH_DRP
 echo $AUTH_UNK
+echo $ACCT_REQ
+echo $ACCT_RES
+echo $ACCT_DUP
+echo $ACCT_MAL
+echo $ACCT_INV
+echo $ACCT_DRP
+echo $ACCT_UNK
 echo $PROXY_ACCESS_REQ
 echo $PROXY_ACCESS_ACC
 echo $PROXY_ACCESS_REJ
