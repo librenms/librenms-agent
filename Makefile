@@ -4,8 +4,11 @@ install:
 	mkdir -p $(PREFIX)/usr/lib/check_mk_agent/plugins
 	mkdir -p $(PREFIX)/usr/lib/check_mk_agent/repo
 	mkdir -p $(PREFIX)/usr/lib/check_mk_agent/local
+	mkdir -p $(PREFIX)/usr/lib/librenms_agent
 	cp -r agent-local/* $(PREFIX)/usr/lib/check_mk_agent/repo/
 	rm $(PREFIX)/usr/lib/check_mk_agent/repo/README
+	cp -r snmp/* $(PREFIX)/usr/lib/librenms_agent/
+	rm $(PREFIX)/usr/lib/librenms_agent/distro
 	mkdir -p $(PREFIX)/usr/bin
 	install -m 0750 check_mk_agent $(PREFIX)/usr/bin/check_mk_agent
 	install -m 0750 mk_enplug $(PREFIX)/usr/bin/mk_enplug
