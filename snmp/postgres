@@ -1,0 +1,132 @@
+#!/bin/sh
+#Copyright (c) 2017, Zane C. Bowers-Hadley
+#All rights reserved.
+#
+#Redistribution and use in source and binary forms, with or without modification,
+#are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+#THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+#WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+#IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, 
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, 
+#DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+#LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+#THE POSSIBILITY OF SUCH DAMAGE.
+
+#set the user here to use
+#be sure to set up the user in .pgpass for the user snmpd is running as
+DBuser=pgsql
+
+# You may want to disable totalling for the postgres DB as that can make the total graphs artificially noisy.
+# 1 = don't total stats for the DB postgres
+# 0 = include postgres in the totals
+ignorePG=1;
+
+#make sure the paths are right for your system
+cpg='/usr/bin/env check_postgres.pl'
+
+$cpg -u $DBuser --action dbstats | awk -F ' ' '
+
+BEGIN{
+	backends=0;
+	commits=0;
+	rollbacks=0;
+	read=0;
+	hit=0;
+	idxscan=0;
+	idxtupread=0;
+	idxtupfetch=0;
+	idxblksread=0;
+	idxblkshit=0;
+	seqscan=0;
+	seqtupread=0;
+	ret=0;
+	fetch=0;
+	ins=0;
+	upd=0;
+	del=0;
+	db="";
+    ignorePG='$ignorePG';
+	toAdd=1;
+}  
+{
+	gsub(/dbname\:/, "");
+	gsub(/backends\:/, ""); 
+	gsub(/commits\:/, ""); 
+	gsub(/rollbacks\:/, ""); 
+	gsub(/idxscan\:/, ""); 
+	gsub(/idxtupread\:/, ""); 
+	gsub(/idxtupfetch\:/, ""); 
+	gsub(/idxblksread\:/, ""); 
+	gsub(/idxblkshit\:/, ""); 
+	gsub(/seqscan\:/, ""); 
+	gsub(/seqtupread\:/, ""); 
+	gsub(/ret\:/, "");
+	gsub(/fetch\:/, "");
+	gsub(/ins\:/, "");
+	gsub(/upd\:/, "");
+	gsub(/del\:/, ""); 
+	#must be processed last or they step on other gsub
+	gsub(/read\:/, "");
+	gsub(/hit\:/, "");
+
+	if ( $18 == "postgres" ){
+	  if ( ignorePG == 1 ){ toAdd=0 }
+	}
+
+	if ( toAdd == 1 ){
+		backends=backends+$1;
+		commits=commits+$2;
+		rollbacks=rollbacks+$3;
+		idxscan=idxscan+$6;
+		idxtupread=idxtupread+$7;
+		idxtupfetch=idxtupfetch+$8;
+		idxblksread=idxblksread+$9;
+		idxblkshit=idxblkshit+$10;
+		seqscan=seqscan+$11;
+		seqtupread=seqtupread+$12;
+		ret=ret+$13;
+		fetch=fetch+$14;
+		ins=ins+$15;
+		upd=upd+$16;
+		del=del+$17;
+		read=read+$4;
+		hit=hit+$5;
+	}
+
+	db=db$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8" "$9" "$10" "$11" "$12" "$13" "$14" "$15" "$16" "$17" "$18"\n";
+
+	toAdd=1;
+}
+END{
+	OFMT = "%.0f"
+	print backends;
+	print commits;
+	print rollbacks;
+	print read;
+	print hit;
+	print idxscan;
+	print idxtupread;
+	print idxtupfetch;
+	print idxblksread;
+	print idxblkshit;
+	print seqscan;
+	print seqtupread;
+	print ret;
+	print fetch;
+	print ins;
+	print upd;
+	print del;
+	print db;
+}
+'
+

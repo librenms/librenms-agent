@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from subprocess import check_output
+from subprocess import Popen, PIPE
 
 vars = [ 'corrupt-packets', 'deferred-cache-inserts', 'deferred-cache-lookup',
 'latency', 'packetcache-hit', 'packetcache-miss', 'packetcache-size',
@@ -10,8 +10,9 @@ vars = [ 'corrupt-packets', 'deferred-cache-inserts', 'deferred-cache-lookup',
 'udp4-queries', 'udp6-answers', 'udp6-queries' ]
 
 rvars = {}
+cmd = ['/usr/bin/pdns_control', 'show', '*']
 
-for l in check_output(['/usr/bin/pdns_control', 'show', '*']).decode().rstrip().split(','):
+for l in Popen(cmd, stdout=PIPE).communicate()[0].decode().rstrip().split(','):
     v = l.split('=')
     if len(v) > 1:
     	rvars[v[0]] = v[1]

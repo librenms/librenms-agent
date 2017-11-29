@@ -1,8 +1,22 @@
-librenms-agent (1.0.6) stable; urgency=low
+librenms-agent (1.0.8) stable; urgency=low
 
   - Include SNMP scripts
 
  -- Xavier Beaudouin <xbeaudouin@hotcity.lu> Wed, 29 Nov 2017 10:05:00 +0200
+
+librenms-agent (1.0.7) stable; urgency=low
+
+  - New upstream versions
+  - Enable IPv6 for Xinetd
+
+ -- Mark Schouten <mark@tuxis.nl> Wed, 08 Mar 2017 00:36:00 +0200
+
+librenms-agent (1.0.6) stable; urgency=low
+
+  - Fix a dirty hack to prevent failing of stats when the cluster is rebuilding
+    because Ceph returns '-inf' which the json decompiler doesn't seem to get..
+
+ -- Mark Schouten <mark@tuxis.nl> Tue, 05 Oct 2016 10:57:00 +0200
 
 librenms-agent (1.0.5) stable; urgency=low
 

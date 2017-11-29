@@ -16,7 +16,11 @@ elif [ "${OS}" = "AIX" ] ; then
 elif [ "${OS}" = "Linux" ] ; then
   KERNEL=`uname -r`
 
-  if [ -f /etc/redhat-release ] ; then
+  if [ -f /etc/fedora-release ]; then
+    DIST=$(cat /etc/fedora-release | awk '{print $1}')
+    REV=`cat /etc/fedora-release | sed s/.*release\ // | sed s/\ .*//`
+        
+  elif [ -f /etc/redhat-release ] ; then
     DIST=$(cat /etc/redhat-release | awk '{print $1}')
     if [ "${DIST}" = "CentOS" ]; then
       DIST="CentOS"
@@ -24,6 +28,8 @@ elif [ "${OS}" = "Linux" ] ; then
       DIST="Mandriva"
       PSEUDONAME=`cat /etc/mandriva-release | sed s/.*\(// | sed s/\)//`
       REV=`cat /etc/mandriva-release | sed s/.*release\ // | sed s/\ .*//`
+    elif [ -f /etc/oracle-release ]; then
+      DIST="Oracle"
     else
       DIST="RedHat"
     fi
@@ -36,9 +42,17 @@ elif [ "${OS}" = "Linux" ] ; then
     PSEUDONAME=`cat /etc/mandrake-release | sed s/.*\(// | sed s/\)//`
     REV=`cat /etc/mandrake-release | sed s/.*release\ // | sed s/\ .*//`
 
+  elif [ -f /etc/devuan_version ] ; then
+    DIST="Devuan `cat /etc/devuan_version`"
+    REV=""
+
   elif [ -f /etc/debian_version ] ; then
     DIST="Debian `cat /etc/debian_version`"
     REV=""
+    ID=`lsb_release -i | awk -F ':' '{print $2}' | sed 's/	//g'`
+    if [ "${ID}" = "Raspbian" ] ; then
+      DIST="Raspbian `cat /etc/debian_version`"
+    fi
 
   elif [ -f /etc/gentoo-release ] ; then
     DIST="Gentoo"
@@ -67,12 +81,18 @@ elif [ "${OS}" = "Linux" ] ; then
   fi
 
   if [ -f /etc/lsb-release -a "${IGNORE_LSB}" != 1 ] ; then
-    LSB_DIST="`cat /etc/lsb-release | grep DISTRIB_ID | cut -d "=" -f2`"
-    LSB_REV="`cat /etc/lsb-release | grep DISTRIB_RELEASE | cut -d "=" -f2`"
+    LSB_DIST=$(lsb_release -si)
+    LSB_REV=$(lsb_release -sr)
     if [ "$LSB_DIST" != "" ] ; then
       DIST=$LSB_DIST
+    fi
+    if [ "$LSB_REV" != "" ] ; then
       REV=$LSB_REV
     fi
+  fi
+
+  if [ "`uname -a | awk '{print $(NF)}'`" = "DD-WRT" ] ; then
+    DIST="dd-wrt"
   fi
 
   if [ -n "${REV}" ]
@@ -86,6 +106,9 @@ elif [ "${OS}" = "Darwin" ] ; then
   if [ -f /usr/bin/sw_vers ] ; then
     OSSTR=`/usr/bin/sw_vers|grep -v Build|sed 's/^.*:.//'| tr "\n" ' '`
   fi
+
+elif [ "${OS}" = "FreeBSD" ] ; then
+  OSSTR=`/usr/bin/uname -mior`
 fi
 
 echo ${OSSTR}

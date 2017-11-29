@@ -9,5 +9,4 @@ for line in input.splitlines():
     item = line.split()
     data.append({'name': item[0].decode(), 'value': int(item[1].decode())})
 
-print('<<<powerdns-recursor>>>')
 print(json.dumps(data))

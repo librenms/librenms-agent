@@ -1,0 +1,46 @@
+#!/bin/bash
+
+FSCLI=/usr/local/freeswitch/bin/fs_cli
+
+inRe="Inbound\(Failed\/Total\): ([0-9]+)\/([0-9]+)"
+outRe="Outbound\(Failed\/Total\):([0-9]+)\/([0-9]+)"
+
+if [ -f $FSCLI ];
+then
+    $FSCLI -x "status" > /dev/null
+    if [ $? -ne 0 ]; then
+        # Freeswitch not running, silently exit.
+        exit 0
+    fi
+
+    PEAK=`$FSCLI -x "status" | grep 'per Sec' | grep -Po 'last 5min \d+' | cut -d ' ' -f 3`
+    CALLCOUNT=`$FSCLI -x "show calls count" | grep -Po '^\d+'`
+    CHANNELCOUNT=`$FSCLI -x "show channels count" | grep -Po '^\d+'`
+    GATEWAYS=`$FSCLI -x "sofia status gateway"`
+    if [[ $GATEWAYS =~ $inRe ]]; then
+        INFAILED=${BASH_REMATCH[1]}
+        INTOTAL=${BASH_REMATCH[2]}
+    else
+        INFAILED=0
+        INTOTAL=0
+    fi
+    if [[ $GATEWAYS =~ $outRe ]]; then
+        OUTFAILED=${BASH_REMATCH[1]}
+        OUTTOTAL=${BASH_REMATCH[2]}
+    else
+        OUTFAILED=0
+        OUTTOTAL=0
+    fi
+
+    echo "<<<freeswitch>>>"
+    echo "Calls=$CALLCOUNT"
+    echo "Channels=$CHANNELCOUNT"
+    echo "Peak=$PEAK"
+    echo "InFailed=$INFAILED"
+    echo "InTotal=$INTOTAL"
+    echo "OutFailed=$OUTFAILED"
+    echo "OutTotal=$OUTTOTAL"
+
+else
+   exit 0
+fi

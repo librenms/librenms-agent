@@ -1,0 +1,13 @@
+#!/bin/sh
+
+# Add this to snmpd.conf as below.
+# extend unbound /root/snmp-extends/unbound
+
+# Set the path to unbound-control.
+unbountctl='/usr/bin/env unbound-control'
+
+##
+## You should not need to change anything below.
+##
+
+$unbountctl stats
