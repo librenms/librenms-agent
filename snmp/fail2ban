@@ -9,6 +9,9 @@
 #make sure this path is correct
 my $f2bc="/usr/bin/env fail2ban-client";
 
+# Choose linux firewall type (nft or iptables)
+my $linuxFirewall="nft";
+
 #make sure this path is correct
 my $iptablesPath="/usr/bin/env iptables";
 
@@ -18,6 +21,14 @@ my $cache='/var/cache/fail2ban';
 # Please verify that the tables below are correct for your installation
 my @linuxChains=('failban','f2b');
 my $freebsdPFtable='fail2ban'; 
+
+# If using Linux netfilter (see nft manual for keywords)
+my $nftFamily="inet";
+my $nftTable="filter";
+# Currently only support one of nft set. This should be determined automatically
+# because in default installation, fail2ban will make different of set for
+# each jail: f2b-<setname>
+my $nftSetName="blacklist";
 
 ##
 ## you should not have to touch anything below this
@@ -105,42 +116,47 @@ if (defined( $opts{u} )){
 	};
 	
 	if ( $os =~ '^Linux' ){
-		my $iptables=`$iptablesPath -L -n`;
-		my @iptablesA=split( /\n/, $iptables );
+		if ( $linuxFirewall =~ 'iptables' ){
+			my $iptables=`$iptablesPath -L -n`;
+			my @iptablesA=split( /\n/, $iptables );
 
-		#check each line
-		my $int=0;
-		my $count=0;
-		while( defined( $iptablesA[$int] ) ){
-			my $line=$iptablesA[$int];
-			
-			#stop counting if we have a blank line
-			if ( $line =~ /^$/ ){
-				$count=0;
-			}
-			
-			#count /^REJECT/ lines, if we are counting
-			if ( ( $line =~ /^REJECT/ ) && ( $count ) ){
-				$firewalled++;
-			}
-			
-			#check if this is a chain we should count
-			if ( $line =~ /^Chain/ ){
-				my $linuxChainsInt=0;
-				# check if any of the specified names hit and if so start counting
-				while( defined( $linuxChains[$linuxChainsInt] ) ){
-					my $chain=$linuxChains[$linuxChainsInt];
-					if ( $line =~ /^Chain $chain/ ){
-						$count=1;
-					}
-					
-					$linuxChainsInt++;
+			#check each line
+			my $int=0;
+			my $count=0;
+			while( defined( $iptablesA[$int] ) ){
+				my $line=$iptablesA[$int];
+				
+				#stop counting if we have a blank line
+				if ( $line =~ /^$/ ){
+					$count=0;
 				}
-			}		
+				
+				#count /^REJECT/ lines, if we are counting
+				if ( ( $line =~ /^REJECT/ ) && ( $count ) ){
+					$firewalled++;
+				}
+				
+				#check if this is a chain we should count
+				if ( $line =~ /^Chain/ ){
+					my $linuxChainsInt=0;
+					# check if any of the specified names hit and if so start counting
+					while( defined( $linuxChains[$linuxChainsInt] ) ){
+						my $chain=$linuxChains[$linuxChainsInt];
+						if ( $line =~ /^Chain $chain/ ){
+							$count=1;
+						}
+						
+						$linuxChainsInt++;
+					}
+				}		
+				
+				$int++;
+			}
 			
-			$int++;
+		}else{
+			$firewalled=`/usr/sbin/nft list set $nftFamily $nftTable $nftSetName | /usr/bin/grep -oE '[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}' | /usr/bin/grep -c .`;
+			chomp($firewalled);
 		}
-		
 	}
 
 		##
