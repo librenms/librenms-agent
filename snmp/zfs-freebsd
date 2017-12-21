@@ -2,7 +2,7 @@
 
 =head1 DESCRIPTION
 
-Thgis is a SNMP extend for ZFS and FreeBSD for use with LibreNMS.
+This is a SNMP extend for ZFS and FreeBSD for use with LibreNMS.
 
 For more information, see L<https://docs.librenms.org/#Extensions/Applications/#zfs>.
 
