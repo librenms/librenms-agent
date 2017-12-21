@@ -1,4 +1,23 @@
 #!/usr/bin/env perl
+
+=head1 DESCRIPTION
+
+Thgis is a SNMP extend for ZFS and FreeBSD for use with LibreNMS.
+
+For more information, see L<https://docs.librenms.org/#Extensions/Applications/#zfs>.
+
+=head1 SWITCHES
+
+=head2 -p
+
+Pretty print the JSON.
+
+=head1 SNMPD SETUP EXAMPLES
+
+    extend zfs /etc/snmp/zfs-freebsd
+
+=cut
+
 #Copyright (c) 2017, Zane C. Bowers-Hadley
 #All rights reserved.
 #
@@ -68,12 +87,6 @@ if ( ! defined( $sysctls->{"kstat.zfs.misc.arcstats.recycle_miss"} ) ) {
 ##
 ## ARC misc
 ##
-
-#print $sysctls->{"kstat.zfs.misc.arcstats.deleted"}.','.
-#	$sysctls->{"kstat.zfs.misc.arcstats.evict_skip"}.','.
-#	$sysctls->{'kstat.zfs.misc.arcstats.mutex_miss'}.','.
-#	$sysctls->{"kstat.zfs.misc.arcstats.recycle_miss"}."\n";
-
 $tojson{deleted}=$sysctls->{"kstat.zfs.misc.arcstats.deleted"};
 $tojson{evict_skip}=$sysctls->{"kstat.zfs.misc.arcstats.evict_skip"};
 $tojson{mutex_skip}=$sysctls->{'kstat.zfs.misc.arcstats.mutex_miss'};
