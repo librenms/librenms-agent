@@ -1,0 +1,233 @@
+#!/usr/bin/env perl
+#Copyright (c) 2017, Zane C. Bowers-Hadley
+#All rights reserved.
+#
+#Redistribution and use in source and binary forms, with or without modification,
+#are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+#THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+#WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+#IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, 
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, 
+#DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+#LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+#THE POSSIBILITY OF SUCH DAMAGE.
+
+# Many thanks to Ben Rockwood, Jason J. Hellenthal, and Martin Matuska
+# for zfs-stats and figuring out the math for all the stats
+
+=for comment
+
+Add this to snmpd.conf as below and restart it.
+
+    extend zfs /etc/snmp/bind
+
+=cut
+
+use strict;
+use warnings;
+use Getopt::Std;
+
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
+sub main::VERSION_MESSAGE {
+        print "FreeBSD ZFS stats extend 0.0.0\n";
+}
+
+sub main::HELP_MESSAGE {
+
+}
+
+
+#gets the options
+my %opts=();
+getopts('', \%opts);
+
+my $sysctls;
+my @to_pull=(
+	'kstat.zfs',
+	'vfs.zfs',
+	);
+my @sysctls_pull = `/sbin/sysctl -q @to_pull`;
+foreach my $stat (@sysctls_pull) {
+	chomp( $stat );
+	my ( $var, $val ) = split(/:/, $stat, 2);
+	
+	$val =~ s/^ //;
+	$sysctls->{$var}=$val;		   
+}
+
+# does not seem to exist for me, but some of these don't seem to be created till needed
+if ( ! defined( $sysctls->{"kstat.zfs.misc.arcstats.recycle_miss"} ) ) {
+	$sysctls->{"kstat.zfs.misc.arcstats.recycle_miss"}=0;
+}
+
+##
+## ARC misc
+##
+print $sysctls->{"kstat.zfs.misc.arcstats.deleted"}.','.
+	$sysctls->{"kstat.zfs.misc.arcstats.evict_skip"}.','.
+	$sysctls->{'kstat.zfs.misc.arcstats.mutex_miss'}.','.
+	$sysctls->{"kstat.zfs.misc.arcstats.recycle_miss"}."\n";
+
+##
+## ARC size
+##
+my $target_size_percent = $sysctls->{"kstat.zfs.misc.arcstats.c"} / $sysctls->{"kstat.zfs.misc.arcstats.c_max"} * 100;
+my $arc_size_percent = $sysctls->{"kstat.zfs.misc.arcstats.size"} / $sysctls->{"kstat.zfs.misc.arcstats.c_max"} * 100;
+my $target_size_adaptive_ratio = $sysctls->{"kstat.zfs.misc.arcstats.c"} / $sysctls->{"kstat.zfs.misc.arcstats.c_max"};
+my $min_size_percent = $sysctls->{"kstat.zfs.misc.arcstats.c_min"} / $sysctls->{"kstat.zfs.misc.arcstats.c_max"} * 100;
+
+print $sysctls->{"kstat.zfs.misc.arcstats.size"}.','. # arc_size
+	$sysctls->{"kstat.zfs.misc.arcstats.c_max"}.','. # target_max_size
+	$sysctls->{"kstat.zfs.misc.arcstats.c_min"}.','. # target_min_size
+	$sysctls->{"kstat.zfs.misc.arcstats.c"}.','. # target_size
+	$target_size_percent.','. # target_size_per
+	$arc_size_percent.','. # arc_size_per
+	$target_size_adaptive_ratio.','. #target_size_arat
+	$min_size_percent."\n"; # min_size_per
+	
+##
+## ARC size breakdown
+##
+my $mfu_size;
+my $recently_used_percent;
+my $frequently_used_percent;
+if ( $sysctls->{"kstat.zfs.misc.arcstats.size"} >= $sysctls->{"kstat.zfs.misc.arcstats.size"} ){
+	$mfu_size = $sysctls->{"kstat.zfs.misc.arcstats.size"} - $sysctls->{"kstat.zfs.misc.arcstats.p"};
+	$recently_used_percent = $sysctls->{"kstat.zfs.misc.arcstats.p"} / $sysctls->{"kstat.zfs.misc.arcstats.size"} * 100;
+	$frequently_used_percent = $mfu_size / $sysctls->{"kstat.zfs.misc.arcstats.size"} * 100;
+}else{
+	$mfu_size = $sysctls->{"kstat.zfs.misc.arcstats.c"} - $sysctls->{"kstat.zfs.misc.arcstats.p"};
+	$recently_used_percent = $sysctls->{"kstat.zfs.misc.arcstats.p"} / $sysctls->{"kstat.zfs.misc.arcstats.c"} * 100;
+	$frequently_used_percent = $mfu_size / $sysctls->{"kstat.zfs.misc.arcstats.c"} * 100;
+}
+
+print $mfu_size.','.
+	$sysctls->{"kstat.zfs.misc.arcstats.p"}.','.
+	$recently_used_percent.','. # rec_used_per
+	$frequently_used_percent."\n"; #freq_used_per
+
+##
+## ARC efficiency
+##	
+my $arc_hits = $sysctls->{"kstat.zfs.misc.arcstats.hits"};
+my $arc_misses = $sysctls->{"kstat.zfs.misc.arcstats.misses"};
+my $demand_data_hits = $sysctls->{"kstat.zfs.misc.arcstats.demand_data_hits"};
+my $demand_data_misses = $sysctls->{"kstat.zfs.misc.arcstats.demand_data_misses"};
+my $demand_metadata_hits = $sysctls->{"kstat.zfs.misc.arcstats.demand_metadata_hits"};
+my $demand_metadata_misses = $sysctls->{"kstat.zfs.misc.arcstats.demand_metadata_misses"};
+my $mfu_ghost_hits = $sysctls->{"kstat.zfs.misc.arcstats.mfu_ghost_hits"};
+my $mfu_hits = $sysctls->{"kstat.zfs.misc.arcstats.mfu_hits"};
+my $mru_ghost_hits = $sysctls->{"kstat.zfs.misc.arcstats.mru_ghost_hits"};
+my $mru_hits = $sysctls->{"kstat.zfs.misc.arcstats.mru_hits"};
+my $prefetch_data_hits = $sysctls->{"kstat.zfs.misc.arcstats.prefetch_data_hits"};
+my $prefetch_data_misses = $sysctls->{"kstat.zfs.misc.arcstats.prefetch_data_misses"};
+my $prefetch_metadata_hits = $sysctls->{"kstat.zfs.misc.arcstats.prefetch_metadata_hits"};
+my $prefetch_metadata_misses = $sysctls->{"kstat.zfs.misc.arcstats.prefetch_metadata_misses"};
+
+my $anon_hits = $arc_hits - ($mfu_hits + $mru_hits + $mfu_ghost_hits + $mru_ghost_hits);
+my $arc_accesses_total = $arc_hits + $arc_misses;
+my $demand_data_total = $demand_data_hits + $demand_data_misses;
+my $prefetch_data_total = $prefetch_data_hits + $prefetch_data_misses;
+my $real_hits = $mfu_hits + $mru_hits;
+
+my $cache_hit_percent = $arc_hits / $arc_accesses_total * 100;
+my $cache_miss_percent = $arc_misses / $arc_accesses_total * 100;
+my $actual_hit_percent = $real_hits / $arc_accesses_total * 100;
+my $data_demand_percent = $demand_data_hits / $demand_data_total * 100;
+
+my $data_prefetch_percent;
+if ( $prefetch_data_total != 0 ) {
+	$data_prefetch_percent = $prefetch_data_hits / $prefetch_data_total * 100;
+}else{
+	$data_prefetch_percent = 0;
+}
+
+my $anon_hits_percent;
+if ( $anon_hits != 0 ) {
+	$anon_hits_percent = $anon_hits / $arc_hits * 100;
+}else{
+	$anon_hits_percent=0;
+}
+
+my $mru_percent = $mru_hits / $arc_hits * 100;
+my $mfu_percent = $mfu_hits / $arc_hits * 100;
+my $mru_ghost_percent = $mru_ghost_hits / $arc_hits * 100;
+my $mfu_ghost_percent = $mfu_ghost_hits / $arc_hits * 100;
+
+my $demand_hits_percent = $demand_data_hits / $arc_hits * 100;
+my $prefetch_hits_percent = $prefetch_data_hits / $arc_hits * 100;
+my $metadata_hits_percent = $demand_metadata_hits / $arc_hits * 100;
+my $prefetch_metadata_hits_percent = $prefetch_metadata_hits / $arc_hits * 100;
+
+my $demand_misses_percent = $demand_data_misses / $arc_misses * 100;
+my $prefetch_misses_percent = $prefetch_data_misses / $arc_misses * 100;
+my $metadata_misses_percent = $demand_metadata_misses / $arc_misses * 100;
+my $prefetch_metadata_misses_percent = $prefetch_metadata_misses / $arc_misses * 100;
+
+# ARC misc. efficient stats
+print $arc_hits.','.
+	$arc_misses.','.
+	$demand_data_hits.','.
+	$demand_data_misses.','.
+	$demand_metadata_hits.','. # demand_meta_hits
+	$demand_metadata_misses.','. #demand_meta_misses
+	$mfu_ghost_hits.','.
+	$mfu_hits.','.
+	$mru_ghost_hits.','.
+	$mru_hits.','.
+	$prefetch_data_hits.','. # pre_data_hits
+	$prefetch_data_misses.','. #pre_data_misses
+	$prefetch_metadata_hits.','. #pre_meta_hits
+	$prefetch_metadata_misses.','. #pre_meta_misses
+	$anon_hits.','.
+	$arc_accesses_total.','. # arc_access_total
+	$demand_data_total.','. # demand_data_total
+	$prefetch_data_total.','. #pre_data_total
+	$real_hits."\n";
+
+# ARC efficient percents
+print $cache_hit_percent.','.
+	$cache_miss_percent.','.
+	$actual_hit_percent.','.
+	$data_demand_percent.','.
+	$data_prefetch_percent.','.
+	$anon_hits_percent.','.
+	$mru_percent.','.
+	$mfu_percent.','.
+	$mru_ghost_percent.','.
+	$mfu_ghost_percent.','.
+	$demand_hits_percent.','.
+	$prefetch_hits_percent.','.
+	$metadata_hits_percent.','.
+	$prefetch_metadata_hits_percent.','.
+	$demand_misses_percent.','.
+	$prefetch_misses_percent.','.
+	$metadata_misses_percent.','.
+	$prefetch_metadata_misses_percent."\n";
+	
+
+
+my $zpool_output=`/sbin/zpool list -pH`;
+my @pools=split( /\n/, $zpool_output );
+my $pools_int=0;
+while ( defined( $pools[$pools_int] ) ) {
+	my $pool=$pools[$pools_int];
+	$pool =~ s/\t/,/g;
+	$pool =~ s/\,\-\,/\,0\,/g;
+	$pool =~ s/\%//g;
+	$pool =~ s/\,([0-1\.]*)x\,/,$1,/;
+	$pool =~ s/^/pool,/;
+	
+	print $pool."\n";;
+	$pools_int++;
+}
