@@ -1,68 +1,103 @@
 #!/usr/bin/env perl
+# Author: Zane C. Bowers-Hadley <vvelox@vvelox.net>
 
-# Add this to your snmpd.conf as below.
-# extend fail2ban /etc/snmp/fail2ban
-#
-# Then add to your cron tab, if you wish to use caching.
-# */3 * * * * /etc/snmp/fail2ban.pl -u
+# https://docs.librenms.org/#Extensions/Applications/#fail2ban
+# See the above for additional information not documented in the POD below.
 
-#make sure this path is correct
-my $f2bc="/usr/bin/env fail2ban-client";
+=head1 DESCRIPTION
 
-#make sure this path is correct
-my $iptablesPath="/usr/bin/env iptables";
+A basic SNMP extend for polling fail2ban for LibreNMS.
 
-# The cache file to use, if using caching.
-my $cache='/var/cache/fail2ban';
+=head1 SWITCHES
 
-# Please verify that the tables below are correct for your installation
-my @linuxChains=('failban','f2b');
-my $freebsdPFtable='fail2ban'; 
+=head2 -c
 
-##
-## you should not have to touch anything below this
-##
+Prints the cache file.
+
+=head2 -C <file>
+
+Uses the specified file as the cache file.
+
+If not specified, /var/cache/fail2ban is used.
+
+=head2 -f <fail2ban-client>
+
+This is the path to the fail2ban-client if needed.
+
+If not specified, "/usr/bin/env fail2ban-client" is used.
+
+=head2 -u
+
+Updates the cache.
+
+=head2 -U
+
+When used with -c, allows attempted cache updating if the file is older
+than 360 seconds or does not exist.
+
+=head1 CRON EXAMPLE
+
+    */3 * * * * /etc/snmp/fail2ban -u
+
+or
+
+    */3 * * * * /etc/snmp/fail2ban -u -C /foo/bar/cache
+
+3 minutes is used as LibreNMS runs every 5 minutes, this helps ensure it
+is most likely up to date in between runs.
+
+
+=head1 SNMPD SETUP EXAMPLES
+
+    extend fail2ban /etc/snmp/fail2ban
+
+The above will set it up for basic uncached usage.
+
+This is likely fine for most configurations.
+
+    extend fail2ban /etc/snmp/fail2ban -c
+
+Will use the cache.
+
+    extend fail2ban /etc/snmp/fail2ban -c -U
+
+Will use the cache and update if needed.
+
+    extend fail2ban /etc/snmp/fail2ban -f /foo/bin/fail2ban-client
+
+Run it with fail2ban being installed under /foo the the path to
+fail2ban-cleint being /foo/bin/fail2ban-client.
+
+=cut
+
 use strict;
 use warnings;
 use Getopt::Std;
 
+#fail2ban-client path
+my $f2bc="/usr/bin/env fail2ban-client";
+
+#the path to the cache
+my $cache='/var/cache/fail2ban';
+
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 sub main::VERSION_MESSAGE {
-        print "fail2ban-client SNMP extend 0.0.0\n";
+        print "fail2ban-client SNMP extend 1.0.0\n";
 };
-
 
 sub main::HELP_MESSAGE {
 	print "\n".
-		"-u   Update '".$cache."'\n";
+		"-c   Print from the cache.\n".
+		"-C <file>   Use this as the cache file.\n".
+		"-f <fail2ban-client>   The fail2ban-client path if needed.".
+		"-u   Update the cache, '".$cache."'\n".
+		"-U   When used with -c, allow update of the cache file if it does not exist or is older than 360 seconds.".
+		"\n".
+		"Unless -c or -u is given, it just talks to fail2ban-client and prints the results.\n";
 }
 
-#gets the options
-my %opts=();
-getopts('u', \%opts);
-
-#if set to 1, no cache will be written and it will be printed instead
-my $noWrite=0;
-
-if ( ! defined( $opts{u} ) ){
-	my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
-		$atime,$mtime,$ctime,$blksize,$blocks) = stat($cache);
-	
-	if (( -f $cache ) && defined( $mtime ) && ( (time-$mtime) < 360 )){
-		my $old='';
-		open(my $readfh, "<", $cache) or die "Can't open '".$cache."'";
-		# if this is over 2048, something is most likely wrong
-		read($readfh , $old , 10240);
-		close($readfh);
-		print $old;
-	}else{
-		$opts{u}=1;
-		$noWrite=1;
-	}
-}
-
-if (defined( $opts{u} )){
-	
+#generats stats
+sub stats{
 	#gets a list of jails
 	my $jailsOutput=`$f2bc status`;
 	my @jailsOutputA=split(/\n/, $jailsOutput);
@@ -91,69 +126,76 @@ if (defined( $opts{u} )){
 		$int++;
 	}
 
-	##
-	## process the firewall
-	##
- 
-	my $os=`uname`;
+	return $total."\n".$toReturn;
+}
 
-	my $firewalled=0;
+#updates $cache
+sub cacheUpdate{
+	my $stats=stats;
+
+	open(my $writefh, ">", $cache) or die "Can't open '".$cache."'";
+	print $writefh $stats;
+	close($writefh);
+}
+
+#prints $cache
+sub cachePrint{
+		my $old='';
+		open(my $readfh, "<", $cache) or die "Can't open '".$cache."'";
+		# if this is over 2048, something is most likely wrong
+		read($readfh , $old , 10240);
+		close($readfh);
+		print $old;
+}
+
+#gets the options
+my %opts=();
+getopts('uUcC:f:', \%opts);
+
+#use custom cache file if needed
+if ( defined( $opts{C} ) ){
+	$cache=$opts{C};
+}
+
+#use custom fail2ban location if needed
+if ( defined( $opts{f} ) ){
+	$f2bc=$opts{f};
+}
+
+#use the cache	 
+if ( defined( $opts{c} ) ){
+	my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
+		$atime,$mtime,$ctime,$blksize,$blocks) = stat($cache);
 	
-	if ( $os =~ '^FreeBSD' ){
-		$firewalled=`/sbin/pfctl -t $freebsdPFtable -T show | /usr/bin/grep -c .`;
-		chomp($firewalled);
-	};
-	
-	if ( $os =~ '^Linux' ){
-		my $iptables=`$iptablesPath -L -n`;
-		my @iptablesA=split( /\n/, $iptables );
-
-		#check each line
-		my $int=0;
-		my $count=0;
-		while( defined( $iptablesA[$int] ) ){
-			my $line=$iptablesA[$int];
-			
-			#stop counting if we have a blank line
-			if ( $line =~ /^$/ ){
-				$count=0;
-			}
-			
-			#count /^REJECT/ lines, if we are counting
-			if ( ( $line =~ /^REJECT/ ) && ( $count ) ){
-				$firewalled++;
-			}
-			
-			#check if this is a chain we should count
-			if ( $line =~ /^Chain/ ){
-				my $linuxChainsInt=0;
-				# check if any of the specified names hit and if so start counting
-				while( defined( $linuxChains[$linuxChainsInt] ) ){
-					my $chain=$linuxChains[$linuxChainsInt];
-					if ( $line =~ /^Chain $chain/ ){
-						$count=1;
-					}
-					
-					$linuxChainsInt++;
-				}
-			}		
-			
-			$int++;
-		}
-		
-	}
-
-		##
-	## render the output
-	##
-	if ( ! $noWrite ){
-		open(my $writefh, ">", $cache) or die "Can't open '".$cache."'";
-		print $writefh $total."\n".$firewalled."\n".$toReturn;
-		close($writefh);
+	if (( -f $cache ) && defined( $mtime ) && ( (time-$mtime) < 360 )){
+		#cache exists and time is fine
+		cachePrint;
+		exit 0;
 	}else{
-		print $total."\n".$firewalled."\n".$toReturn;
+		#cache does not exist or is old
+		if ( $opts{U} ){
+			#allowed to update it via -U
+			cacheUpdate;
+			cachePrint;
+			exit 0;
+		}else{
+			#-U not given
+			warn("'".$cache."' does not exist or is to old and -U was not given");
+			exit 1;
+		}
 	}
-	
+	warn('we should never get here...');
+	exit 2;
+}
+
+#update the cache
+if (defined( $opts{u} )){
+	cacheUpdate;
 	
 	exit 0;
 }
+
+#no cache opions given, just print it
+print &stats;
+
+exit 0;
