@@ -3,8 +3,8 @@ set -euo pipefail
 IFS=$'\n\t'
 
 API_AUTH_USER="admin"
-API_AUTH_PASS="q/w.e,2004"
-API_URL="172.16.10.19/"
+API_AUTH_PASS=""
+API_URL=""
 API_STATS="jsonstat?command=stats"
 TMP_FILE="/tmp/dnsdist_current.stats"
 
