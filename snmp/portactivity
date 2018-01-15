@@ -1,0 +1,277 @@
+#!/usr/bin/env perl
+
+#Copyright (c) 2018, Zane C. Bowers-Hadley
+#All rights reserved.
+#
+#Redistribution and use in source and binary forms, with or without modification,
+#are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+#THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+#WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+#IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+#DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+#LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+#THE POSSIBILITY OF SUCH DAMAGE.
+
+# FreeBSD /usr/include/netinet/tcp_fsm.h
+# Linux netstat(8)
+# FreeBSD --> Linux
+# LISTEN --> LISTEN
+# CLOSED --> CLOSED
+# SYN_SENT --> SYN_SENT
+# SYN_RECEIVED -->SYN_RECV
+# ESTABLISHED --> ESTABLISHED
+# CLOSE_WAIT --> CLOSE_WAIT
+# FIN_WAIT_1 --> FIN_WAIT1
+# CLOSING --> CLOSING
+# LAST_ACK --> LAST_ACK
+# FIN_WAIT_2 --> FIN_WAIT2
+# TIME_WAIT  -->  TIME_WAIT
+# ((no equivalent)) --> UNKNOWN
+#
+# UNKNOWN is being regarded as a valid state for all and will be used on OSes that supported it
+# The names returned by default are those used by FreeBSD.
+
+use strict;
+use warnings;
+use JSON;
+use Getopt::Std;
+use Parse::Netstat qw(parse_netstat);
+
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
+sub main::VERSION_MESSAGE {
+        print "Port Activity SNMP stats extend 0.0.0\n";
+}
+
+sub main::HELP_MESSAGE {
+
+}
+
+sub newProto{
+
+	return {
+		'total_conns'=>0,
+			'total_to'=>0,
+			'total_from'=>0,
+			'total'=>{
+				'LISTEN'=>0,
+					'CLOSED'=>0,
+					'SYN_SENT'=>0,
+					'SYN_RECEIVED'=>0,
+					'ESTABLISHED'=>0,
+					'CLOSE_WAIT'=>0,
+					'FIN_WAIT_1'=>0,
+					'CLOSING'=>0,
+					'LAST_ACK'=>0,
+					'FIN_WAIT_2'=>0,
+					'TIME_WAIT'=>0,
+					'UNKNOWN'=>0,
+					'other'=>0,
+		},
+			'to'=>{
+				'LISTEN'=>0,
+					'CLOSED'=>0,
+					'SYN_SENT'=>0,
+					'SYN_RECEIVED'=>0,
+					'ESTABLISHED'=>0,
+					'CLOSE_WAIT'=>0,
+					'FIN_WAIT_1'=>0,
+					'CLOSING'=>0,
+					'LAST_ACK'=>0,
+					'FIN_WAIT_2'=>0,
+					'TIME_WAIT'=>0,
+					'UNKNOWN'=>0,
+					'other'=>0,
+		},
+			'from'=>{
+				'LISTEN'=>0,
+					'CLOSED'=>0,
+					'SYN_SENT'=>0,
+					'SYN_RECEIVED'=>0,
+					'ESTABLISHED'=>0,
+					'CLOSE_WAIT'=>0,
+					'FIN_WAIT_1'=>0,
+					'CLOSING'=>0,
+					'LAST_ACK'=>0,
+					'FIN_WAIT_2'=>0,
+					'TIME_WAIT'=>0,
+					'UNKNOWN'=>0,
+					'other'=>0,
+		},
+		}
+		;
+}
+
+my %valid_states=(
+	'LISTEN'=>1,
+	'CLOSED'=>1,
+	'SYN_SENT'=>1,
+	'SYN_RECEIVED'=>1,
+	'ESTABLISHED'=>1,
+	'CLOSE_WAIT'=>1,
+	'FIN_WAIT_1'=>1,
+	'CLOSING'=>1,
+	'LAST_ACK'=>1,
+	'FIN_WAIT_2'=>1,
+	'TIME_WAIT'=>1,
+	'UNKNOWN'=>1,
+	);
+
+#gets the options
+my %opts=();
+getopts('p:P', \%opts);
+
+if (! defined( $opts{p} ) ){
+	warn('No services specificied to check for');
+	exit 1;
+}
+
+my @protos_array=split(/\,/, $opts{p});
+
+my %protos;
+
+my $protos_array_int=0;
+while ( defined( $protos_array[$protos_array_int] ) ){
+	$protos{ $protos_array[$protos_array_int] }=newProto;
+
+	my $port=getservbyname( $protos_array[$protos_array_int] , 'tcp' );
+
+	if ( !defined( $port )  ){
+		warn('"'.$protos_array[$protos_array_int].'" is not a known service either add it or double check your spelling');
+		exit 3;
+	}
+	
+	$protos_array_int++;
+}
+
+my $os=$^O;
+
+my $netstat;
+
+if ( $os eq 'freebsd' ){
+	$netstat='netstat -S -p tcp'	
+}elsif( $os eq 'linux' ){
+	$netstat='netstat -n'
+}else{
+	warn($os.' is not a supported OS as of currently');
+}
+
+my $res = parse_netstat(output => join("", `$netstat`), flavor=>$os);
+
+#use Data::Dumper;
+#print Dumper(\$res);
+
+#check to make sure that it was able to parse the output
+if (
+	(!defined( $res->[1] )) ||
+	($res->[1] ne 'OK' )
+	){
+	warn('Unable to parse netstat output');
+	exit 2;
+}
+
+#chew through each connection
+my $active_conns_int=0;
+while ( defined( $res->[2]{'active_conns'}[$active_conns_int] ) ){
+	my $conn=$res->[2]{active_conns}[$active_conns_int];
+
+#	use Data::Dumper;
+#	print Dumper($conn);
+
+	#we only care about TCP currently
+	if ( $conn->{proto} =~ /^[Tt][Cc][Pp]/ ){
+		$protos_array_int=0;
+		my $service;
+		while(
+			( defined( $protos_array[ $protos_array_int ] ) ) &&
+			( !defined( $service ) ) #stop once we find it
+			){
+			#check if this matches either ports
+			if (
+				( $protos_array[ $protos_array_int ] eq $conn->{'local_port'} ) ||
+				( $protos_array[ $protos_array_int ] eq $conn->{'foreign_port'} )
+				){
+				$service=$protos_array[ $protos_array_int ];
+			}
+
+			$protos_array_int++;
+		}
+
+		#only handle it if is a service we are watching for
+		if ( defined( $service ) ){
+			my $processed=0;
+			
+			my $state=$conn->{'state'};
+			#translate the state names
+			if ( $os eq 'linux' ){
+				if ( $state eq 'SYN_RECV' ){
+					$state='SYN_RECEIVED';
+				}elsif( $state eq 'FIN_WAIT1' ){
+					$state='FIN_WAIT_1';
+				}elsif( $state eq 'FIN_WAIT2' ){
+					$state='FIN_WAIT_2'
+				}
+			}
+
+			#only count the state towards the total if not listening
+			if ( $state ne 'LISTEN' ){
+				$protos{$service}{'total_conns'}++;
+			}
+			
+			#make sure the state is a valid one
+			# if it is not a valid one, set it to other, meaning something unexpected was set for the state that should not be
+			if ( ! defined( $valid_states{$state} ) ){
+				$state='other';
+			}
+
+			#increment the total state
+			$protos{$service}{'total'}{$state}++;
+
+			if ( 
+				( $conn->{'foreign_port'} eq $service ) &&
+				( $state ne 'LISTEN' )
+				){
+				$protos{$service}{'total_from'}++;
+				$protos{$service}{'from'}{$state}++;
+				$processed=1;
+			}
+
+			if (
+				( $conn->{'local_port'} eq $service ) &&
+				( $state ne 'LISTEN' ) &&
+				( ! $processed )
+				){
+				$protos{$service}{'total_to'}++;
+				$protos{$service}{'to'}{$state}++;
+			}
+			
+		}
+		
+	}
+	
+	$active_conns_int++;
+}
+
+my $j=JSON->new;
+
+if ( $opts{P} ){
+        $j->pretty(1);
+}
+
+print $j->encode( \%protos );
+
+if ( ! $opts{P} ){
+	print "\n";
+}
+
+exit 0;
