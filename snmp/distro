@@ -19,23 +19,25 @@ elif [ "${OS}" = "Linux" ] ; then
   if [ -f /etc/fedora-release ]; then
     DIST=$(cat /etc/fedora-release | awk '{print $1}')
     REV=`cat /etc/fedora-release | sed s/.*release\ // | sed s/\ .*//`
-        
+
   elif [ -f /etc/redhat-release ] ; then
     DIST=$(cat /etc/redhat-release | awk '{print $1}')
+    IGNORE_LSB=1
+    PSEUDONAME=`cat /etc/redhat-release | sed s/.*\(// | sed s/\)//`
+    REV=`cat /etc/redhat-release | sed s/.*release\ // | sed s/\ .*//`
+
     if [ "${DIST}" = "CentOS" ]; then
       DIST="CentOS"
     elif [ "${DIST}" = "Mandriva" ]; then
       DIST="Mandriva"
       PSEUDONAME=`cat /etc/mandriva-release | sed s/.*\(// | sed s/\)//`
       REV=`cat /etc/mandriva-release | sed s/.*release\ // | sed s/\ .*//`
-    elif [ -f /etc/oracle-release ]; then
-      DIST="Oracle"
     else
-      DIST="RedHat"
+      DIST="RedHat ${PSEUDONAME}"
     fi
 
-    PSEUDONAME=`cat /etc/redhat-release | sed s/.*\(// | sed s/\)//`
-    REV=`cat /etc/redhat-release | sed s/.*release\ // | sed s/\ .*//`
+  elif [ -f /etc/oracle-release ]; then
+      DIST="Oracle"
 
   elif [ -f /etc/mandrake-release ] ; then
     DIST='Mandrake'
@@ -49,7 +51,7 @@ elif [ "${OS}" = "Linux" ] ; then
   elif [ -f /etc/debian_version ] ; then
     DIST="Debian `cat /etc/debian_version`"
     REV=""
-    ID=`lsb_release -i | awk -F ':' '{print $2}' | sed 's/	//g'`
+    ID=`lsb_release -i | awk -F ':' '{print $2}' | sed 's/  //g'`
     if [ "${ID}" = "Raspbian" ] ; then
       DIST="Raspbian `cat /etc/debian_version`"
     fi
