@@ -299,7 +299,7 @@ while ( defined($disks[$int]) ) {
 					$total=$total+$rawA[$rawAint];
 					$rawAint++;
 				}
-				
+				$IDs{$id}=$total;
 			}
 
 			# 190, airflow temp
