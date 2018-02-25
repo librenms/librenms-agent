@@ -239,6 +239,7 @@ my $toReturn='';
 my $int=0;
 while ( defined($disks[$int]) ) {
 	my $disk=$disks[$int];
+	my $disk_sn=$disk;
 	my $output=`$smartctl -A /dev/$disk`;
 
 	my %IDs=( '5'=>'null',
@@ -329,8 +330,13 @@ while ( defined($disks[$int]) ) {
 	my $conveyance=scalar grep(/Conveyance/, @outputA);
 	my $selective=scalar grep(/Selective/, @outputA);
 	
+	# get the drive serial number
+	while (`$smartctl -i /dev/$disk` =~ /Serial Number:(.*)/g) {
+		$disk_sn = $1;
+		$disk_sn =~ s/^\s+|\s+$//g;
+	}
 
-	$toReturn=$toReturn.$disk.','.$IDs{'5'}.','.$IDs{'10'}.','.$IDs{'173'}.','.$IDs{'177'}.','.$IDs{'183'}.','.$IDs{'184'}.','.$IDs{'187'}.','.$IDs{'188'}
+	$toReturn=$toReturn.$disk_sn.','.$IDs{'5'}.','.$IDs{'10'}.','.$IDs{'173'}.','.$IDs{'177'}.','.$IDs{'183'}.','.$IDs{'184'}.','.$IDs{'187'}.','.$IDs{'188'}
 	    .','.$IDs{'190'} .','.$IDs{'194'}.','.$IDs{'196'}.','.$IDs{'197'}.','.$IDs{'198'}.','.$IDs{'199'}.','.$IDs{'231'}.','.$IDs{'233'}.','.
 		$completed.','.$interrupted.','.$read_failure.','.$unknown_failure.','.$extended.','.$short.','.$conveyance.','.$selective."\n";
 
