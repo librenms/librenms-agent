@@ -1,30 +1,28 @@
 #!/usr/bin/env bash
-################################################################
-# copy this script to /etc/snmp/ and make it executable:       #
-# chmod +x /etc/snmp/ups-apcups.sh                             #
-# ------------------------------------------------------------ #
-# edit your snmpd.conf and include:                            #
-# extend ups-apcups /etc/snmp/ups-apcups.sh                    #
-#--------------------------------------------------------------#
-# restart snmpd and activate the app for desired host          #
-#--------------------------------------------------------------#
-# please make sure you have the path/binaries below            #
-################################################################
-BIN_APCS='/sbin/apcaccess'
-BIN_TR='/usr/bin/tr'
-BIN_CUT='/usr/bin/cut'
-BIN_GREP='/usr/bin/grep'
-################################################################
-# Don't change anything unless you know what are you doing     #
-################################################################
-TMP=`$BIN_APCS 2>/dev/null`
 
-for value in "LINEV:[0-9]+" "LOADPCT:[0-9.]+" "BCHARGE:[0-9.]+" "TIMELEFT:[0-9.]+" "^BATTV:[0-9.]+" "NOMINV:[0-9]+" "NOMBATTV:[0-9.]+"
+# - Copy this script to somewhere (like /opt/ups-apcups.sh)
+# - Make it executable (chmod +x /opt/ups-apcups.sh)
+# - Change the UPS_NAME variable to match the name of your UPS
+# - Add the following line to your snmpd.conf file
+#   extend ups-apcups /opt/ups-apcups.sh
+# - Restart snmpd
+#
+# Note: Change the path accordingly, if you're not using "/opt/ups-apcups.sh"
+
+# You need the following tools to be in your PATH env, adjust accordingly
+# - apcaccess, cut, grep
+PATH=$PATH
+
+IFS=$'\n'
+for conf in $(apcaccess 2>/dev/null | grep ":" | awk -F":" '{gsub(/ /, "", $1);gsub(/^[ \t]+/, "", $2); print $1 "=" $2}')
 do
-        OUT=`echo "$TMP" | $BIN_TR -d ' ' | $BIN_GREP -Eo $value | $BIN_CUT -d ":" -f 2`
-        if [ -n "$OUT" ]; then
-                echo $OUT
-        else
-                echo "Unknown"
-        fi
+    export $conf
 done
+
+echo $BCHARGE   | cut -d " " -f1
+echo $TIMELEFT  | cut -d " " -f1
+echo $NOMBATTV  | cut -d " " -f1
+echo $BATTV     | cut -d " " -f1
+echo $LINEV     | cut -d " " -f1
+echo $NOMINV    | cut -d " " -f1
+echo $LOADPCT   | cut -d " " -f1

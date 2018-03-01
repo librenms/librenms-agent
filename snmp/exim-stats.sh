@@ -10,26 +10,19 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-#################################################################
-# copy this script to /etc/snmp/ and make it executable:        #
-# chmod +x /etc/snmp/exim-stats.sh                              #
-# ------------------------------------------------------------- #
-# edit your snmpd.conf and include:                             #
-# extend exim-stats /etc/snmp/exim-stats.sh                     #
-# ------------------------------------------------------------- #
-# restart snmpd and activate the app for desired host           #
-#################################################################
-BIN_EXIM=`which exim`
-BIN_GREP=`which grep`
-BIN_WC=`which wc`
-CFG_EXIM_1='-bp'
-CFG_EXIM_2='-bpc'
-CFG_GREP='frozen'
-CFG_WC='-l'
-#################################################################
 
-FROZEN=`$BIN_EXIM $CFG_EXIM_1 | $BIN_GREP $CFG_GREP | $BIN_WC $CFG_WC`
-echo $FROZEN
+# - Copy this script to somewhere (like /opt/exim-stats.sh)
+# - Make it executable (chmod +x /opt/exim-stats.sh)
+# - Add the following line to your snmpd.conf file
+#   extend exim-stats /opt/exim-stats.sh
+# - Restart snmpd
+#
+# Note: Change the path accordingly, if you're not using "/opt/exim-stats.sh"
 
-QUEUE=`$BIN_EXIM $CFG_EXIM_2`
-echo $QUEUE
+# You need the following tools to be in your PATH env, adjust accordingly
+# - exim, grep, wc
+PATH=$PATH
+
+echo exim -bp | grep 'frozen' | wc -l
+
+echo exim -bpc

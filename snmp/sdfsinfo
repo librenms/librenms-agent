@@ -1,7 +1,17 @@
 #!/usr/bin/env bash
 
-##################################################################
+# - Copy this script to somewhere (like /opt/sdfsinfo.sh)
+# - Make it executable (chmod +x /opt/sdfsinfo.sh)
+# - Add the following line to your snmpd.conf file
+#   extend sdfsinfo /opt/sdfsinfo.sh
+# - Restart snmpd
 #
+# Note: Change the path accordingly, if you're not using "/opt/sdfsinfo.sh"
+
+# You need the following tools to be in your PATH env, adjust accordingly
+# - sdfscli, grep
+PATH=$PATH
+
 # SDFS info SNMP extend script
 # datapoint -> info (type, descr):
 # 00 -> files (int)
@@ -15,12 +25,5 @@
 # 08 -> volume dedup rate (float, %)
 # 09 -> volume savings (float, %)
 # 10 -> compression rate (float, %)
-#
-##################################################################
 
-SDFSCLI_BIN=`which sdfscli`
-SDFSCLI_CMD=' --volume-info'
-GREP_BIN=`which grep`
-GREP_CMD=' -o -E '
-DATAPOINTS=`$SDFSCLI_BIN $SDFSCLI_CMD | $GREP_BIN $GREP_CMD "(([0-9]+)\.?([0-9]+)?)"`
-echo $DATAPOINTS
+sdfscli --volume-info | grep -o -E "(([0-9]+)\.?([0-9]+)?)"

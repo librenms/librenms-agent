@@ -1,13 +1,15 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
-# Add this to snmpd.conf as below.
-# extend unbound /root/snmp-extends/unbound
+# - Copy this script to somewhere (like /opt/unbound.sh)
+# - Make it executable (chmod +x /opt/unbound.sh)
+# - Add the following line to your snmpd.conf file
+#   extend unbound /opt/unbound.sh
+# - Restart snmpd
+#
+# Note: Change the path accordingly, if you're not using "/opt/unbound.sh"
 
-# Set the path to unbound-control.
-unbountctl='/usr/bin/env unbound-control'
+# You need the following tools to be in your PATH env, adjust accordingly
+# - unbound-control
+PATH=$PATH
 
-##
-## You should not need to change anything below.
-##
-
-$unbountctl stats
+unbound-control stats

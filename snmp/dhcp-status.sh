@@ -1,16 +1,21 @@
-#!/bin/bash
-################################################################
-# copy this script to somewhere like /opt and make chmod +x it #
-# edit your snmpd.conf add the below line and restart snmpd    #
-# extend dhcpstats /opt/dhcp-status.sh                         #
-################################################################ 
+#!/usr/bin/env bash
+
+# - Copy this script to somewhere (like /opt/dhcp-status.sh)
+# - Make it executable (chmod +x /opt/dhcp-status.sh)
+# - Add the following line to your snmpd.conf file
+#   extend dhcpstats /opt/dhcp-status.sh
+# - Restart snmpd
+#
+# Note: Change the path accordingly, if you're not using "/opt/dhcp-status.sh"
+
+# You need the following tools to be in your PATH env, adjust accordingly
+# - cat, grep, sed, sort, tr, wc
+PATH=$PATH
+
+# Leases location
 FILE_DHCP='/var/lib/dhcp/db/dhcpd.leases'
-BIN_CAT='/usr/bin/cat'
-BIN_GREP='/usr/bin/grep'
-BIN_TR='/usr/bin/tr'
-BIN_SED='/usr/bin/sed'
-BIN_SORT='/usr/bin/sort'
-BIN_WC='/usr/bin/wc'
+
+# Patterns
 DHCP_LEASES='^lease'
 DHCP_ACTIVE='^lease|binding state active'
 DHCP_EXPIRED='^lease|binding state expired'
@@ -22,9 +27,9 @@ DHCP_BACKUP='^lease|binding state backup'
 DHCP_FREE='^lease|binding state free'
 NO_ERROR='[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3} binding'
 
-$BIN_CAT $FILE_DHCP | $BIN_GREP $DHCP_LEASES | $BIN_SORT -u | $BIN_WC -l
+cat $FILE_DHCP | grep $DHCP_LEASES | sort -u | wc -l | tr -d "[:blank:]"
 
 for state in "$DHCP_ACTIVE" "$DHCP_EXPIRED" "$DHCP_RELEASED" "$DHCP_ABANDONED" "$DHCP_RESET" "$DHCP_BOOTP" "$DHCP_BACKUP" "$DHCP_FREE"
 do
-        $BIN_GREP -E "$state"  $FILE_DHCP | $BIN_TR '\n' '|' | $BIN_SED 's/ {| //g' | $BIN_TR '|' '\n' | $BIN_GREP -E "$NO_ERROR" | $BIN_SORT -u | $BIN_WC -l
+    grep -E "$state" "$FILE_DHCP" | tr '\n' '|' | sed 's/ {| //g' | tr '|' '\n' | grep -E "$NO_ERROR" | sort -u | wc -l | tr -d "[:blank:]"
 done

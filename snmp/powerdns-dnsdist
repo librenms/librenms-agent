@@ -1,4 +1,17 @@
 #!/usr/bin/env bash
+
+# - Copy this script to somewhere (like /opt/powerdns-dnsdist.sh)
+# - Make it executable (chmod +x /opt/powerdns-dnsdist.sh)
+# - Add the following line to your snmpd.conf file
+#   extend powerdns-dnsdist /opt/powerdns-dnsdist.sh
+# - Restart snmpd
+#
+# Note: Change the path accordingly, if you're not using "/opt/powerdns-dnsdist.sh"
+
+# You need the following tools to be in your PATH env, adjust accordingly
+# - cat, curl, jq, grep
+PATH=$PATH
+
 set -euo pipefail
 IFS=$'\n\t'
 
@@ -64,8 +77,8 @@ debug() {
 }
 
 exportdata() {
-        # get current data
-        curl -s -u$API_AUTH_USER:$API_AUTH_PASS $API_URL$API_STATS | jq '.' > $TMP_FILE
+    # get current data
+    curl -s -u$API_AUTH_USER:$API_AUTH_PASS $API_URL$API_STATS | jq '.' > $TMP_FILE
 
 	# generate export values
 	JSON_VALUES=$(cat $TMP_FILE)
@@ -115,7 +128,7 @@ exportdata() {
 	STAT_QUERIES_FAILURE=$(echo $JSON_VALUES | jq '."trunc-failures"')
 	echo $STAT_QUERIES_FAILURE
 
-        STAT_QUERIES_ACL_DROPS=$(echo $JSON_VALUES | jq '."acl-drops"')
+    STAT_QUERIES_ACL_DROPS=$(echo $JSON_VALUES | jq '."acl-drops"')
 	echo $STAT_QUERIES_ACL_DROPS
 
 	STAT_RULE_DROP=$(echo $JSON_VALUES | jq '."rule-drop"')
@@ -159,7 +172,8 @@ exportdata() {
 }
 
 if [ -z $* ]; then
-        exportdata
+    exportdata
 fi
+
 expr "$*" : ".*--help" > /dev/null && usage
 expr "$*" : ".*--debug" > /dev/null && debug

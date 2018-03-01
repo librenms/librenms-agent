@@ -1,47 +1,49 @@
 #!/usr/bin/env bash
-################################################################
-# copy this script to somewhere like /opt and make chmod +x it #
-# edit your snmpd.conf and include                             #
-# extend ntp-server /opt/ntp-server.sh                         #
-# restart snmpd and activate the app for desired host          #
-# please make sure you have the path/binaries below            #
-################################################################
-# Binaries and paths required                                  #
-################################################################ 
-BIN_NTPD='/usr/sbin/ntpd'
-BIN_NTPQ='/usr/sbin/ntpq'
-BIN_NTPDC='/usr/sbin/ntpdc'
-BIN_GREP='/usr/bin/grep'
-BIN_TR='/usr/bin/tr'
-BIN_CUT='/usr/bin/cut'
-BIN_SED='/usr/bin/sed'
-################################################################
-# Don't change anything unless you know what are you doing     #
-################################################################
-VER=`$BIN_NTPD --version`
 
-CMD0=`$BIN_NTPQ -c rv | $BIN_GREP -Eow "stratum=[0-9]+" | $BIN_CUT -d "=" -f 2`
-echo $CMD0
+# - Copy this script to somewhere (like /opt/ntp-server.sh)
+# - Make it executable (chmod +x /opt/ntp-server.sh)
+# - Add the following line to your snmpd.conf file
+#   extend ntp-server /opt/ntp-server.sh
+# - Restart snmpd
+#
+# Note: Change the path accordingly, if you're not using "/opt/ntp-server.sh"
 
-CMD1=`$BIN_NTPQ -c rv | $BIN_GREP 'jitter' | $BIN_TR '\n' ' '`
-IFS=', ' read -r -a array <<< "$CMD1"
+# You need the following tools to be in your PATH env, adjust accordingly
+# - ntpd, ntpdc (if < v4.2.6p5), ntpq, sed
+PATH=$PATH
 
-for value in 2 3 4 5 6
+NTP_STATUS=$(ntpq -c rv | sed 's/,/ /g')
+
+for i in $NTP_STATUS
 do
-	echo ${array["$value"]} | $BIN_CUT -d "=" -f 2
+	export $i 2> /dev/null
 done
 
-if [[ "$VER" =~ '4.2.6p5' ]]
+echo $stratum
+echo $offset
+echo $frequency
+echo $sys_jitter
+echo $clk_jitter
+echo $clk_wander
+
+if [[ $(ntpd --version) =~ '4.2.6p5' ]]
 then
-  USECMD=`echo $BIN_NTPDC -c iostats`
+  IOSTATS=$(ntpdc -c iostats)
 else
-  USECMD=`echo $BIN_NTPQ -c iostats localhost`
+  IOSTATS=$(ntpq -c iostats localhost)
 fi
-CMD2=`$USECMD | $BIN_TR -d ' ' | $BIN_TR '\n' ','`
 
-IFS=',' read -r -a array <<< "$CMD2"
-
-for value in 0 1 2 3 5 6 7 8
+IFS=$'\n'
+for val in $IOSTATS
 do
-    echo ${array["$value"]} | $BIN_SED -e 's/[^0-9]/ /g' -e 's/^ *//g' -e 's/ *$//g'
+  export $(echo "$val" | sed 's/: */=/g' | sed 's/ /_/g') 2> /dev/null
 done
+
+echo $time_since_reset
+echo $receive_buffers
+echo $free_receive_buffers
+echo $used_receive_buffers
+echo $dropped_packets
+echo $ignored_packets
+echo $received_packets
+echo $packets_sent
