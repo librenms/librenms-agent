@@ -1,68 +1,52 @@
 #!/usr/bin/env bash
-################################################################
-# copy this script to /etc/snmp/ and make it executable:       #
-# chmod +x /etc/snmp/os-updates.sh                             #
-# ------------------------------------------------------------ #
-# edit your snmpd.conf and include:                            #
-# extend osupdate /opt/os-updates.sh 			       #
-#--------------------------------------------------------------#
-# restart snmpd and activate the app for desired host          #
-#--------------------------------------------------------------#
-# please make sure you have the path/binaries below            #
-################################################################ 
-BIN_WC='/usr/bin/wc'
-BIN_GREP='/bin/grep'
-CMD_GREP='-c'
-CMD_WC='-l'
-BIN_ZYPPER='/usr/bin/zypper'
-CMD_ZYPPER='-q lu'
-BIN_YUM='/usr/bin/yum'
-CMD_YUM='-q check-update'
-BIN_DNF='/usr/bin/dnf'
-CMD_DNF='-q check-update'
-BIN_APT='/usr/bin/apt-get'
-CMD_APT='-qq -s upgrade'
-BIN_PACMAN='/usr/bin/pacman'
-CMD_PACMAN='-Sup'
 
-################################################################
-# Don't change anything unless you know what are you doing     #
-################################################################
-if [ -f $BIN_ZYPPER ]; then
+# - Copy this script to somewhere (like /opt/osupdate.sh)
+# - Make it executable (chmod +x /opt/osupdate.sh)
+# - Add the following line to your snmpd.conf file
+#   extend osupdate /opt/osupdate.sh
+# - Restart snmpd
+#
+# Note: Change the path accordingly, if you're not using "/opt/osupdate.sh"
+
+# You need the following tools to be in your PATH env, adjust accordingly
+# - grep, wc
+PATH=$PATH
+
+if [ -x "$(command -v zypper)" ]; then
     # OpenSUSE
-    UPDATES=`$BIN_ZYPPER $CMD_ZYPPER | $BIN_WC $CMD_WC`
+    UPDATES=$(zypper -q lu | wc -l)
     if [ $UPDATES -gt 2 ]; then
         echo $(($UPDATES-2));
     else
         echo "0";
     fi
-elif [ -f $BIN_DNF ]; then
+elif [ -x "$(command -v dnf)" ]; then
     # Fedora
-    UPDATES=`$BIN_DNF $CMD_DNF | $BIN_WC $CMD_WC`
+    UPDATES=$(dnf -q check-update | wc -l)
     if [ $UPDATES -gt 1 ]; then
         echo $(($UPDATES-1));
     else
         echo "0";
     fi
-elif [ -f $BIN_PACMAN ]; then
+elif [ -x "$(command -v pacman)" ]; then
     # Arch
-    UPDATES=`$BIN_PACMAN $CMD_PACMAN | $BIN_WC $CMD_WC`
+    UPDATES=$(pacman -Sup | wc -l)
     if [ $UPDATES -gt 1 ]; then
         echo $(($UPDATES-1));
     else
         echo "0";
     fi
-elif [ -f $BIN_YUM ]; then
+elif [ -x "$(command -v yum)" ]; then
     # CentOS / Redhat
-    UPDATES=`$BIN_YUM $CMD_YUM | $BIN_WC $CMD_WC`
+    UPDATES=$(yum -q check-update | wc -l)
     if [ $UPDATES -gt 1 ]; then
         echo $(($UPDATES-1));
     else
         echo "0";
     fi
-elif [ -f $BIN_APT ]; then
+elif [ -x "$(command -v apt-get)" ]; then
     # Debian / Devuan / Ubuntu
-    UPDATES=`$BIN_APT $CMD_APT | $BIN_GREP $CMD_GREP 'Inst'`
+    UPDATES=$(apt-get -qq -s upgrade | grep -c 'Inst')
     if [ $UPDATES -gt 1 ]; then
         echo $UPDATES;
     else
