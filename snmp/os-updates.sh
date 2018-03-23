@@ -31,7 +31,7 @@ CMD_PACMAN='-Sup'
 if [ -f $BIN_ZYPPER ]; then
     # OpenSUSE
     UPDATES=`$BIN_ZYPPER $CMD_ZYPPER | $BIN_WC $CMD_WC`
-    if [ $UPDATES -gt 2 ]; then
+    if [ $UPDATES -ge 2 ]; then
         echo $(($UPDATES-2));
     else
         echo "0";
@@ -39,7 +39,7 @@ if [ -f $BIN_ZYPPER ]; then
 elif [ -f $BIN_DNF ]; then
     # Fedora
     UPDATES=`$BIN_DNF $CMD_DNF | $BIN_WC $CMD_WC`
-    if [ $UPDATES -gt 1 ]; then
+    if [ $UPDATES -ge 1 ]; then
         echo $(($UPDATES-1));
     else
         echo "0";
@@ -47,7 +47,7 @@ elif [ -f $BIN_DNF ]; then
 elif [ -f $BIN_PACMAN ]; then
     # Arch
     UPDATES=`$BIN_PACMAN $CMD_PACMAN | $BIN_WC $CMD_WC`
-    if [ $UPDATES -gt 1 ]; then
+    if [ $UPDATES -ge 1 ]; then
         echo $(($UPDATES-1));
     else
         echo "0";
@@ -55,7 +55,7 @@ elif [ -f $BIN_PACMAN ]; then
 elif [ -f $BIN_YUM ]; then
     # CentOS / Redhat
     UPDATES=`$BIN_YUM $CMD_YUM | $BIN_WC $CMD_WC`
-    if [ $UPDATES -gt 1 ]; then
+    if [ $UPDATES -ge 1 ]; then
         echo $(($UPDATES-1));
     else
         echo "0";
@@ -63,7 +63,7 @@ elif [ -f $BIN_YUM ]; then
 elif [ -f $BIN_APT ]; then
     # Debian / Devuan / Ubuntu
     UPDATES=`$BIN_APT $CMD_APT | $BIN_GREP $CMD_GREP 'Inst'`
-    if [ $UPDATES -gt 1 ]; then
+    if [ $UPDATES -ge 1 ]; then
         echo $UPDATES;
     else
         echo "0";
