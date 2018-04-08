@@ -99,7 +99,7 @@ def main(args):
     if proc.returncode != 0:
         return proc.returncode
 
-    res['pools'] = []
+    pools = []
     FIELDS = ['name', 'size', 'alloc', 'free', 'expandsz', 'frag', 'cap', 'dedup']
     for line in proc.stdout.splitlines():
         info = dict(zip(FIELDS, line.split('\t')))
@@ -109,7 +109,7 @@ def main(args):
         info['frag'] = 0 if info['frag'] == '-' else info['frag']
         info['dedup'] = info['dedup'].rstrip('x')
 
-        res['pools'].append(info)
+        pools.append(info)
 
     res = {
         'deleted': DELETED, # ARC misc
@@ -152,7 +152,7 @@ def main(args):
         'actual_hit_per': ACTUAL_HIT_PERCENT,
         'data_demand_per': DATA_DEMAND_PERCENT,
         'data_pre_per': DATA_PREFETCH_PERCENT,
-        'ANON_HITS_per': ANON_HITS_PERCENT,
+        'anon_hits_per': ANON_HITS_PERCENT,
         'mru_per': MRU_PERCENT,
         'mfu_per': MFU_PERCENT,
         'mru_ghost_per': MRU_GHOST_PERCENT,
@@ -164,7 +164,8 @@ def main(args):
         'demand_misses_per': DEMAND_MISSES_PERCENT,
         'pre_misses_per': PREFETCH_MISSES_PERCENT,
         'meta_misses_per': METADATA_MISSES_PERCENT,
-        'pre_meta_misses_per': PREFETCH_METADATA_MISSES_PERCENT
+        'pre_meta_misses_per': PREFETCH_METADATA_MISSES_PERCENT,
+        'pools': pools
     }
 
     print(json.dumps(res))
