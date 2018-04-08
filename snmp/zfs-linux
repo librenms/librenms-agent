@@ -108,6 +108,7 @@ def main(args):
         info['frag'] = info['frag'].rstrip('%')
         info['frag'] = 0 if info['frag'] == '-' else info['frag']
         info['dedup'] = info['dedup'].rstrip('x')
+        info['cap'] = info['cap'].rstrip('%')
 
         pools.append(info)
 
