@@ -143,7 +143,7 @@ def main(args):
         'pre_data_misses': PREFETCH_DATA_MISSES,
         'pre_meta_hits': PREFETCH_METADATA_HITS,
         'pre_meta_misses': PREFETCH_METADATA_HITS,
-        'anon_hist': ANON_HITS,
+        'anon_hits': ANON_HITS,
         'arc_accesses_total': ARC_ACCESSES_TOTAL,
         'demand_data_total': DEMAND_DATA_TOTAL,
         'pre_data_total': PREFETCH_DATA_TOTAL,
