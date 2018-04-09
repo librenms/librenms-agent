@@ -131,7 +131,7 @@ def main(args):
         'freq_used_per': FREQUENTLY_USED_PERCENT,
         'arc_hits': ARC_HITS, # ARC efficiency
         'arc_misses': ARC_MISSES,
-        'demande_data_hits': DEMAND_DATA_HITS,
+        'demand_data_hits': DEMAND_DATA_HITS,
         'demand_data_misses': DEMAND_DATA_MISSES,
         'demand_meta_hits': DEMAND_METADATA_HITS,
         'demand_meta_misses': DEMAND_METADATA_MISSES,
