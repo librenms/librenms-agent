@@ -115,7 +115,7 @@ $tojson{min_size_per}=$min_size_percent;
 my $mfu_size;
 my $recently_used_percent;
 my $frequently_used_percent;
-if ( $sysctls->{"kstat.zfs.misc.arcstats.size"} >= $sysctls->{"kstat.zfs.misc.arcstats.size"} ){
+if ( $sysctls->{"kstat.zfs.misc.arcstats.size"} >= $sysctls->{"kstat.zfs.misc.arcstats.c"} ){
 	$mfu_size = $sysctls->{"kstat.zfs.misc.arcstats.size"} - $sysctls->{"kstat.zfs.misc.arcstats.p"};
 	$recently_used_percent = $sysctls->{"kstat.zfs.misc.arcstats.p"} / $sysctls->{"kstat.zfs.misc.arcstats.size"} * 100;
 	$frequently_used_percent = $mfu_size / $sysctls->{"kstat.zfs.misc.arcstats.size"} * 100;
