@@ -37,7 +37,7 @@ def main(args):
     FREQUENTLY_USED_PERCENT = 0
     P = STATS['p']
 
-    if ARC_SIZE >= ARC_SIZE:
+    if ARC_SIZE >= TARGET_SIZE:
         MFU_SIZE = ARC_SIZE - P
         RECENTLY_USED_PERCENT = P / ARC_SIZE * 100
         FREQUENTLY_USED_PERCENT = MFU_SIZE / ARC_SIZE * 100
