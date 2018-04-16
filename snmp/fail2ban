@@ -108,7 +108,8 @@ sub stats{
 	$toReturn{total}=0; # total number in jails
 	$toReturn{jails}={}; # each jail
 	$toReturn{error}=0; # error code, 0 if good
-	$toReturn{errorString}=''; # 
+	$toReturn{errorString}=''; # detailed description of any errors
+	$toReturn{version}='0'; # format version of the returned data
 
 	#gets a list of jails
 	my $jailsOutput=`$f2bc status`;
