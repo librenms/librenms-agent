@@ -42,7 +42,7 @@ line with out a = or # are treated as a disk.
 
     #This is a comment
     cache=/var/cache/smart
-    smartctl=/usr/bin/env smartctl
+    smartctl=/usr/local/sbin/smartctl
     useSN=0
     ada0
     ada1
@@ -52,6 +52,7 @@ The variables are as below.
     cache = The path to the cache file to use. Default: /var/cache/smart
     smartctl = The path to use for smartctl. Default: /usr/bin/env smartctl
     useSN = If set to 1, it will use the disks SN for reporting instead of the device name.
+            1 is the default. 0 will use the device name.
 
 If you want to guess at the configuration, call it with -g and it will print out what it thinks
 it should be.    
@@ -68,7 +69,7 @@ use Getopt::Std;
 my $cache='/var/cache/smart';
 my $smartctl='/usr/bin/env smartctl';
 my @disks;
-my $useSN=0;
+my $useSN=1;
 
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 sub main::VERSION_MESSAGE {
