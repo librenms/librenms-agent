@@ -1,10 +1,14 @@
-#!/usr/local/bin/perl
+#!usr/bin/env perl
 
 # Add this to snmpd.conf as below.
 # extend fbsdnfsclient /etc/snmp/fbsdnfsclient
 
+use strict;
+use warnings;
+
 my $nfsstatOutput=`/usr/bin/nfsstat`;
 my @nfsstatOutputA=split( /\n/, $nfsstatOutput );
+my $VERSION=1;
 my $int=0;
 
 my (
@@ -137,45 +141,46 @@ while( defined( $nfsstatOutputA[$int] ) ){
 	$int++;
 }
 
-print $Getattr."\n".
-	$Setattr."\n".
-	$Lookup."\n".
-	$Readlink."\n".
-	$Read."\n".
-	$Write."\n".
-	$Create."\n".
-	$Remove."\n".
-	$Rename."\n".
-	$Link."\n".
-	$Symlink."\n".
-	$Mkdir."\n".
-	$Rmdir."\n".
-	$Readdir."\n".
-	$RdirPlus."\n".
-	$Access."\n".
-	$Mknod."\n".
-	$Fsstat."\n".
-	$Fsinfo."\n".
-	$PathConf."\n".
-	$Commit."\n".
-	$TimedOut."\n".
-	$Invalid."\n".
-	$XReplies."\n".
-	$Retries."\n".
-	$Requests."\n".
-	$AttrHits."\n".
-	$AttrMisses."\n".
-	$LkupHits."\n".
-	$LkupMisses."\n".
-	$BioRHits."\n".
-	$BioRMisses."\n".
-	$BioWHits."\n".
-	$BioWMisses."\n".
-	$BioRLHits."\n".
-	$BioRLMisses."\n".
-	$BioDHits."\n".
-	$BioDMisses."\n".
-	$DirEHits."\n".
-	$DirEMisses."\n".
-	$AccsHits."\n".
-	$AccsMisses."\n";
+print "{\"Getattr\":".$Getattr."\",\n".
+	"\"Setattr\":".$Setattr."\",\n".
+	"\"Lookup\":".$Lookup."\",\n".
+	"\"Readlink\":".$Readlink."\",\n".
+	"\"Read\":".$Read."\",\n".
+	"\"Write\":".$Write."\",\n".
+	"\"Create\":".$Create."\",\n".
+	"\"Remove\":".$Remove."\",\n".
+	"\"Rename\":".$Rename."\",\n".
+	"\"Link\":".$Link."\",\n".
+	"\"SymLink\":".$Symlink."\",\n".
+	"\"Mkdir\":".$Mkdir."\",\n".
+	"\"Rmdir\":".$Rmdir."\",\n".
+	"\"Readdir\":".$Readdir."\",\n".
+	"\"RdirPlus\":".$RdirPlus."\",\n".
+	"\"Access\":".$Access."\",\n".
+	"\"Mknod\":".$Mknod."\",\n".
+	"\"Fsstat\":".$Fsstat."\",\n".
+	"\"Fsinfo\":".$Fsinfo."\",\n".
+	"\"PathConf\":".$PathConf."\",\n".
+	"\"Commit\":".$Commit."\",\n".
+	"\"Timedout\":".$TimedOut."\",\n".
+	"\"Invalid\":".$Invalid."\",\n".
+	"\"XReplies\":".$XReplies."\",\n".
+	"\"Retries\":".$Retries."\",\n".
+	"\"Requests\":".$Requests."\",\n".
+	"\"AttrHits\":".$AttrHits."\",\n".
+	"\"AttrMisses\":".$AttrMisses."\",\n".
+	"\"LkupHits\":".$LkupHits."\",\n".
+	"\"LkupMisses\":".$LkupMisses."\",\n".
+	"\"BioRHits\":".$BioRHits."\",\n".
+	"\"BioRMisses\":".$BioRMisses."\",\n".
+	"\"BioWHits\":".$BioWHits."\",\n".
+	"\"BioWMisses\":".$BioWMisses."\",\n".
+	"\"BioRLHits\":".$BioRLHits."\",\n".
+	"\"BioRLMisses\":".$BioRLMisses."\",\n".
+	"\"BioDHits\":".$BioDHits."\",\n".
+	"\"BioDMisses\":".$BioDMisses."\",\n".
+	"\"DirEHits\":".$DirEHits."\",\n".
+	"\"DirEMisses\":".$DirEMisses."\",\n".
+	"\"AccsHits\":".$AccsHits."\",\n".
+	"\"AccsMisses\":".$AccsMisses."\",\n".
+	"\"error\":\"0\",\n\"errorString\"\:\"\",\n\"version\":\"".$VERSION."\"}\n";
