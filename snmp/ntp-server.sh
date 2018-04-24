@@ -86,5 +86,5 @@ echo '{"offset":"'$OFFSET\
 '","packet_send_failures":"'$PACKETSENDFAILURES\
 '","input_wakeups":"'$PACKETSENDFAILURES\
 '","useful_input_wakeups":"'$USEFULINPUTWAKEUPS\
-'"}'
+'","error":"0","errorString":"","version":"'$VERSION'"}'
 
