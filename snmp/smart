@@ -42,7 +42,8 @@ line with out a = or # are treated as a disk.
 
     #This is a comment
     cache=/var/cache/smart
-    smartctl=/usr/bin/env smartctl
+    smartctl=/usr/local/sbin/smartctl
+    useSN=0
     ada0
     ada1
 
@@ -50,6 +51,8 @@ The variables are as below.
 
     cache = The path to the cache file to use. Default: /var/cache/smart
     smartctl = The path to use for smartctl. Default: /usr/bin/env smartctl
+    useSN = If set to 1, it will use the disks SN for reporting instead of the device name.
+            1 is the default. 0 will use the device name.
 
 If you want to guess at the configuration, call it with -g and it will print out what it thinks
 it should be.    
@@ -59,13 +62,14 @@ it should be.
 ##
 ## You should not need to touch anything below here.
 ##
-my $cache='/var/cache/smart';
-my $smartctl='/usr/bin/env smartctl';
-my @disks;
-
 use warnings;
 use strict;
 use Getopt::Std;
+
+my $cache='/var/cache/smart';
+my $smartctl='/usr/bin/env smartctl';
+my @disks;
+my $useSN=1;
 
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 sub main::VERSION_MESSAGE {
@@ -169,7 +173,7 @@ if ( defined( $opts{g} ) ){
 		$matches_int++;
 	}
 	
-	print 'smartctl='.$smartctl."\n".
+	print "useSN=0\n".'smartctl='.$smartctl."\n".
 		$cache.
 		join( "\n", keys(%found_disks) )."\n";
 	
@@ -209,6 +213,10 @@ while ( defined( $configA[$configA_int] ) ){
 		$smartctl=$val;
 	}
 
+	if ( $var eq 'useSN' ){
+		$useSN=$val;
+	}
+	
 	if ( !defined( $val ) ){
 		push(@disks, $var);
 	}
@@ -330,13 +338,16 @@ while ( defined($disks[$int]) ) {
 	my $conveyance=scalar grep(/Conveyance/, @outputA);
 	my $selective=scalar grep(/Selective/, @outputA);
 	
-	# get the drive serial number
-	while (`$smartctl -i /dev/$disk` =~ /Serial Number:(.*)/g) {
-		$disk_sn = $1;
-		$disk_sn =~ s/^\s+|\s+$//g;
+	# get the drive serial number, if needed
+	my $disk_id=$disk;
+	if ( $useSN ){
+		while (`$smartctl -i /dev/$disk` =~ /Serial Number:(.*)/g) {
+			$disk_id = $1;
+			$disk_id =~ s/^\s+|\s+$//g;
+		}
 	}
 
-	$toReturn=$toReturn.$disk_sn.','.$IDs{'5'}.','.$IDs{'10'}.','.$IDs{'173'}.','.$IDs{'177'}.','.$IDs{'183'}.','.$IDs{'184'}.','.$IDs{'187'}.','.$IDs{'188'}
+	$toReturn=$toReturn.$disk_id.','.$IDs{'5'}.','.$IDs{'10'}.','.$IDs{'173'}.','.$IDs{'177'}.','.$IDs{'183'}.','.$IDs{'184'}.','.$IDs{'187'}.','.$IDs{'188'}
 	    .','.$IDs{'190'} .','.$IDs{'194'}.','.$IDs{'196'}.','.$IDs{'197'}.','.$IDs{'198'}.','.$IDs{'199'}.','.$IDs{'231'}.','.$IDs{'233'}.','.
 		$completed.','.$interrupted.','.$read_failure.','.$unknown_failure.','.$extended.','.$short.','.$conveyance.','.$selective."\n";
 
