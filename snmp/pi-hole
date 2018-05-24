@@ -53,7 +53,7 @@ debug() {
 	if [ -z ${URL_QUERY_TYPE} ]; then
 		echo '[error] URL_QUERY_TYPE is not set'
 	else
-		echo '[ok] URL_QUERY_TYPE not set'
+		echo '[ok] URL_QUERY_TYPE is set'
 	fi
 }
 
