@@ -69,7 +69,7 @@ exportdata() {
 	echo $GET_STATS | tr "," "\n"
 	# A / AAAA / PTR / SRV
 	GET_QUERY_TYPE=$(curl -s $API_URL$URL_QUERY_TYPE$API_AUTH_KEY)
-	GET_QUERY_TYPE=$(echo $GET_QUERY_TYPE | tr -d "\{}[:space:]")
+	GET_QUERY_TYPE=$(echo $GET_QUERY_TYPE | tr -d "\"{}[:space:]")
 	GET_QUERY_TYPE=$(echo ${GET_QUERY_TYPE:11})
 	echo $GET_QUERY_TYPE | tr "," "\n"
 }
