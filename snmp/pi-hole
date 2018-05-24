@@ -65,7 +65,7 @@ exportdata() {
 	# unique_domains / queries_forwarded / queries_cached
 	# clients_ever_seen / unique_clients / status
 	GET_STATS=$(curl -s $API_URL$URL_READ_ONLY)
-	GET_STATS=$(echo $GET_STATS | tr -d "\{}[:space:]")
+	GET_STATS=$(echo $GET_STATS | tr -d "\"{}[:space:]")
 	echo $GET_STATS | tr "," "\n"
 	# A / AAAA / PTR / SRV
 	GET_QUERY_TYPE=$(curl -s $API_URL$URL_QUERY_TYPE$API_AUTH_KEY)
