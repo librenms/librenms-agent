@@ -26,23 +26,23 @@ VERSION=1
 #error and errorString are hardcoded as if the above fails bad json will be generated
 RAW=`$BIN_NTPQ -c rv | $BIN_GREP jitter | $BIN_SED 's/[[:alpha:]=,_]/ /g'`
 if [ $NTPQV = "p11" ]; then
-    echo $RAW | $BIN_AWK -F ' ' '{print "{\"offset\":\""$3\
+    echo $RAW | $BIN_AWK -F ' ' '{print "{\"data\":{\"offset\":\""$3\
                         "\",\"frequency\":\""$4\
                         "\",\"sys_jitter\":\""$5\
                         "\",\"clk_jitter\":\""$6\
                         "\",\"clk_wander\":\""$7\
-                        "\",\"version\":\""'$VERSION'"\",\"error\":\"0\",\"errorString\":\"\"}"
+                        "\"},\"version\":\""'$VERSION'"\",\"error\":\"0\",\"errorString\":\"\"}"
                         }'
     exit 0
 fi
 
 if [ $NTPQV = "p1" ]; then
-    echo $RAW | $BIN_AWK -F ' ' '{print "{\"offset\":\""$2\
+    echo $RAW | $BIN_AWK -F ' ' '{print "{\"data\":{\"offset\":\""$2\
                         "\",\"frequency\":\""$3\
                         "\",\"sys_jitter\":\""$4\
                         "\",\"clk_jitter\":\""$5\
                         "\",\"clk_wander\":\""$6\
-                        "\",\"version\":\""'$VERSION'"\",\"error\":\"0\",\"errorString\":\"\"}"
+                        "\"},\"version\":\""'$VERSION'"\",\"error\":\"0\",\"errorString\":\"\"}"
                         }'
     exit 0
 fi

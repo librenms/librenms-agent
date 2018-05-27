@@ -68,7 +68,7 @@ PACKETSENDFAILURES=`echo $CMD2 | $BIN_AWK -F ' ' '{print $10}'`
 INPUTWAKEUPS=`echo $CMD2 | $BIN_AWK -F ' ' '{print $11}'`
 USEFULINPUTWAKEUPS=`echo $CMD2 | $BIN_AWK -F ' ' '{print $12}'`
 
-echo '{"offset":"'$OFFSET\
+echo '{"data":{"offset":"'$OFFSET\
 '","frequency":"'$FREQUENCY\
 '","sys_jitter":"'$SYS_JITTER\
 '","clk_jitter":"'$CLK_JITTER\
@@ -86,5 +86,4 @@ echo '{"offset":"'$OFFSET\
 '","packet_send_failures":"'$PACKETSENDFAILURES\
 '","input_wakeups":"'$PACKETSENDFAILURES\
 '","useful_input_wakeups":"'$USEFULINPUTWAKEUPS\
-'","error":"0","errorString":"","version":"'$VERSION'"}'
-
+'"},"error":"0","errorString":"","version":"'$VERSION'"}'
