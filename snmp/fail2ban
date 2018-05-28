@@ -26,6 +26,10 @@ This is the path to the fail2ban-client if needed.
 
 If not specified, "/usr/bin/env fail2ban-client" is used.
 
+=head2 -p
+
+Pretty prints the JSON.
+
 =head2 -u
 
 Updates the cache.
@@ -73,6 +77,7 @@ fail2ban-cleint being /foo/bin/fail2ban-client.
 use strict;
 use warnings;
 use Getopt::Std;
+use JSON;
 
 #fail2ban-client path
 my $f2bc="/usr/bin/env fail2ban-client";
@@ -90,6 +95,7 @@ sub main::HELP_MESSAGE {
 		"-c   Print from the cache.\n".
 		"-C <file>   Use this as the cache file.\n".
 		"-f <fail2ban-client>   The fail2ban-client path if needed.".
+		"-p   Pretty prints the JSON.\n".
 		"-u   Update the cache, '".$cache."'\n".
 		"-U   When used with -c, allow update of the cache file if it does not exist or is older than 360 seconds.".
 		"\n".
@@ -98,40 +104,70 @@ sub main::HELP_MESSAGE {
 
 #generats stats
 sub stats{
+	my %toReturn;
+	$toReturn{total}=0; # total number in jails
+	$toReturn{jails}={}; # each jail
+	$toReturn{error}=0; # error code, 0 if good
+	$toReturn{errorString}=''; # detailed description of any errors
+	$toReturn{version}='1'; # format version of the returned data
+
 	#gets a list of jails
 	my $jailsOutput=`$f2bc status`;
-	my @jailsOutputA=split(/\n/, $jailsOutput);
-	my ( $jailsS )=grep( /Jail\ list/, @jailsOutputA );
-	$jailsS=~s/.*\://;
-	$jailsS=~s/\s//g;
-	my @jails=split(/\,/, $jailsS);
+	$toReturn{error}=$?;
 	
-	#process jail
-	my $int=0;
-	my $total=0;
-	my $toReturn='';
-	while(defined($jails[$int])){
+	if ( $? == -1){
+		$toReturn{errorString}='failed to run fail2ban-client';
+	}
+	elsif ($? & 127) {
+        $toReturn{errorString}= sprintf "fail2ban-client died with signal %d, %s coredump\n",
+            ($? & 127),  ($? & 128) ? 'with' : 'without';
+    }
+    else {
+		$toReturn{error}=$? >> 8;
+		$toReturn{errorString}="fail2ban-client exited with ".$toReturn{error};
+    }
+
+	if ( $toReturn{error} == 0 ){
 		
-		#get the total for this jail
-		my $jailStatusOutput=`$f2bc status $jails[$int]`;
-		my @jailStatusOutputA=split(/\n/, $jailStatusOutput);
-		my ( $jailTotal )=grep(/Currently\ banned\:/, @jailStatusOutputA);
-		$jailTotal=~s/.*\://;
-		$jailTotal=~s/\s//g;
+		my @jailsOutputA=split(/\n/, $jailsOutput);
+		my ( $jailsS )=grep( /Jail\ list/, @jailsOutputA );
+		$jailsS=~s/.*\://;
+		$jailsS=~s/\s//g;
+		my @jails=split(/\,/, $jailsS);
 		
-		#tally the total and add this jail to the list
-		$total=$total+$jailTotal;
-		$toReturn=$toReturn.$jails[$int].' '.$jailTotal."\n";
+		#process jails
+		my $int=0;
+		while(defined($jails[$int])){
+			
+			#get the total for this jail
+			my $jailStatusOutput=`$f2bc status $jails[$int]`;
+			my @jailStatusOutputA=split(/\n/, $jailStatusOutput);
+			my ( $jailTotal )=grep(/Currently\ banned\:/, @jailStatusOutputA);
+			$jailTotal=~s/.*\://;
+			$jailTotal=~s/\s//g;
+			
+			#tally the total and add this jail to the list
+			$toReturn{total} = $toReturn{total} + $jailTotal;
+			$toReturn{jails}{ $jails[$int] } = $jailTotal;
+			
+			$int++;
+		}
 		
-		$int++;
+	}
+	
+	my $j=JSON->new;
+
+	if ( $_[0] ){
+        $j->pretty(1);
+		return $j->encode( \%toReturn );
 	}
 
-	return $total."\n".$toReturn;
+	return $j->encode( \%toReturn )."\n";
 }
 
 #updates $cache
 sub cacheUpdate{
-	my $stats=stats;
+	my $stats=stats($_[0]);
 
 	open(my $writefh, ">", $cache) or die "Can't open '".$cache."'";
 	print $writefh $stats;
@@ -150,7 +186,7 @@ sub cachePrint{
 
 #gets the options
 my %opts=();
-getopts('uUcC:f:', \%opts);
+getopts('puUcC:f:', \%opts);
 
 #use custom cache file if needed
 if ( defined( $opts{C} ) ){
@@ -175,7 +211,7 @@ if ( defined( $opts{c} ) ){
 		#cache does not exist or is old
 		if ( $opts{U} ){
 			#allowed to update it via -U
-			cacheUpdate;
+			cacheUpdate( $opts{p} );
 			cachePrint;
 			exit 0;
 		}else{
@@ -190,12 +226,12 @@ if ( defined( $opts{c} ) ){
 
 #update the cache
 if (defined( $opts{u} )){
-	cacheUpdate;
+	cacheUpdate( $opts{p} );
 	
 	exit 0;
 }
 
 #no cache opions given, just print it
-print &stats;
+print &stats( $opts{p} );
 
 exit 0;
