@@ -66,6 +66,11 @@ elif [ "${OS}" = "Linux" ] ; then
   elif [ -f /etc/os-release ] ; then
     DIST=$(grep '^NAME=' /etc/os-release | cut -d= -f2- | tr -d '"')
     REV=$(grep '^VERSION_ID=' /etc/os-release | cut -d= -f2- | tr -d '"')
+    ID=$(grep '^ID=' /etc/os-release | cut -d= -f2- | tr -d '"')
+    if [ "${ID}" = "coreos" ] ; then
+      DIST="CoreOS"
+      IGNORE_LSB=1 # lsb_release command not available on CoreOS
+    fi
 
   elif [ -f /etc/openwrt_version ] ; then
     DIST="OpenWrt"
