@@ -1,0 +1,19 @@
+#!/bin/bash
+
+ASCLI=/usr/sbin/asterisk
+
+if [ -f $ASCLI ];
+then
+    $ASCLI -rx "core show uptime" > /dev/null
+    if [ $? -ne 0 ]; then
+        # Asterisk not running, silently exit.
+        exit 0
+    fi
+
+    echo "<<<asterisk>>>"
+    $ASCLI -rx "core show channels" | awk '/active calls/ { print "Calls=" $1 } /active channels/ { print "Channels=" $1}'
+    $ASCLI -rx 'sip show peers' | awk '/sip peers/ { print "SipPeers=" $1 "\nSipMonOnline=" $5 "\nSipMonOffline=" $7 "\nSipUnMonOnline=" $10 "\nSipUnMonOffline=" $12}'
+
+else
+   exit 0
+fi
