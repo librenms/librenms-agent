@@ -95,7 +95,7 @@ def main(args):
     PREFETCH_METADATA_MISSES_PERCENT = DEMAND_METADATA_MISSES / ARC_MISSES * 100
 
     # pools
-    proc = subprocess.run(['/sbin/zpool', 'list', '-pH'], stdout=subprocess.PIPE, universal_newlines=True)
+    proc = subprocess.run(['/sbin/zpool', 'list', '-PH'], stdout=subprocess.PIPE, universal_newlines=True)
     if proc.returncode != 0:
         return proc.returncode
 
