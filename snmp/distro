@@ -30,6 +30,8 @@ elif [ "${OS}" = "Linux" ] ; then
       REV=`cat /etc/mandriva-release | sed s/.*release\ // | sed s/\ .*//`
     elif [ -f /etc/oracle-release ]; then
       DIST="Oracle"
+    elif [ -f /etc/rockstor-release ]; then
+      DIST="Rockstor"
     else
       DIST="RedHat"
     fi
