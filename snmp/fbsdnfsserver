@@ -5,44 +5,23 @@
 
 use strict;
 use warnings;
+use JSON;
+use Getopt::Std;
+
+#gets the options
+my %opts=();
+getopts('p', \%opts);
 
 my $nfsstatOutput=`/usr/bin/nfsstat`;
 my @nfsstatOutputA=split( /\n/, $nfsstatOutput );
 my $VERSION=1;
 my $int=0;
 
-my (
-	$Getattr,
-	$Setattr,
-	$Lookup,
-	$Readlink,
-	$Read,
-	$Write,
-	$Create,
-	$Remove,
-	$Rename,
-	$Link,
-	$Symlink,
-	$Mkdir,
-	$Rmdir,
-	$Readdir,
-	$RdirPlus,
-	$Access,
-	$Mknod,
-	$Fsstat,
-	$Fsinfo,
-	$PathConf,
-	$Commit,
-	$RetFailed,
-	$Faults,
-	$Inprog,
-	$Idem,
-	$Nonidem,
-	$Misses,
-	$WriteOps,
-	$WriteRPC,
-	$Opsaved
-	);
+my %tojson;
+$tojson{'version'}=$VERSION;
+$tojson{'error'}='0';
+$tojson{'errorString'}='';
+$tojson{'data'}={};
 
 while( defined( $nfsstatOutputA[$int] ) ){
 	$nfsstatOutputA[$int]=~s/^ +//;
@@ -50,72 +29,72 @@ while( defined( $nfsstatOutputA[$int] ) ){
 
 	if ( $int == 19 ){
 		(
-		 $Getattr,
-		 $Setattr,
-		 $Lookup,
-		 $Readlink,
-		 $Read,
-		 $Write,
-		 $Create,
-		 $Remove,
+		 $tojson{'data'}{'Getattr'},
+		 $tojson{'data'}{'Setattr'},
+		 $tojson{'data'}{'Lookup'},
+		 $tojson{'data'}{'Readlink'},
+		 $tojson{'data'}{'Read'},
+		 $tojson{'data'}{'Write'},
+		 $tojson{'data'}{'Create'},
+		 $tojson{'data'}{'Remove'},
 		)=split( /\ /, $nfsstatOutputA[$int] );
 	
 	}
 
 	if ( $int == 21 ){
 		(
-		 $Rename,
-		 $Link,
-		 $Symlink,
-		 $Mkdir,
-		 $Rmdir,
-		 $Readdir,
-		 $RdirPlus,
-		 $Access
+		 $tojson{'data'}{'Rename'},
+		 $tojson{'data'}{'Link'},
+		 $tojson{'data'}{'Symlink'},
+		 $tojson{'data'}{'Mkdir'},
+		 $tojson{'data'}{'Rmdir'},
+		 $tojson{'data'}{'Readdir'},
+		 $tojson{'data'}{'RdirPlus'},
+		 $tojson{'data'}{'Access'}
 		)=split( /\ /, $nfsstatOutputA[$int] );
 	
 	}
 
 	if ( $int == 23 ){
 		(
-		 $Mknod,
-		 $Fsstat,
-		 $Fsinfo,
-		 $PathConf,
-		 $Commit
+		 $tojson{'data'}{'Mknod'},
+		 $tojson{'data'}{'Fsstat'},
+		 $tojson{'data'}{'Fsinfo'},
+		 $tojson{'data'}{'PathConf'},
+		 $tojson{'data'}{'Commit'}
 		)=split( /\ /, $nfsstatOutputA[$int] );
 	
 	}
 
 	if ( $int == 25 ){
 		(
-		 $RetFailed
+		 $tojson{'data'}{'RetFailed'}
 		)=split( /\ /, $nfsstatOutputA[$int] );
 	
 	}
 
 	if ( $int == 27 ){
 		(
-		 $Faults
+		 $tojson{'data'}{'Faults'}
 		)=split( /\ /, $nfsstatOutputA[$int] );
 	
 	}
 
 	if ( $int == 30 ){
 		(
-		 $Inprog,
-		 $Idem,
-		 $Nonidem,
-		 $Misses
+		 $tojson{'data'}{'Inprog'},
+		 $tojson{'data'}{'Idem'},
+		 $tojson{'data'}{'Nonidem'},
+		 $tojson{'data'}{'Misses'}
 		)=split( /\ /, $nfsstatOutputA[$int] );
 	
 	}
 
 	if ( $int == 33 ){
 		(
-		 $WriteOps,
-		 $WriteRPC,
-		 $Opsaved
+		 $tojson{'data'}{'WriteOps'},
+		 $tojson{'data'}{'WriteRPC'},
+		 $tojson{'data'}{'Opsaved'}
 		)=split( /\ /, $nfsstatOutputA[$int] );
 		
 	}
@@ -123,34 +102,14 @@ while( defined( $nfsstatOutputA[$int] ) ){
 	$int++;
 }
 
-print "{\"Getattr\":\"".$Getattr."\",\n".
-	"\"Setattr\":\"".$Setattr."\",\n".
-	"\"Lookup\":\"".$Lookup."\",\n".
-	"\"Readlink\":\"".$Readlink."\",\n".
-	"\"Read\":\"".$Read."\",\n".
-	"\"Write\":\"".$Write."\",\n".
-	"\"Create\":\"".$Create."\",\n".
-	"\"Remove\":\"".$Remove."\",\n".
-	"\"Rename\":\"".$Rename."\",\n".
-	"\"Link\":\"".$Link."\",\n".
-	"\"SymLink\":\"".$Symlink."\",\n".
-	"\"Mkdir\":\"".$Mkdir."\",\n".
-	"\"Rmdir\":\"".$Rmdir."\",\n".
-	"\"Readdir\":\"".$Readdir."\",\n".
-	"\"RdirPlus\":\"".$RdirPlus."\",\n".
-	"\"Access\":\"".$Access."\",\n".
-	"\"Mknod\":\"".$Mknod."\",\n".
-	"\"Fsstat\":\"".$Fsstat."\",\n".
-	"\"Fsinfo\":\"".$Fsinfo."\",\n".
-	"\"PathConf\":\"".$PathConf."\",\n".
-	"\"Commit\":\"".$Commit."\",\n".
-	"\"RetFailed\":\"".$RetFailed."\",\n".
-	"\"Faults\":\"".$Faults."\",\n".
-	"\"Inprog\":\"".$Inprog."\",\n".
-	"\"Idem\":\"".$Idem."\",\n".
-	"\"Nonidem\":\"".$Nonidem."\",\n".
-	"\"Misses\":\"".$Misses."\",\n".
-	"\"WriteOps\":\"".$WriteOps."\",\n".
-	"\"WriteRPC\":\"".$WriteRPC."\",\n".
-	"\"Opsaved\":\"".$Opsaved."\",\n".
-	"\"error\":\"0\",\n\"errorString\"\:\"\",\n\"version\":\"".$VERSION."\"}\n";
+my $j=JSON->new;
+
+if ( $opts{p} ){
+        $j->pretty(1);
+}
+
+print $j->encode( \%tojson );
+
+if ( $opts{p} ){
+	$j->pretty(1);
+}

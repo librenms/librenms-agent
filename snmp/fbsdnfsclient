@@ -141,7 +141,7 @@ while( defined( $nfsstatOutputA[$int] ) ){
 	$int++;
 }
 
-print "{\"Getattr\":\"".$Getattr."\",\n".
+print "{\"data\":{\"Getattr\":\"".$Getattr."\",\n".
 	"\"Setattr\":\"".$Setattr."\",\n".
 	"\"Lookup\":\"".$Lookup."\",\n".
 	"\"Readlink\":\"".$Readlink."\",\n".
@@ -182,5 +182,5 @@ print "{\"Getattr\":\"".$Getattr."\",\n".
 	"\"DirEHits\":\"".$DirEHits."\",\n".
 	"\"DirEMisses\":\"".$DirEMisses."\",\n".
 	"\"AccsHits\":\"".$AccsHits."\",\n".
-	"\"AccsMisses\":\"".$AccsMisses."\",\n".
+	"\"AccsMisses\":\"".$AccsMisses."\"},\n".
 	"\"error\":\"0\",\n\"errorString\"\:\"\",\n\"version\":\"".$VERSION."\"}\n";
