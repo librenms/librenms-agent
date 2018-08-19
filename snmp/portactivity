@@ -163,6 +163,7 @@ getopts('p:P', \%opts);
 my %to_return;
 $to_return{error}='0';
 $to_return{errorString}='';
+$to_return{version}=1;
 
 if (! defined( $opts{p} ) ){
 	$to_return{errorString}='No services specificied to check for';
