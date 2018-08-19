@@ -51,7 +51,7 @@ use Getopt::Std;
 
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 sub main::VERSION_MESSAGE {
-        print "FreeBSD ZFS stats extend 0.0.0\n";
+        print "FreeBSD ZFS stats extend 0.1.0\n";
 }
 
 sub main::HELP_MESSAGE {
@@ -251,13 +251,19 @@ while ( defined( $pools[$pools_int] ) ) {
 }
 $tojson{pools}=\@toShoveIntoJSON;
 
+my %head_hash;
+$head_hash{'data'}=\%tojson;
+$head_hash{'version'}=1;
+$head_hash{'error'}=0;
+$head_hash{'errorString'}='';
+
 my $j=JSON->new;
 
 if ( $opts{p} ){
 	$j->pretty(1);
 }
 
-print $j->encode( \%tojson );
+print $j->encode( \%head_hash );
 
 if (! $opts{p} ){
 	print "\n";
