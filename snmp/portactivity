@@ -50,13 +50,16 @@ use Parse::Netstat qw(parse_netstat);
 
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 sub main::VERSION_MESSAGE {
-        print "Port Activity SNMP stats extend 0.0.0\n";
+	print "Port Activity SNMP stats extend 0.0.0\n";
 }
 
 sub main::HELP_MESSAGE {
-
+	print "\n".
+		"-p <protos>   A comma seperated list of TCP protocols to check for in netstat.\n".
+		"-P   Print the output in a human readable manner.\n";
 }
 
+#returns aa new hash with all zeroed values for a new protocol
 sub newProto{
 
 	return {
@@ -112,6 +115,31 @@ sub newProto{
 		;
 }
 
+#returns the json output
+sub return_json{
+	my %to_return;
+	if(defined($_[0])){
+		%to_return= %{$_[0]};
+	}
+	my $pretty=$_[1];
+
+	if (!defined( $to_return{data} ) ){
+		$to_return{data}={};
+	}
+
+	my $j=JSON->new;
+
+	if ( $pretty ){
+        $j->pretty(1);
+	}
+
+	print $j->encode( \%to_return );
+	
+	if ( ! $pretty ){
+		print "\n";
+	}
+}
+
 my %valid_states=(
 	'LISTEN'=>1,
 	'CLOSED'=>1,
@@ -131,24 +159,38 @@ my %valid_states=(
 my %opts=();
 getopts('p:P', \%opts);
 
+#what will be returned
+my %to_return;
+$to_return{error}='0';
+$to_return{errorString}='';
+
 if (! defined( $opts{p} ) ){
-	warn('No services specificied to check for');
+	$to_return{errorString}='No services specificied to check for';
+	$to_return{error}=1;
+	return_json(\%to_return, $opts{P});
 	exit 1;
 }
 
+#the list of protocols to check for
 my @protos_array=split(/\,/, $opts{p});
 
+#holds the various protocol hashes
 my %protos;
 
+#make sure each one specificied is defined and build the hash that will be returned
 my $protos_array_int=0;
 while ( defined( $protos_array[$protos_array_int] ) ){
 	$protos{ $protos_array[$protos_array_int] }=newProto;
 
+	#check if it exists
 	my $port=getservbyname( $protos_array[$protos_array_int] , 'tcp' );
 
+	# if it is not defined, then we error
 	if ( !defined( $port )  ){
-		warn('"'.$protos_array[$protos_array_int].'" is not a known service either add it or double check your spelling');
-		exit 3;
+		$to_return{errorString}='"'.$protos_array[$protos_array_int].'" is not a known service either add it or double check your spelling';
+		$to_return{error}=4;
+		return_json(\%to_return, $opts{P});
+		exit 4;
 	}
 	
 	$protos_array_int++;
@@ -158,25 +200,28 @@ my $os=$^O;
 
 my $netstat;
 
+#make sure this is a supported OS
 if ( $os eq 'freebsd' ){
 	$netstat='netstat -S -p tcp'	
 }elsif( $os eq 'linux' ){
 	$netstat='netstat -n'
 }else{
-	warn($os.' is not a supported OS as of currently');
+    $to_return{errorString}=$os.' is not a supported OS as of currently';
+	$to_return{error}=3;
+	return_json(\%to_return, $opts{P});
+	exit 3;
 }
 
 my $res = parse_netstat(output => join("", `$netstat`), flavor=>$os);
-
-#use Data::Dumper;
-#print Dumper(\$res);
 
 #check to make sure that it was able to parse the output
 if (
 	(!defined( $res->[1] )) ||
 	($res->[1] ne 'OK' )
 	){
-	warn('Unable to parse netstat output');
+    $to_return{errorString}='Unable to parse netstat output';
+	$to_return{error}=2;
+	return_json(\%to_return, $opts{P});
 	exit 2;
 }
 
@@ -184,9 +229,6 @@ if (
 my $active_conns_int=0;
 while ( defined( $res->[2]{'active_conns'}[$active_conns_int] ) ){
 	my $conn=$res->[2]{active_conns}[$active_conns_int];
-
-#	use Data::Dumper;
-#	print Dumper($conn);
 
 	#we only care about TCP currently
 	if ( $conn->{proto} =~ /^[Tt][Cc][Pp]/ ){
@@ -262,16 +304,7 @@ while ( defined( $res->[2]{'active_conns'}[$active_conns_int] ) ){
 	$active_conns_int++;
 }
 
-my $j=JSON->new;
-
-if ( $opts{P} ){
-        $j->pretty(1);
-}
-
-print $j->encode( \%protos );
-
-if ( ! $opts{P} ){
-	print "\n";
-}
-
+#return the finished product
+$to_return{data}=\%protos;
+return_json(\%to_return, $opts{P});
 exit 0;
