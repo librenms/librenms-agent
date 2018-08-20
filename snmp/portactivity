@@ -42,6 +42,47 @@
 # UNKNOWN is being regarded as a valid state for all and will be used on OSes that supported it
 # The names returned by default are those used by FreeBSD.
 
+=head1 NAME
+
+portactivity - Generates JSON output based on netstat data for the specificied TCP services.
+
+=head1 SYNOPSIS
+
+portactivity [B<-P>] B<-p> <protocols>
+
+=head1 USAGE
+
+This is meant to be used as a SNMP extend for use with json_app_get in LibreNMS.
+
+Below is a example of its usage with netsnmpd and checking HTTP and SSH.
+
+    extend portactivity /etc/snmp/portactivity -p http,ssh
+
+=head1 SWITCHES
+
+=head2 B<-P>
+
+Prints the JSON in easily human readable format.
+
+=head2 B<-p> <protocols>
+
+This is a comma seperated list of TCP services to check.
+
+=head1 SERVICES
+
+NSS is used to resolve the TCP service protocol names. All the ones listed with -p
+must be findable that way or it will error.
+
+If you are running something on a non-standard port and want to check for it, you either
+have to use the name of the port it is on, add it to the database, or change it in the
+database(if it is already there under a undesired name).
+
+In general the file in question on most systems is going to be '/etc/services' and you
+will need to run services_mkdb(8) after updating it. But for specifics you will want to
+consult services(5).
+
+=cut
+
 use strict;
 use warnings;
 use JSON;
