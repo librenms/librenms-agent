@@ -5,135 +5,129 @@
 
 use strict;
 use warnings;
+use Getopt::Std;
+use JSON;
+
+#the version of returned data
+my $VERSION=1;
+
+#gets the options
+my %opts=();
+getopts('p', \%opts);
+
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
+sub main::VERSION_MESSAGE {
+	print "fbsdnfsclient SNMP extend 0.0.0\n";
+}
+
+sub main::HELP_MESSAGE {
+	print "\n".
+		"-p   Print the JSON in a pretty manner.";
+}
+
+#the data to return
+my %to_return;
+$to_return{'version'}=$VERSION;
+$to_return{'error'}='0';
+$to_return{'errorString'}='';
 
 my $nfsstatOutput=`/usr/bin/nfsstat`;
+$to_return{error}=$?;
+
+# check for bad exit codes
+if ( $? == -1){
+	$to_return{errorString}='failed to run nfsstat';
+}
+elsif ($? & 127) {
+	$to_return{errorString}= sprintf "nfsstat died with signal %d, %s coredump\n",
+		($? & 127),  ($? & 128) ? 'with' : 'without';
+} else {
+	$to_return{error}=$? >> 8;
+	$to_return{errorString}="nfsstat exited with ".$to_return{error};
+}
+
+# pull the output of nfssetat appart
+my %data;
 my @nfsstatOutputA=split( /\n/, $nfsstatOutput );
-my $VERSION=1;
 my $int=0;
-
-my (
-	$Getattr,
-	$Setattr,   
-	$Lookup,
-	$Readlink,
-	$Read,
-	$Write,
-	$Create,
-	$Remove,
-	$Rename,
-	$Link,
-	$Symlink,
-	$Mkdir,
-	$Rmdir,
-	$Readdir,
-	$RdirPlus,
-	$Access,
-	$Mknod,
-	$Fsstat,
-	$Fsinfo,
-	$PathConf,
-	$Commit,
-	$TimedOut,
-	$Invalid,
-	$XReplies,
-	$Retries,
-	$Requests,
-	$AttrHits,
-	$AttrMisses,
-	$LkupHits,
-	$LkupMisses,
-	$BioRHits,
-	$BioRMisses,
-	$BioWHits,
-	$BioWMisses,
-	$BioRLHits,
-	$BioRLMisses,
-	$BioDHits,
-	$BioDMisses,
-	$DirEHits,
-	$DirEMisses,
-	$AccsHits,
-	$AccsMisses,
-	);
-
 while( defined( $nfsstatOutputA[$int] ) ){
 	$nfsstatOutputA[$int]=~s/^ +//;
 	$nfsstatOutputA[$int]=~s/ +/ /g;
 
 	if ( $int == 3 ){
 		(
-		 $Getattr,
-		 $Setattr,   
-		 $Lookup,
-		 $Readlink,
-		 $Read,
-		 $Write,
-		 $Create,
-		 $Remove,
+		 $data{Getattr},
+		 $data{Setattr},
+		 $data{Lookup},
+		 $data{Readlink},
+		 $data{Read},
+		 $data{Write},
+		 $data{Create},
+		 $data{Remove},
 		)=split( /\ /, $nfsstatOutputA[$int] );
 	
 	}
 
 	if ( $int == 5 ){
 		(
-		 $Rename,
-		 $Link,
-		 $Symlink,
-		 $Mkdir,
-		 $Rmdir,
-		 $Readdir,
-		 $RdirPlus,
-		 $Access,
+		 $data{Rename},
+		 $data{Link},
+		 $data{Symlink},
+		 $data{Mkdir},
+		 $data{Rmdir},
+		 $data{Readdir},
+		 $data{RdirPlus},
+		 $data{Access},
 		)=split( /\ /, $nfsstatOutputA[$int] );
 	
 	}
 
 	if ( $int == 7 ){
 		(
-		 $Mknod,
-		 $Fsstat,
-		 $Fsinfo,
-		 $PathConf,
-		 $Commit,
+		 $data{Mknod},
+		 $data{Fsstat},
+		 $data{Fsinfo},
+		 $data{PathConf},
+		 $data{Commit},
 		)=split( /\ /, $nfsstatOutputA[$int] );
 	
 	}
 
 	if ( $int == 10 ){
 		(
-		 $TimedOut,
-		 $Invalid,
-		 $XReplies,
-		 $Retries,
-		 $Requests,
+		 $data{TimedOut},
+		 $data{Invalid},
+		 $data{XReplies},
+		 $data{Retries},
+		 $data{Requests},
 		)=split( /\ /, $nfsstatOutputA[$int] );
 	
 	}
 
 	if ( $int == 13 ){
 		(
-		 $AttrHits,
-		 $AttrMisses,
-		 $LkupHits,
-		 $LkupMisses,
-		 $BioRHits,
-		 $BioRMisses,
-		 $BioWHits,
-		 $BioWMisses,
+		 $data{AttrHits},
+		 $data{AttrMisses},
+		 $data{LkupHits},
+		 $data{LkupMisses},
+		 $data{BioRHits},
+		 $data{BioRMisses},
+		 $data{BioWHits},
+		 $data{BioWMisses},
 		)=split( /\ /, $nfsstatOutputA[$int] );
 	
 	}
 
 	if ( $int == 15 ){
 		(
-		 $BioRLHits,
-		 $BioRLMisses,
-		 $BioDHits,
-		 $BioDMisses,
-		 $DirEHits,
-		 $DirEMisses,
-		 $AccsHits,
-		 $AccsMisses,
+		 $data{BioRLHits},
+		 $data{BioRLMisses},
+		 $data{BioDHits},
+		 $data{BioDMisses},
+		 $data{DirEHits},
+		 $data{DirEMisses},
+		 $data{AccsHits},
+		 $data{AccsMisses},
 		)=split( /\ /, $nfsstatOutputA[$int] );
 	
 	}
@@ -141,46 +135,15 @@ while( defined( $nfsstatOutputA[$int] ) ){
 	$int++;
 }
 
-print "{\"data\":{\"Getattr\":\"".$Getattr."\",\n".
-	"\"Setattr\":\"".$Setattr."\",\n".
-	"\"Lookup\":\"".$Lookup."\",\n".
-	"\"Readlink\":\"".$Readlink."\",\n".
-	"\"Read\":\"".$Read."\",\n".
-	"\"Write\":\"".$Write."\",\n".
-	"\"Create\":\"".$Create."\",\n".
-	"\"Remove\":\"".$Remove."\",\n".
-	"\"Rename\":\"".$Rename."\",\n".
-	"\"Link\":\"".$Link."\",\n".
-	"\"SymLink\":\"".$Symlink."\",\n".
-	"\"Mkdir\":\"".$Mkdir."\",\n".
-	"\"Rmdir\":\"".$Rmdir."\",\n".
-	"\"Readdir\":\"".$Readdir."\",\n".
-	"\"RdirPlus\":\"".$RdirPlus."\",\n".
-	"\"Access\":\"".$Access."\",\n".
-	"\"Mknod\":\"".$Mknod."\",\n".
-	"\"Fsstat\":\"".$Fsstat."\",\n".
-	"\"Fsinfo\":\"".$Fsinfo."\",\n".
-	"\"PathConf\":\"".$PathConf."\",\n".
-	"\"Commit\":\"".$Commit."\",\n".
-	"\"Timedout\":\"".$TimedOut."\",\n".
-	"\"Invalid\":\"".$Invalid."\",\n".
-	"\"XReplies\":\"".$XReplies."\",\n".
-	"\"Retries\":\"".$Retries."\",\n".
-	"\"Requests\":\"".$Requests."\",\n".
-	"\"AttrHits\":\"".$AttrHits."\",\n".
-	"\"AttrMisses\":\"".$AttrMisses."\",\n".
-	"\"LkupHits\":\"".$LkupHits."\",\n".
-	"\"LkupMisses\":\"".$LkupMisses."\",\n".
-	"\"BioRHits\":\"".$BioRHits."\",\n".
-	"\"BioRMisses\":\"".$BioRMisses."\",\n".
-	"\"BioWHits\":\"".$BioWHits."\",\n".
-	"\"BioWMisses\":\"".$BioWMisses."\",\n".
-	"\"BioRLHits\":\"".$BioRLHits."\",\n".
-	"\"BioRLMisses\":\"".$BioRLMisses."\",\n".
-	"\"BioDHits\":\"".$BioDHits."\",\n".
-	"\"BioDMisses\":\"".$BioDMisses."\",\n".
-	"\"DirEHits\":\"".$DirEHits."\",\n".
-	"\"DirEMisses\":\"".$DirEMisses."\",\n".
-	"\"AccsHits\":\"".$AccsHits."\",\n".
-	"\"AccsMisses\":\"".$AccsMisses."\"},\n".
-	"\"error\":\"0\",\n\"errorString\"\:\"\",\n\"version\":\"".$VERSION."\"}\n";
+#add the data has to the return hash
+$to_return{data}=\%data;
+
+#finally render the JSON
+my $j=JSON->new;
+if ( $opts{p} ){
+        $j->pretty(1);
+}
+print $j->encode( \%to_return );
+if ( ! $opts{p} ){
+	print "\n";
+}

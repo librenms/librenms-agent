@@ -12,89 +12,116 @@ use Getopt::Std;
 my %opts=();
 getopts('p', \%opts);
 
-my $nfsstatOutput=`/usr/bin/nfsstat`;
-my @nfsstatOutputA=split( /\n/, $nfsstatOutput );
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
+sub main::VERSION_MESSAGE {
+	print "fbsdnfsclient SNMP extend 0.0.0\n";
+}
+
+sub main::HELP_MESSAGE {
+	print "\n".
+		"-p   Print the JSON in a pretty manner.";
+}
+
 my $VERSION=1;
+
+#the data to return
+my %to_return;
+$to_return{'version'}=$VERSION;
+$to_return{'error'}='0';
+$to_return{'errorString'}='';
+
+my $nfsstatOutput=`/usr/bin/nfsstat`;
+
+$to_return{error}=$?;
+
+# check for bad exit codes
+if ( $? == -1){
+	$to_return{errorString}='failed to run nfsstat';
+}
+elsif ($? & 127) {
+	$to_return{errorString}= sprintf "nfsstat died with signal %d, %s coredump\n",
+		($? & 127),  ($? & 128) ? 'with' : 'without';
+} else {
+	$to_return{error}=$? >> 8;
+	$to_return{errorString}="nfsstat exited with ".$to_return{error};
+}
+
+
+my @nfsstatOutputA=split( /\n/, $nfsstatOutput );
 my $int=0;
-
-my %tojson;
-$tojson{'version'}=$VERSION;
-$tojson{'error'}='0';
-$tojson{'errorString'}='';
-$tojson{'data'}={};
-
+my %data;
 while( defined( $nfsstatOutputA[$int] ) ){
 	$nfsstatOutputA[$int]=~s/^ +//;
 	$nfsstatOutputA[$int]=~s/ +/ /g;
 
 	if ( $int == 19 ){
 		(
-		 $tojson{'data'}{'Getattr'},
-		 $tojson{'data'}{'Setattr'},
-		 $tojson{'data'}{'Lookup'},
-		 $tojson{'data'}{'Readlink'},
-		 $tojson{'data'}{'Read'},
-		 $tojson{'data'}{'Write'},
-		 $tojson{'data'}{'Create'},
-		 $tojson{'data'}{'Remove'},
+		 $data{'Getattr'},
+		 $data{'Setattr'},
+		 $data{'Lookup'},
+		 $data{'Readlink'},
+		 $data{'Read'},
+		 $data{'Write'},
+		 $data{'Create'},
+		 $data{'Remove'},
 		)=split( /\ /, $nfsstatOutputA[$int] );
 	
 	}
 
 	if ( $int == 21 ){
 		(
-		 $tojson{'data'}{'Rename'},
-		 $tojson{'data'}{'Link'},
-		 $tojson{'data'}{'Symlink'},
-		 $tojson{'data'}{'Mkdir'},
-		 $tojson{'data'}{'Rmdir'},
-		 $tojson{'data'}{'Readdir'},
-		 $tojson{'data'}{'RdirPlus'},
-		 $tojson{'data'}{'Access'}
+		 $data{'Rename'},
+		 $data{'Link'},
+		 $data{'Symlink'},
+		 $data{'Mkdir'},
+		 $data{'Rmdir'},
+		 $data{'Readdir'},
+		 $data{'RdirPlus'},
+		 $data{'Access'}
 		)=split( /\ /, $nfsstatOutputA[$int] );
 	
 	}
 
 	if ( $int == 23 ){
 		(
-		 $tojson{'data'}{'Mknod'},
-		 $tojson{'data'}{'Fsstat'},
-		 $tojson{'data'}{'Fsinfo'},
-		 $tojson{'data'}{'PathConf'},
-		 $tojson{'data'}{'Commit'}
+		 $data{'Mknod'},
+		 $data{'Fsstat'},
+		 $data{'Fsinfo'},
+		 $data{'PathConf'},
+		 $data{'Commit'}
 		)=split( /\ /, $nfsstatOutputA[$int] );
 	
 	}
 
 	if ( $int == 25 ){
 		(
-		 $tojson{'data'}{'RetFailed'}
+		 $data{'RetFailed'}
 		)=split( /\ /, $nfsstatOutputA[$int] );
 	
 	}
 
 	if ( $int == 27 ){
 		(
-		 $tojson{'data'}{'Faults'}
+		 $data{'Faults'}
 		)=split( /\ /, $nfsstatOutputA[$int] );
 	
 	}
 
 	if ( $int == 30 ){
 		(
-		 $tojson{'data'}{'Inprog'},
-		 $tojson{'data'}{'Idem'},
-		 $tojson{'data'}{'Nonidem'},
-		 $tojson{'data'}{'Misses'}
+		 $data{'Inprog'},
+		 $data{'Idem'},
+		 $data{'Nonidem'},
+		 $data{'Misses'}
 		)=split( /\ /, $nfsstatOutputA[$int] );
 	
 	}
 
 	if ( $int == 33 ){
 		(
-		 $tojson{'data'}{'WriteOps'},
-		 $tojson{'data'}{'WriteRPC'},
-		 $tojson{'data'}{'Opsaved'}
+		 $data{'WriteOps'},
+		 $data{'WriteRPC'},
+		 $data{'Opsaved'}
 		)=split( /\ /, $nfsstatOutputA[$int] );
 		
 	}
@@ -102,14 +129,14 @@ while( defined( $nfsstatOutputA[$int] ) ){
 	$int++;
 }
 
-my $j=JSON->new;
+$to_return{data}=\%data;
 
+#finally render the JSON
+my $j=JSON->new;
 if ( $opts{p} ){
         $j->pretty(1);
 }
-
-print $j->encode( \%tojson );
-
-if ( $opts{p} ){
-	$j->pretty(1);
+print $j->encode( \%to_return );
+if ( ! $opts{p} ){
+	print "\n";
 }
