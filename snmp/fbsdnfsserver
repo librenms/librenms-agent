@@ -1,7 +1,48 @@
 #!/usr/local/bin/perl
 
-# Add this to snmpd.conf as below.
-# extend fbsdnfsserver /etc/snmp/fbsdnfsserver
+=head1 DESCRIPTION
+
+This is a SNMP extend for FreeBSD NFS server stats for use with LibreNMS.
+
+For more information, see L<https://docs.librenms.org/#Extensions/Applications/#fbsd-nfs-server>.
+
+=head1 SWITCHES
+
+=head2 -p
+
+Pretty print the JSON.
+
+=head1 SNMPD SETUP EXAMPLES
+
+Below is a basic example of setting it up snmpd.conf for NetSNMP.
+
+    extend fbsdnfsserver /etc/snmp/fbsdnfsserver
+
+=cut
+
+#Copyright (c) 2018, Zane C. Bowers-Hadley
+#All rights reserved.
+#
+#Redistribution and use in source and binary forms, with or without modification,
+#are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+#THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+#WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+#IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+#DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+#LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+#THE POSSIBILITY OF SUCH DAMAGE.
+
 
 use strict;
 use warnings;
@@ -19,7 +60,8 @@ sub main::VERSION_MESSAGE {
 
 sub main::HELP_MESSAGE {
 	print "\n".
-		"-p   Print the JSON in a pretty manner.";
+		"-p   Print the JSON in a pretty manner.\n";
+	exit 0;
 }
 
 my $VERSION=1;
@@ -31,7 +73,6 @@ $to_return{'error'}='0';
 $to_return{'errorString'}='';
 
 my $nfsstatOutput=`/usr/bin/nfsstat`;
-
 $to_return{error}=$?;
 
 # check for bad exit codes
@@ -129,6 +170,7 @@ while( defined( $nfsstatOutputA[$int] ) ){
 	$int++;
 }
 
+#add the data has to the return hash
 $to_return{data}=\%data;
 
 #finally render the JSON
