@@ -77,6 +77,7 @@ getopts('p', \%opts);
 #holds what will be returned
 my %data;
 my %toReturn;
+$toReturn{version}=1;
 
 # get the current status from apcupsd
 my $apcaccess_output=`$apcaccess`;
@@ -103,6 +104,7 @@ if ( $toReturn{error} == 0 ){
 	my @lines=split(/\n/, $apcaccess_output);
 	foreach my $line ( @lines ){
 		my ( $var, $val )=split(/\ *\:\ */, $line, 2);
+		$val=~s/\ .*//;
 		$status{$var}=$val;
 	}
 
