@@ -64,6 +64,11 @@ elif [ "${OS}" = "Linux" ] ; then
     DIST="Arch Linux"
     REV="" # Omit version since Arch Linux uses rolling releases
     IGNORE_LSB=1 # /etc/lsb-release would overwrite $REV with "rolling"
+    
+  elif [ -f /etc/photon-release ] ; then
+    DIST=$(head -1 < /etc/photon-release)
+    REV=$(sed -n -e 's/^.*PHOTON_BUILD_NUMBER=//p' /etc/photon-release)
+    IGNORE_LSB=1 # photon os does not have /etc/lsb-release nor lsb_release
 
   elif [ -f /etc/os-release ] ; then
     DIST=$(grep '^NAME=' /etc/os-release | cut -d= -f2- | tr -d '"')
@@ -93,8 +98,10 @@ elif [ "${OS}" = "Linux" ] ; then
     fi
   fi
 
-  if [ "`uname -a | awk '{print $(NF)}'`" = "DD-WRT" ] ; then
-    DIST="dd-wrt"
+  if [ -x "$(command -v  awk)" ];  then # some distros do not ship with awk
+    if [ "`uname -a | awk '{print $(NF)}'`" = "DD-WRT" ] ; then
+      DIST="dd-wrt"
+    fi
   fi
 
   if [ -n "${REV}" ]
