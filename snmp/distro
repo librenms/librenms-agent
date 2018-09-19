@@ -101,12 +101,11 @@ elif [ "${OS}" = "Linux" ] ; then
   if [ -x "$(command -v  awk)" ];  then # some distros do not ship with awk
     if [ "`uname -a | awk '{print $(NF)}'`" = "DD-WRT" ] ; then
       DIST="dd-wrt"
+    fi    
+    if [ "`uname -a | awk '{print $(NF)}'`" = "ASUSWRT-Merlin" ] ; then
+      DIST="ASUSWRT-Merlin"
+      REV=`nvram show | grep buildno= | egrep -o '[0-9].[0-9].[0-9]'` > /dev/null 2>&1
     fi
-  fi
-
-  if [ "`uname -a | awk '{print $(NF)}'`" = "ASUSWRT-Merlin" ] ; then
-    DIST="ASUSWRT-Merlin"
-    REV=`nvram show | grep buildno= | egrep -o '[0-9].[0-9].[0-9]'` > /dev/null 2>&1
   fi
 
   if [ -n "${REV}" ]
