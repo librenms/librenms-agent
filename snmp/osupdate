@@ -4,7 +4,7 @@
 # chmod +x /etc/snmp/osupdate                                  #
 # ------------------------------------------------------------ #
 # edit your snmpd.conf and include:                            #
-# extend osupdate /etc/snmp/osupdate 		        	             #
+# extend osupdate /etc/snmp/osupdate                           #
 #--------------------------------------------------------------#
 # restart snmpd and activate the app for desired host          #
 #--------------------------------------------------------------#
