@@ -78,60 +78,58 @@ phpfpm_slow_requests=0
 
 #	local opts="${1}" url="${2}"
 
-	phpfpm_response=($(curl -Ss ${opts} "${url}"))
-	[ $? -ne 0 -o "${#phpfpm_response[@]}" -eq 0 ] && exit 1
+  phpfpm_response=($(curl -Ss ${opts} "${url}"))
+  [ $? -ne 0 -o "${#phpfpm_response[@]}" -eq 0 ] && exit 1
 
-	if [[ "${phpfpm_response[0]}" != "pool:" \
-		|| "${phpfpm_response[2]}" != "process" \
-		|| "${phpfpm_response[5]}" != "start" \
-		|| "${phpfpm_response[12]}" != "accepted" \
-		|| "${phpfpm_response[15]}" != "listen" \
-		|| "${phpfpm_response[16]}" != "queue:" \
-		|| "${phpfpm_response[26]}" != "idle" \
-		|| "${phpfpm_response[29]}" != "active" \
-		|| "${phpfpm_response[32]}" != "total" \
-	]]
-		then
-		echo "invalid response from phpfpm status server: ${phpfpm_response[*]}"
-		exit 1;
-	fi
+  if [[ "${phpfpm_response[0]}" != "pool:" \
+    || "${phpfpm_response[2]}" != "process" \
+    || "${phpfpm_response[5]}" != "start" \
+    || "${phpfpm_response[12]}" != "accepted" \
+    || "${phpfpm_response[15]}" != "listen" \
+    || "${phpfpm_response[16]}" != "queue:" \
+    || "${phpfpm_response[26]}" != "idle" \
+    || "${phpfpm_response[29]}" != "active" \
+    || "${phpfpm_response[32]}" != "total" \
+  ]]
+    then
+    echo "invalid response from phpfpm status server: ${phpfpm_response[*]}"
+    exit 1;
+  fi
 
-	phpfpm_pool="${phpfpm_response[1]}"
-	phpfpm_start_time="${phpfpm_response[7]} ${phpfpm_response[8]}"
-	phpfpm_start_since="${phpfpm_response[11]}"
-	phpfpm_accepted_conn="${phpfpm_response[14]}"
-	phpfpm_listen_queue="${phpfpm_response[17]}"
-	phpfpm_max_listen_queue="${phpfpm_response[21]}"
-	phpfpm_listen_queue_len="${phpfpm_response[25]}"
-	phpfpm_idle_processes="${phpfpm_response[28]}"
-	phpfpm_active_processes="${phpfpm_response[31]}"
-	phpfpm_total_processes="${phpfpm_response[34]}"
-	phpfpm_max_active_processes="${phpfpm_response[38]}"
-	phpfpm_max_children_reached="${phpfpm_response[42]}"
-	if [ "${phpfpm_response[43]}" == "slow" ]
-		then
-	  	phpfpm_slow_requests="${phpfpm_response[45]}"
-	else
-	  	phpfpm_slow_requests="-1"
-	fi
-	
-	if [[ -z "${phpfpm_pool}" \
-		|| -z "${phpfpm_start_time}" \
-		|| -z "${phpfpm_start_since}" \
-		|| -z "${phpfpm_accepted_conn}" \
-		|| -z "${phpfpm_listen_queue}" \
-		|| -z "${phpfpm_max_listen_queue}" \
-		|| -z "${phpfpm_listen_queue_len}" \
-		|| -z "${phpfpm_idle_processes}" \
-		|| -z "${phpfpm_active_processes}" \
-		|| -z "${phpfpm_total_processes}" \
-		|| -z "${phpfpm_max_active_processes}" \
-		|| -z "${phpfpm_max_children_reached}" \
-	]]
-		then
-		echo "empty values got from phpfpm status server: ${phpfpm_response[*]}"
-		exit 1
-	fi
+  phpfpm_pool="${phpfpm_response[1]}"
+  phpfpm_start_time="${phpfpm_response[7]} ${phpfpm_response[8]}"
+  phpfpm_start_since="${phpfpm_response[11]}"
+  phpfpm_accepted_conn="${phpfpm_response[14]}"
+  phpfpm_listen_queue="${phpfpm_response[17]}"
+  phpfpm_max_listen_queue="${phpfpm_response[21]}"
+  phpfpm_listen_queue_len="${phpfpm_response[25]}"
+  phpfpm_idle_processes="${phpfpm_response[28]}"
+  phpfpm_active_processes="${phpfpm_response[31]}"
+  phpfpm_total_processes="${phpfpm_response[34]}"
+  phpfpm_max_active_processes="${phpfpm_response[38]}"
+  phpfpm_max_children_reached="${phpfpm_response[42]}"
+  if [ "${phpfpm_response[43]}" == "slow" ]; then
+    phpfpm_slow_requests="${phpfpm_response[45]}"
+  else
+    phpfpm_slow_requests="-1"
+  fi
+
+  if [[ -z "${phpfpm_pool}" \
+    || -z "${phpfpm_start_time}" \
+    || -z "${phpfpm_start_since}" \
+    || -z "${phpfpm_accepted_conn}" \
+    || -z "${phpfpm_listen_queue}" \
+    || -z "${phpfpm_max_listen_queue}" \
+    || -z "${phpfpm_listen_queue_len}" \
+    || -z "${phpfpm_idle_processes}" \
+    || -z "${phpfpm_active_processes}" \
+    || -z "${phpfpm_total_processes}" \
+    || -z "${phpfpm_max_active_processes}" \
+    || -z "${phpfpm_max_children_reached}" \
+  ]]; then
+    echo "empty values got from phpfpm status server: ${phpfpm_response[*]}"
+    exit 1
+  fi
 
 echo $phpfpm_pool
 echo $phpfpm_start_time
