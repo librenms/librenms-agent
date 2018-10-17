@@ -1,28 +1,28 @@
 #!/usr/bin/env bash
 ################################################################
 # copy this script to /etc/snmp/ and make it executable:       #
-# chmod +x /etc/snmp/os-updates.sh                             #
+# chmod +x /etc/snmp/osupdate                                  #
 # ------------------------------------------------------------ #
 # edit your snmpd.conf and include:                            #
-# extend osupdate /opt/os-updates.sh 			       #
+# extend osupdate /etc/snmp/osupdate                           #
 #--------------------------------------------------------------#
 # restart snmpd and activate the app for desired host          #
 #--------------------------------------------------------------#
 # please make sure you have the path/binaries below            #
-################################################################ 
-BIN_WC='/usr/bin/wc'
-BIN_GREP='/bin/grep'
+################################################################
+BIN_WC='/usr/bin/env wc'
+BIN_GREP='/usr/bin/env grep'
 CMD_GREP='-c'
 CMD_WC='-l'
-BIN_ZYPPER='/usr/bin/zypper'
+BIN_ZYPPER='/usr/bin/env zypper'
 CMD_ZYPPER='-q lu'
-BIN_YUM='/usr/bin/yum'
+BIN_YUM='/usr/bin/env yum'
 CMD_YUM='-q check-update'
-BIN_DNF='/usr/bin/dnf'
+BIN_DNF='/usr/bin/env dnf'
 CMD_DNF='-q check-update'
-BIN_APT='/usr/bin/apt-get'
+BIN_APT='/usr/bin/env apt-get'
 CMD_APT='-qq -s upgrade'
-BIN_PACMAN='/usr/bin/pacman'
+BIN_PACMAN='/usr/bin/env pacman'
 CMD_PACMAN='-Sup'
 
 ################################################################
