@@ -14,21 +14,21 @@ BIN_WC='/usr/bin/env wc'
 BIN_GREP='/usr/bin/env grep'
 CMD_GREP='-c'
 CMD_WC='-l'
-BIN_ZYPPER='/usr/bin/env zypper'
+BIN_ZYPPER=$(which zypper)
 CMD_ZYPPER='-q lu'
-BIN_YUM='/usr/bin/env yum'
+BIN_YUM=$(which yum)
 CMD_YUM='-q check-update'
-BIN_DNF='/usr/bin/env dnf'
+BIN_DNF=$(which dnf)
 CMD_DNF='-q check-update'
-BIN_APT='/usr/bin/env apt-get'
+BIN_APT=$(which apt-get)
 CMD_APT='-qq -s upgrade'
-BIN_PACMAN='/usr/bin/env pacman'
+BIN_PACMAN=$(which pacman)
 CMD_PACMAN='-Sup'
 
 ################################################################
 # Don't change anything unless you know what are you doing     #
 ################################################################
-if [ -f "$BIN_ZYPPER" ]; then
+if [ -e "$BIN_ZYPPER" ]; then
     # OpenSUSE
     UPDATES=`$BIN_ZYPPER $CMD_ZYPPER | $BIN_WC $CMD_WC`
     if [ $UPDATES -ge 2 ]; then
@@ -36,7 +36,7 @@ if [ -f "$BIN_ZYPPER" ]; then
     else
         echo "0";
     fi
-elif [ -f "$BIN_DNF" ]; then
+elif [ -e "$BIN_DNF" ]; then
     # Fedora
     UPDATES=`$BIN_DNF $CMD_DNF | $BIN_WC $CMD_WC`
     if [ $UPDATES -ge 1 ]; then
@@ -44,7 +44,7 @@ elif [ -f "$BIN_DNF" ]; then
     else
         echo "0";
     fi
-elif [ -f "$BIN_PACMAN" ]; then
+elif [ -e "$BIN_PACMAN" ]; then
     # Arch
     UPDATES=`$BIN_PACMAN $CMD_PACMAN | $BIN_WC $CMD_WC`
     if [ $UPDATES -ge 1 ]; then
@@ -52,7 +52,7 @@ elif [ -f "$BIN_PACMAN" ]; then
     else
         echo "0";
     fi
-elif [ -f "$BIN_YUM" ]; then
+elif [ -e "$BIN_YUM" ]; then
     # CentOS / Redhat
     UPDATES=`$BIN_YUM $CMD_YUM | $BIN_WC $CMD_WC`
     if [ $UPDATES -ge 1 ]; then
@@ -60,7 +60,7 @@ elif [ -f "$BIN_YUM" ]; then
     else
         echo "0";
     fi
-elif [ -f "$BIN_APT" ]; then
+elif [ -e "$BIN_APT" ]; then
     # Debian / Devuan / Ubuntu
     UPDATES=`$BIN_APT $CMD_APT | $BIN_GREP $CMD_GREP 'Inst'`
     if [ $UPDATES -ge 1 ]; then
