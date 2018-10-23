@@ -28,7 +28,7 @@ CMD_PACMAN='-Sup'
 ################################################################
 # Don't change anything unless you know what are you doing     #
 ################################################################
-if [ -x "$(command -v zypper)" ]; then
+if command -v zypper &>/dev/null ; then
     # OpenSUSE
     UPDATES=`$BIN_ZYPPER $CMD_ZYPPER | $BIN_WC $CMD_WC`
     if [ $UPDATES -ge 2 ]; then
@@ -36,7 +36,7 @@ if [ -x "$(command -v zypper)" ]; then
     else
         echo "0";
     fi
-elif [ -x "$(command -v dnf)" ]; then
+elif command -v dnf &>/dev/null ; then
     # Fedora
     UPDATES=`$BIN_DNF $CMD_DNF | $BIN_WC $CMD_WC`
     if [ $UPDATES -ge 1 ]; then
@@ -44,7 +44,7 @@ elif [ -x "$(command -v dnf)" ]; then
     else
         echo "0";
     fi
-elif [ -x "$(command -v pacman)" ]; then
+elif command -v pacman &>/dev/null ; then
     # Arch
     UPDATES=`$BIN_PACMAN $CMD_PACMAN | $BIN_WC $CMD_WC`
     if [ $UPDATES -ge 1 ]; then
@@ -52,7 +52,7 @@ elif [ -x "$(command -v pacman)" ]; then
     else
         echo "0";
     fi
-elif [ -x "$(command -v yum)" ]; then
+elif command -v yum &>/dev/null ; then
     # CentOS / Redhat
     UPDATES=`$BIN_YUM $CMD_YUM | $BIN_WC $CMD_WC`
     if [ $UPDATES -ge 1 ]; then
@@ -60,7 +60,7 @@ elif [ -x "$(command -v yum)" ]; then
     else
         echo "0";
     fi
-elif [ -x "$(command -v apt-get)" ]; then
+elif command -v apt-get &>/dev/null ; then
     # Debian / Devuan / Ubuntu
     UPDATES=`$BIN_APT $CMD_APT | $BIN_GREP $CMD_GREP 'Inst'`
     if [ $UPDATES -ge 1 ]; then
