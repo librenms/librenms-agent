@@ -28,7 +28,7 @@ CMD_PACMAN='-Sup'
 ################################################################
 # Don't change anything unless you know what are you doing     #
 ################################################################
-if [ -f '/etc/SuSE-release' ]; then
+if [ -n "$(command -v zypper)" ]; then
     # OpenSUSE
     UPDATES=`$BIN_ZYPPER $CMD_ZYPPER | $BIN_WC $CMD_WC`
     if [ $UPDATES -ge 2 ]; then
@@ -36,7 +36,7 @@ if [ -f '/etc/SuSE-release' ]; then
     else
         echo "0";
     fi
-elif [ -f '/etc/fedora-release' ]; then
+elif [ -n "$(command -v dnf)" ]; then
     # Fedora
     UPDATES=`$BIN_DNF $CMD_DNF | $BIN_WC $CMD_WC`
     if [ $UPDATES -ge 1 ]; then
@@ -44,7 +44,7 @@ elif [ -f '/etc/fedora-release' ]; then
     else
         echo "0";
     fi
-elif [ -f '/etc/arch-release' ]; then
+elif [ -n "$(command -v pacman)" ]; then
     # Arch
     UPDATES=`$BIN_PACMAN $CMD_PACMAN | $BIN_WC $CMD_WC`
     if [ $UPDATES -ge 1 ]; then
@@ -52,7 +52,7 @@ elif [ -f '/etc/arch-release' ]; then
     else
         echo "0";
     fi
-elif [ -f '/etc/redhat-release' ]; then
+elif [ -n "$(command -v yum)" ]; then
     # CentOS / Redhat
     UPDATES=`$BIN_YUM $CMD_YUM | $BIN_WC $CMD_WC`
     if [ $UPDATES -ge 1 ]; then
@@ -60,7 +60,7 @@ elif [ -f '/etc/redhat-release' ]; then
     else
         echo "0";
     fi
-elif [ -f '/etc/debian_version' ]; then
+elif [ -n "$(command -v apt-get)" ]; then
     # Debian / Devuan / Ubuntu
     UPDATES=`$BIN_APT $CMD_APT | $BIN_GREP $CMD_GREP 'Inst'`
     if [ $UPDATES -ge 1 ]; then
