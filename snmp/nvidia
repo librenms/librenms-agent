@@ -4,9 +4,9 @@
 # extend nvidia /etc/snmps/nvidia
 
 # Please verify the following paths are correct
-nvidiasmi='/usr/bin/env nvidia-smi'
-grep='/usr/bin/env grep'
-sed='/usr/bin/env sed'
+nvidiasmi=`which nvidia-smi`
+grep=`which grep`
+sed=`which sed`
 
 ##
 ## Nothing below here should need touched.

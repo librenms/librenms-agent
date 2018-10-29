@@ -10,14 +10,14 @@
 # If you are unsure, which to set, run this script and make sure that
 # the JSON output variables match that in "ntpq -c rv".
 #
-BIN_NTPD='/usr/bin/env ntpd'
-BIN_NTPQ='/usr/bin/env ntpq'
-BIN_NTPDC='/usr/bin/env ntpdc'
-BIN_GREP='/usr/bin/env grep'
-BIN_TR='/usr/bin/env tr'
-BIN_CUT='/usr/bin/env cut'
-BIN_SED="/usr/bin/env sed"
-BIN_AWK='/usr/bin/env awk'
+BIN_NTPD=`which ntpd`
+BIN_NTPQ=`which ntpq`
+BIN_NTPDC=`which ntpdc`
+BIN_GREP=`which grep`
+BIN_TR=`which tr`
+BIN_CUT=`which cut`
+BIN_SED=`which sed`
+BIN_AWK=`which awk`
 NTPQV="p11"
 ################################################################
 # Don't change anything unless you know what are you doing     #

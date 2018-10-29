@@ -10,10 +10,10 @@
 #--------------------------------------------------------------#
 # please make sure you have the path/binaries below            #
 ################################################################
-BIN_APCS='/sbin/apcaccess'
-BIN_TR='/usr/bin/tr'
-BIN_CUT='/usr/bin/cut'
-BIN_GREP='/usr/bin/grep'
+BIN_APCS=`which apcaccess`
+BIN_TR=`which tr`
+BIN_CUT=`which cut`
+BIN_GREP=`which grep`
 ################################################################
 # Don't change anything unless you know what are you doing     #
 ################################################################

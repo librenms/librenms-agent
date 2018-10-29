@@ -3,8 +3,8 @@
 # please read DOCS to succesfully get #
 # raspberry sensors into your host    #
 #######################################
-picmd='/usr/bin/vcgencmd'
-pised='/bin/sed'
+picmd=`which vcgencmd`
+pised=`which sed`
 getTemp='measure_temp'
 getVoltsCore='measure_volts core'
 getVoltsRamC='measure_volts sdram_c'
