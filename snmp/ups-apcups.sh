@@ -10,10 +10,10 @@
 #--------------------------------------------------------------#
 # please make sure you have the path/binaries below            #
 ################################################################
-BIN_APCS=`which apcaccess`
-BIN_TR=`which tr`
-BIN_CUT=`which cut`
-BIN_GREP=`which grep`
+BIN_APCS='/usr/bin/env apcaccess`'
+BIN_TR='/usr/bin/env tr'
+BIN_CUT='/usr/bin/env cut'
+BIN_GREP='/usr/bin/env grep'
 ################################################################
 # Don't change anything unless you know what are you doing     #
 ################################################################

@@ -17,7 +17,7 @@ community='public'
 port='3401'
 
 # the full path to snmpwalk
-snmpwalk=`which snmpwalk`
+snmpwalk='/usr/bin/env snmpwalk'
 
 ##
 ## Nothing Should Need Changed Below Here

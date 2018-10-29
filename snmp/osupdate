@@ -10,19 +10,19 @@
 #--------------------------------------------------------------#
 # please make sure you have the path/binaries below            #
 ################################################################
-BIN_WC=`which wc`
+BIN_WC='/usr/bin/env wc'
 CMD_WC='-l'
-BIN_GREP=`which grep`
+BIN_GREP='/usr/bin/env grep'
 CMD_GREP='-c'
-BIN_ZYPPER=`which zypper`
+BIN_ZYPPER='/usr/bin/env zypper'
 CMD_ZYPPER='-q lu'
-BIN_YUM=`which yum`
+BIN_YUM='/usr/bin/env yum'
 CMD_YUM='-q check-update'
-BIN_DNF=`which dnf`
+BIN_DNF='/usr/bin/env dnf'
 CMD_DNF='-q check-update'
-BIN_APT=`which apt-get`
+BIN_APT='/usr/bin/env apt-get'
 CMD_APT='-qq -s upgrade'
-BIN_PACMAN=`which pacman`
+BIN_PACMAN='/usr/bin/env pacman'
 CMD_PACMAN='-Sup'
 
 ################################################################

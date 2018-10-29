@@ -5,12 +5,12 @@
 # extend dhcpstats /opt/dhcp-status.sh                         #
 ################################################################ 
 FILE_DHCP='/var/lib/dhcp/db/dhcpd.leases'
-BIN_CAT=`which cat`
-BIN_GREP=`which grep`
-BIN_TR=`which tr`
-BIN_SED=`which sed`
-BIN_SORT=`which sort`
-BIN_WC=`which wc`
+BIN_CAT='/usr/bin/env cat'
+BIN_GREP='/usr/bin/env grep'
+BIN_TR='/usr/bin/env tr'
+BIN_SED='/usr/bin/env sed'
+BIN_SORT='/usr/bin/env sort'
+BIN_WC='/usr/bin/env wc'
 DHCP_LEASES='^lease'
 DHCP_ACTIVE='^lease|binding state active'
 DHCP_EXPIRED='^lease|binding state expired'

@@ -12,8 +12,8 @@ RADIUS_KEY='adminsecret'
 RADIUS_STATUS_CMD='Message-Authenticator = 0x00, FreeRADIUS-Statistics-Type = 31, Response-Packet-Type = Access-Accept'
 
 # Pathes for grep and radclient executables, should work if within PATH
-BIN_GREP=`which grep`
-BIN_RADCLIENT=`which radclient`
+BIN_GREP='/usr/bin/env grep'
+BIN_RADCLIENT='/usr/bin/env radclient'
 
 if [ $AGENT == 1 ]; then
   echo "<<<freeradius>>>"

@@ -19,9 +19,9 @@
 # ------------------------------------------------------------- #
 # restart snmpd and activate the app for desired host           #
 #################################################################
-BIN_EXIM=`which exim`
-BIN_GREP=`which grep`
-BIN_WC=`which wc`
+BIN_EXIM='/usr/bin/env exim'
+BIN_GREP='/usr/bin/env grep'
+BIN_WC='/usr/bin/env wc'
 CFG_EXIM_1='-bp'
 CFG_EXIM_2='-bpc'
 CFG_GREP='frozen'

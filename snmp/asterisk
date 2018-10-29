@@ -1,6 +1,6 @@
 #!/bin/bash
 
-ASCLI=`which asterisk`
+ASCLI='/usr/bin/env asterisk'
 
 if [ -f $ASCLI ];
 then
