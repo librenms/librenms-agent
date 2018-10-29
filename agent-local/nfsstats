@@ -8,13 +8,13 @@
 #############################################################
 
 CFG_NFSVER='3'
-BIN_NFSSTAT='/usr/sbin/nfsstat'
-BIN_TR='/usr/bin/tr'
-BIN_CUT='/usr/bin/cut'
-BIN_GREP='/usr/bin/grep'
-BIN_PASTE='/usr/bin/paste'
-BIN_RM='/usr/bin/rm'
-BIN_MV='/usr/bin/mv'
+BIN_NFSSTAT='/usr/bin/env nfsstat'
+BIN_TR='/usr/bin/env tr'
+BIN_CUT='/usr/bin/env cut'
+BIN_GREP='/usr/bin/env grep'
+BIN_PASTE='/usr/bin/env paste'
+BIN_RM='/usr/bin/env rm'
+BIN_MV='/usr/bin/env mv'
 LOG_OLD='/tmp/nfsstats_old'
 LOG_NEW='/tmp/nfsstats_new'
 
