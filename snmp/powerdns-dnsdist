@@ -9,7 +9,7 @@ API_STATS="jsonstat?command=stats"
 TMP_FILE="/tmp/dnsdist_current.stats"
 
 #/ Description: BASH script to get PowerDNS dnsdist stats
-#/ Examples: ./powerdns-dnsdist.sh
+#/ Examples: ./powerdns-dnsdist
 #/ Options:
 #/   --help: Display this help message
 #/   --debug: Brief check of system env and script vars
