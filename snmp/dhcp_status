@@ -1,9 +1,15 @@
-#!/bin/bash
+#!/usr/bin/env bash
 ################################################################
-# copy this script to somewhere like /opt and make chmod +x it #
-# edit your snmpd.conf add the below line and restart snmpd    #
-# extend dhcpstats /opt/dhcp-status.sh                         #
-################################################################ 
+# copy this script to /etc/snmp/ and make it executable:       #
+# chmod +x /etc/snmp/dhcp_status                               #
+# ------------------------------------------------------------ #
+# edit your snmpd.conf and include:                            #
+# extend dhcp_status /etc/snmp/dhcp_status                     #
+# ------------------------------------------------------------ #
+# restart snmpd and activate the app for desired host          #
+# ------------------------------------------------------------ #
+# please make sure you have the path/binaries below            #
+################################################################
 FILE_DHCP='/var/lib/dhcp/db/dhcpd.leases'
 BIN_CAT='/usr/bin/env cat'
 BIN_GREP='/usr/bin/env grep'

@@ -1,5 +1,15 @@
-#!/bin/bash
-
+#!/usr/bin/env bash
+################################################################
+# copy this script to /etc/snmp/ and make it executable:       #
+# chmod +x /etc/snmp/asterisk                                  #
+# ------------------------------------------------------------ #
+# edit your snmpd.conf and include:                            #
+# extend asterisk /etc/snmp/asterisk                           #
+# ------------------------------------------------------------ #
+# restart snmpd and activate the app for desired host          #
+# ------------------------------------------------------------ #
+# please make sure you have the path/binaries below            #
+################################################################
 ASCLI='/usr/bin/env asterisk'
 
 if [ -f $ASCLI ];

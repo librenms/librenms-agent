@@ -10,15 +10,17 @@
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-#################################################################
-# copy this script to /etc/snmp/ and make it executable:        #
-# chmod +x /etc/snmp/exim-stats.sh                              #
-# ------------------------------------------------------------- #
-# edit your snmpd.conf and include:                             #
-# extend exim-stats /etc/snmp/exim-stats.sh                     #
-# ------------------------------------------------------------- #
-# restart snmpd and activate the app for desired host           #
-#################################################################
+################################################################
+# copy this script to /etc/snmp/ and make it executable:       #
+# chmod +x /etc/snmp/exim_stats                                #
+# ------------------------------------------------------------ #
+# edit your snmpd.conf and include:                            #
+# extend exim_stats /etc/snmp/exim_stats                       #
+# ------------------------------------------------------------ #
+# restart snmpd and activate the app for desired host          #
+# ------------------------------------------------------------ #
+# please make sure you have the path/binaries below            #
+################################################################
 BIN_EXIM='/usr/bin/env exim'
 BIN_GREP='/usr/bin/env grep'
 BIN_WC='/usr/bin/env wc'
@@ -26,7 +28,6 @@ CFG_EXIM_1='-bp'
 CFG_EXIM_2='-bpc'
 CFG_GREP='frozen'
 CFG_WC='-l'
-#################################################################
 
 FROZEN=`$BIN_EXIM $CFG_EXIM_1 | $BIN_GREP $CFG_GREP | $BIN_WC $CFG_WC`
 echo $FROZEN

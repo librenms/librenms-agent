@@ -1,8 +1,16 @@
-#!/bin/bash
-#######################################
-# please read DOCS to succesfully get #
-# raspberry sensors into your host    #
-#######################################
+#!/usr/bin/env bash
+################################################################
+# copy this script to /etc/snmp/ and make it executable:       #
+# chmod +x /etc/snmp/raspberry                                 #
+# ------------------------------------------------------------ #
+# edit your snmpd.conf and include:                            #
+# extend raspberry /etc/snmp/raspberry                         #
+# ------------------------------------------------------------ #
+# restart snmpd and activate the app for desired host          #
+# ------------------------------------------------------------ #
+# please make sure you have the path/binaries below            #
+# ------------------------------------------------------------ #
+################################################################
 picmd='/usr/bin/env vcgencmd'
 pised='/usr/bin/env sed'
 getTemp='measure_temp'

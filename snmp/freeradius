@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+################################################################
+# copy this script to /etc/snmp/ and make it executable:       #
+# chmod +x /etc/snmp/freeradius                                #
+# ------------------------------------------------------------ #
+# edit your snmpd.conf and include:                            #
+# extend freeradius /etc/snmp/freeradius                       #
+# ------------------------------------------------------------ #
+# restart snmpd and activate the app for desired host          #
+# ------------------------------------------------------------ #
+# please make sure you have the path/binaries below            #
+################################################################
 
 # Set 0 for SNMP extend; set to 1 for Check_MK agent
 AGENT=0

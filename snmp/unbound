@@ -1,9 +1,15 @@
-#!/bin/sh
-
-# Add this to snmpd.conf as below.
-# extend unbound /root/snmp-extends/unbound
-
-# Set the path to unbound-control.
+#!/usr/bin/env sh
+################################################################
+# copy this script to /etc/snmp/ and make it executable:       #
+# chmod +x /etc/snmp/unbound                                   #
+# ------------------------------------------------------------ #
+# edit your snmpd.conf and include:                            #
+# extend unbound /etc/snmp/unbound                             #
+# ------------------------------------------------------------ #
+# restart snmpd and activate the app for desired host          #
+# ------------------------------------------------------------ #
+# please make sure you have the path/binaries below            #
+################################################################
 unbountctl='/usr/bin/env unbound-control'
 
 ##

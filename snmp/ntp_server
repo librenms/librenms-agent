@@ -1,15 +1,24 @@
-#!/bin/sh
-# Please make sure the paths below are correct.
-# Alternatively you can put them in $0.conf, meaning if you've named
-# this script ntp-client.sh then it must go in ntp-client.sh.conf .
-#
-# NTPQV output version of "ntpq -c rv" 
-# p1 DD-WRT and some other outdated linux distros
-# p11 FreeBSD 11 and any linux distro that is up to date
-#
-# If you are unsure, which to set, run this script and make sure that
-# the JSON output variables match that in "ntpq -c rv".
-#
+#!/usr/bin/env sh
+##########################################################################
+# copy this script to /etc/snmp/ and make it executable:                 #
+# chmod +x /etc/snmp/ntp_server                                          #
+# ---------------------------------------------------------------------- #
+# edit your snmpd.conf and include:                                      #
+# extend ntp_server /etc/snmp/ntp_server                                 #
+# ---------------------------------------------------------------------- #
+# restart snmpd and activate the app for desired host                    #
+# ---------------------------------------------------------------------- #
+# please make sure you have the path/binaries below                      #
+# alternatively you can put them in $0.conf, meaning if you've named     #
+# this script ntp-client.sh then it must go in ntp-client.sh.conf        #
+# ---------------------------------------------------------------------- #
+# NTPQV output version of "ntpq -c rv"                                   #
+# p1 DD-WRT and some other outdated linux distros                        #
+# p11 FreeBSD 11 and any linux distro that is up to date                 #
+# ---------------------------------------------------------------------- #
+# if you are unsure, which to set, run this script and make sure that    #
+# the JSON output variables match that in "ntpq -c rv".                  #
+##########################################################################
 BIN_NTPD='/usr/bin/env ntpd'
 BIN_NTPQ='/usr/bin/env ntpq'
 BIN_NTPDC='/usr/bin/env ntpdc'
@@ -19,6 +28,7 @@ BIN_CUT='/usr/bin/env cut'
 BIN_SED='/usr/bin/env sed'
 BIN_AWK='/usr/bin/env awk'
 NTPQV="p11"
+
 ################################################################
 # Don't change anything unless you know what are you doing     #
 ################################################################

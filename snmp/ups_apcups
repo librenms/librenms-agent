@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 ################################################################
 # copy this script to /etc/snmp/ and make it executable:       #
-# chmod +x /etc/snmp/ups-apcups.sh                             #
+# chmod +x /etc/snmp/ups_apcups                                #
 # ------------------------------------------------------------ #
 # edit your snmpd.conf and include:                            #
-# extend ups-apcups /etc/snmp/ups-apcups.sh                    #
-#--------------------------------------------------------------#
+# extend ups_apcups /etc/snmp/ups_apcups                       #
+# ------------------------------------------------------------ #
 # restart snmpd and activate the app for desired host          #
-#--------------------------------------------------------------#
+# ------------------------------------------------------------ #
 # please make sure you have the path/binaries below            #
 ################################################################
-BIN_APCS='/usr/bin/env apcaccess`'
+BIN_APCS='/usr/bin/env apcaccess'
 BIN_TR='/usr/bin/env tr'
 BIN_CUT='/usr/bin/env cut'
 BIN_GREP='/usr/bin/env grep'
