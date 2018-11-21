@@ -805,6 +805,7 @@ function get_innodb_array($text) {
       'innodb_sem_wait_time_ms'   => null,
    );
    $txn_seen = FALSE;
+   $prev_line = "";
    foreach ( explode("\n", $text) as $line ) {
       $line = trim($line);
       $row = preg_split('/ +/', $line);
@@ -920,15 +921,25 @@ function get_innodb_array($text) {
       }
       elseif (strpos($line, 'Ibuf: size ') === 0 ) {
          # Ibuf: size 1, free list len 4634, seg size 4636,
+         # ...or...
+         # Ibuf: size 1, free list len 90, seg size 92, 5356 merges
          $results['ibuf_used_cells']  = to_int($row[2]);
          $results['ibuf_free_cells']  = to_int($row[6]);
          $results['ibuf_cell_count']  = to_int($row[9]);
+         $results['ibuf_merges']      = to_int($row[10]);
       }
       elseif (strpos($line, ' merged recs, ') > 0 ) {
          # 19817685 inserts, 19817684 merged recs, 3552620 merges
          $results['ibuf_inserts'] = to_int($row[0]);
          $results['ibuf_merged']  = to_int($row[2]);
          $results['ibuf_merges']  = to_int($row[5]);
+      }
+      elseif (strpos($line, ', delete mark ') > 0 ) {
+        # merged operations:
+        #  insert 4858, delete mark 24344, delete 5009
+        if (strpos($prev_line, 'merged operations:') === 0) {
+            $results['ibuf_inserts'] = to_int($row[1]);
+        }
       }
       elseif (strpos($line, 'Hash table size ') === 0 ) {
          # In some versions of InnoDB, the used cells is omitted.
@@ -1059,6 +1070,7 @@ function get_innodb_array($text) {
          $results['queries_inside'] = to_int($row[0]);
          $results['queries_queued'] = to_int($row[4]);
       }
+      $prev_line = $line;
    }
 
    foreach ( array('spin_waits', 'spin_rounds', 'os_waits') as $key ) {
