@@ -50,12 +50,14 @@ elif [ "${OS}" = "Linux" ] ; then
     DIST="Devuan `cat /etc/devuan_version`"
     REV=""
 
-  elif [ -f /etc/debian_version -a -f /usr/bin/lsb_release ] ; then
+  elif [ -f /etc/debian_version ] ; then
     DIST="Debian `cat /etc/debian_version`"
     REV=""
-    ID=`lsb_release -i | awk -F ':' '{print $2}' | sed 's/	//g'`
+    if [ -f /usr/bin/lsb_release ] ; then
+        ID=`lsb_release -i | awk -F ':' '{print $2}' | sed 's/	//g'`
+    fi
     if [ "${ID}" = "Raspbian" ] ; then
-      DIST="Raspbian `cat /etc/debian_version`"
+        DIST="Raspbian `cat /etc/debian_version`"
     fi
 
   elif [ -f /etc/gentoo-release ] ; then
