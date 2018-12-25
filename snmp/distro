@@ -59,7 +59,10 @@ elif [ "${OS}" = "Linux" ] ; then
     if [ "${ID}" = "Raspbian" ] ; then
       DIST="Raspbian `cat /etc/debian_version`"
     fi
-
+    if [ -f /usr/bin/pveversion ]; then
+      DIST="${DIST}/PVE `/usr/bin/pveversion | cut -d '/' -f 2`"
+    fi
+    
   elif [ -f /etc/gentoo-release ] ; then
     DIST="Gentoo"
     REV=$(tr -d '[[:alpha:]]' </etc/gentoo-release | tr -d " ")
