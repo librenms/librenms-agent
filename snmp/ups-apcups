@@ -1,0 +1,133 @@
+#!/usr/bin/env perl
+# Author: Zane C. Bowers-Hadley <vvelox@vvelox.net>
+
+# https://docs.librenms.org/#Extensions/Applications/#ups-apcups
+# See the above for additional information not documented in the POD below.
+
+=head1 DESCRIPTION
+
+This is a SNMP extend for apcupsd for use with LibreNMS.
+
+For more information, see L<https://docs.librenms.org/#Extensions/Applications/#ups-apcups>.
+
+=head1 SWITCHES
+
+=head2 -p
+
+Pretty print the JSON.
+
+=head1 SNMPD SETUP EXAMPLES
+
+Below is a basic example of setting it up snmpd.conf for NetSNMP.
+
+    extend ups-apcups /etc/snmp/ups-apcups
+
+Now if for example apcaccess is not in the PATH enviromental variables that snmpd is running
+with, you may need to do something like below.
+
+    extend /usr/bin/env PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin /etc/snmp/ups-apcups
+
+=cut
+
+#Copyright (c) 2018, Zane C. Bowers-Hadley
+#All rights reserved.
+#
+#Redistribution and use in source and binary forms, with or without modification,
+#are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+#THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+#WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+#IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+#DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+#LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+#THE POSSIBILITY OF SUCH DAMAGE.
+
+use strict;
+use warnings;
+use Getopt::Std;
+use JSON;
+
+# should be no reason to change this
+# better to use env to make sure it is in your path when you run this
+my $apcaccess='apcaccess';
+
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
+sub main::VERSION_MESSAGE {
+        print "ups-apcups SNMP extend 0.0.0\n";
+};
+
+sub main::HELP_MESSAGE {
+        print "\n";
+}
+
+#gets the options
+my %opts=();
+getopts('p', \%opts);
+
+#holds what will be returned
+my %data;
+my %toReturn;
+$toReturn{version}=1;
+
+# get the current status from apcupsd
+my $apcaccess_output=`$apcaccess`;
+$toReturn{error}=$?;
+
+# check for bad exit codes
+if ( $? == -1){
+	$toReturn{errorString}='failed to run apcaccess';
+}
+elsif ($? & 127) {
+	$toReturn{errorString}= sprintf "apcaccess died with signal %d, %s coredump\n",
+		($? & 127),  ($? & 128) ? 'with' : 'without';
+} else {
+		$toReturn{error}=$? >> 8;
+		$toReturn{errorString}="apcaccess exited with ".$toReturn{error};
+}
+
+# if no bad exit codes, we can process $apcaccess_output
+if ( $toReturn{error} == 0 ){
+	# holds the found data for the apcupsd status
+	my %status;
+
+	# pulls apart the output
+	my @lines=split(/\n/, $apcaccess_output);
+	foreach my $line ( @lines ){
+		my ( $var, $val )=split(/\ *\:\ */, $line, 2);
+		$val=~s/\ .*//;
+		$status{$var}=$val;
+	}
+
+	#pull the desired variables from the output
+	$data{charge}=$status{BCHARGE};
+	$data{time_remaining}=$status{TIMELEFT};
+	$data{battery_nominal}=$status{NOMBATTV};
+	$data{battery_voltage}=$status{BATTV};
+	$data{input_voltage}=$status{LINEV};
+	$data{nominal_voltage}=$status{NOMINV};
+	$data{load}=$status{LOADPCT};
+}
+
+# add the data to be return to the return hah
+$toReturn{data}=\%data;
+
+# convert $toReturn to JSON and pretty print if asked to
+my $j=JSON->new;
+if ( $opts{p} ){
+        $j->pretty(1);
+}
+print $j->encode( \%toReturn );
+if (! $opts{p} ){
+        print "\n";
+}
+exit 0;
