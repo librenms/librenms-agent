@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+#
+# Copyright (c) 2019 Mike Centola <mcentola@appliedengdesign.com>
+#
+# Please make sure the paths below are correct.
+# Alternatively you can put them in $0.conf, meaning if you've named
+# this script gpsd.sh then it must go in gpsd.sh.conf .
+#
+#
+################################################################
+# Don't change anything unless you know what are you doing     #
+################################################################
+
+BIN_GPIPE='/usr/bin/env gpspipe'
+BIN_GREP='/usr/bin/env grep'
+BIN_PYTHON='/usr/bin/env python'
+
+# Check for config file
+CONFIG=$0".conf"
+if [ -f $CONFIG ]; then
+    . $CONFIG
+fi
+
+# Create Temp File
+TMPFILE=$(mktemp)
+trap "rm -f $TMPFILE" 0 2 3 15
+
+# Write GPSPIPE Data to Temp File
+$BIN_GPIPE -w -n 10 > $TMPFILE
+
+# Parse Temp file for GPSD Data
+VERSION=`cat $TMPFILE | $BIN_GREP -m 1 "VERSION" | $BIN_PYTHON -c 'import sys,json;print json.load(sys.stdin)["rev"]'`
+GPSDMODE=`cat $TMPFILE | $BIN_GREP -m 1 "mode" | $BIN_PYTHON -c 'import sys,json;print json.load(sys.stdin)["mode"]'`
+HDOP=`cat $TMPFILE | $BIN_GREP -m 1 "hdop" | $BIN_PYTHON -c 'import sys,json;print json.load(sys.stdin)["hdop"]'`
+VDOP=`cat $TMPFILE | $BIN_GREP -m 1 "vdop" | $BIN_PYTHON -c 'import sys,json;print json.load(sys.stdin)["vdop"]'`
+LAT=`cat $TMPFILE | $BIN_GREP -m 1 "lat" | $BIN_PYTHON -c 'import sys,json;print json.load(sys.stdin)["lat"]'`
+LONG=`cat $TMPFILE | $BIN_GREP -m 1 "lon" | $BIN_PYTHON -c 'import sys,json;print json.load(sys.stdin)["lon"]'`
+ALT=`cat $TMPFILE | $BIN_GREP -m 1 "alt" | $BIN_PYTHON -c 'import sys,json;print json.load(sys.stdin)["alt"]'`
+SATS=`cat $TMPFILE | $BIN_GREP -m 1 "SKY" | $BIN_PYTHON -c 'import sys,json;print len(json.load(sys.stdin)["satellites"])'`
+SATSUSED=`cat $TMPFILE | $BIN_GREP -m 1 "SKY" | $BIN_PYTHON -c 'import sys,json;print len([sat for sat in json.load(sys.stdin)["satellites"] if sat["used"]])'`
+
+# Output info for SNMP Extend
+echo '{"data":{"mode":"'$GPSDMODE'", "hdop":"'$HDOP'", "vdop":"'$VDOP'", "latitude":"'$LAT'", "longitude":"'$LONG'", "altitude":"'$ALT'", "satellites":"'$SATS'", "satellites_used":"'$SATSUSED'"}, "error":"0", "errorString":"", "version":"'$VERSION'"}'
+
+rm $TMPFILE
