@@ -86,10 +86,10 @@ my ( $received,
 	 $rardnf,
 	 $rarnfqa,
 	 $iuscp,
-	 $msefl,
 	 $sce,
 	 $scp,
-	 $urr) = split ( /\n/, $old );
+	 $urr,
+	 $msefl) = split ( /\n/, $old );
 
 if ( ! defined( $received ) ){ $received=0; }
 if ( ! defined( $delivered ) ){ $delivered=0; }
@@ -142,7 +142,6 @@ my $recipientsC=0;
 my $recipienthdC=0;
 my $deferralcrC=0;
 my $deferralhidC=0;
-my $chrC=0;
 my $hcrnfqhC=0;
 my $sardnfC=0;
 my $sarnobuC=0;
@@ -195,11 +194,12 @@ sub newValue{
 
 my $output=`$pflogsumm /var/log/maillog`;
 
-#holds client host rejected values till the end when it is compared to the old one
-my $chrNew=0;
-
 #holds RBL values till the end when it is compared to the old one
 my $buNew=0;
+
+
+#holds client host rejected values till the end when it is compared to the old one
+my $chrNew=0;
 
 # holds recipient address rejected values till the end when it is compared to the old one
 my $raruuNew=0;
@@ -353,6 +353,7 @@ while ( defined( $outputA[$int] ) ){
 	# deferrals Host is down
 	if ( ( $line =~ /Host is down$/ ) && ( ! $handled ) ){
 		$line=~s/ .*//;
+		$deferralcrC=$line;
 		$deferralhidC=$line;
 		$deferralhid=newValue( $deferralhid, $line );
 		$handled=1;
@@ -429,8 +430,8 @@ while ( defined( $outputA[$int] ) ){
 	#Improper use of SMTP command pipelining
 	if ( ( $line =~ /Improper use of SMTP command pipelining/ ) && ( ! $handled ) ){
 		$line=~s/.*\: //g;
-		$iuoscpC=$line;
-		$iuoscp=newValue( $iuoscp, $line );
+		$iuscpC=$line;
+		$iuscp=newValue( $iuscp, $line );
 	}
 
 	#Message size exceeds fixed limit
@@ -453,15 +454,17 @@ while ( defined( $outputA[$int] ) ){
 		$scpC=$line;
 		$scp=newValue( $scp, $line );
 	}
-	
+
 	#unknown reject reason
 	if ( ( $line =~ /unknown reject reason/ ) && ( ! $handled ) ){
 		$line=~s/.*\: //g;
 		$urrC=$line;
 		$urr=newValue( $urr, $line );
 	}
+
 	$int++;
 }
+
 
 # final client host rejected total
 $chr=newValue( $chr, $chrNew );
@@ -502,8 +505,8 @@ my $data=$received."\n".
 	$iuscp."\n".
 	$sce."\n".
 	$scp."\n".
-	$urr."\n";
-	$msefl."\n".
+	$urr."\n".
+	$msefl."\n";
 
 print $data;
 
@@ -535,10 +538,10 @@ my $current=$receivedC."\n".
 	$rardnfC."\n".
 	$rarnfqaC."\n".
 	$iuscpC."\n".
-	$mseflC."\n".
 	$sceC."\n".
 	$scpC."\n".
-	$urrC."\n";
+	$urrC."\n".
+	$mseflC."\n";
 
 open(my $fh, ">", $cache) or die "Can't open '".$cache."'";
 print $fh $current;
