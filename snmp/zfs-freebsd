@@ -236,14 +236,14 @@ my $pools_int=0;
 my @toShoveIntoJSON;
 while ( defined( $pools[$pools_int] ) ) {
 	my %newPool;
-	
+
 	my $pool=$pools[$pools_int];
 	$pool =~ s/\t/,/g;
-	$pool =~ s/\,\-\,/\,0\,/g;
+	$pool =~ s/\,\-\,\-\,/\,0\,0\,/g;
 	$pool =~ s/\%//g;
 	$pool =~ s/\,([0-1\.]*)x\,/,$1,/;
 
-	( $newPool{name}, $newPool{size}, $newPool{alloc}, $newPool{free}, $newPool{ckpoint}, $newPool{expandsz}, $newPool{frag}, $newPool{cap}, $newPool{dedup}, $newPool{health} )=split(/\,/, $pool);
+	( $newPool{name}, $newPool{size}, $newPool{alloc}, $newPool{free}, $newPool{ckpoint}, $newPool{expandsz}, $newPool{frag}, $newPool{cap}, $newPool{dedup} )=split(/\,/, $pool);
 
 	push(@toShoveIntoJSON, \%newPool);
 
