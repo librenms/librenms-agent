@@ -51,7 +51,7 @@ use Getopt::Std;
 
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 sub main::VERSION_MESSAGE {
-        print "FreeBSD ZFS stats extend 0.1.0\n";
+        print "FreeBSD ZFS stats extend 0.2.0\n";
 }
 
 sub main::HELP_MESSAGE {
