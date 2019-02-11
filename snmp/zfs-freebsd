@@ -243,7 +243,7 @@ while ( defined( $pools[$pools_int] ) ) {
 	$pool =~ s/\%//g;
 	$pool =~ s/\,([0-1\.]*)x\,/,$1,/;
 
-	( $newPool{name}, $newPool{size}, $newPool{alloc}, $newPool{free}, $newPool{expandsz}, $newPool{frag}, $newPool{cap}, $newPool{dedup} )=split(/\,/, $pool);
+	( $newPool{name}, $newPool{size}, $newPool{alloc}, $newPool{free}, $newPool{ckpoint}, $newPool{expandsz}, $newPool{frag}, $newPool{cap}, $newPool{dedup}, $newPool{health} )=split(/\,/, $pool);
 
 	push(@toShoveIntoJSON, \%newPool);
 
