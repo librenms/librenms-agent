@@ -51,7 +51,7 @@ use Getopt::Std;
 
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 sub main::VERSION_MESSAGE {
-        print "FreeBSD ZFS stats extend 0.1.0\n";
+        print "FreeBSD ZFS stats extend 0.2.0\n";
 }
 
 sub main::HELP_MESSAGE {
@@ -236,14 +236,14 @@ my $pools_int=0;
 my @toShoveIntoJSON;
 while ( defined( $pools[$pools_int] ) ) {
 	my %newPool;
-	
+
 	my $pool=$pools[$pools_int];
 	$pool =~ s/\t/,/g;
-	$pool =~ s/\,\-\,/\,0\,/g;
+	$pool =~ s/\,\-\,\-\,/\,0\,0\,/g;
 	$pool =~ s/\%//g;
 	$pool =~ s/\,([0-1\.]*)x\,/,$1,/;
 
-	( $newPool{name}, $newPool{size}, $newPool{alloc}, $newPool{free}, $newPool{expandsz}, $newPool{frag}, $newPool{cap}, $newPool{dedup} )=split(/\,/, $pool);
+	( $newPool{name}, $newPool{size}, $newPool{alloc}, $newPool{free}, $newPool{ckpoint}, $newPool{expandsz}, $newPool{frag}, $newPool{cap}, $newPool{dedup} )=split(/\,/, $pool);
 
 	push(@toShoveIntoJSON, \%newPool);
 
@@ -253,7 +253,7 @@ $tojson{pools}=\@toShoveIntoJSON;
 
 my %head_hash;
 $head_hash{'data'}=\%tojson;
-$head_hash{'version'}=1;
+$head_hash{'version'}=2;
 $head_hash{'error'}=0;
 $head_hash{'errorString'}='';
 
