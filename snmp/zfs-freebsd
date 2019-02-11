@@ -253,7 +253,7 @@ $tojson{pools}=\@toShoveIntoJSON;
 
 my %head_hash;
 $head_hash{'data'}=\%tojson;
-$head_hash{'version'}=1;
+$head_hash{'version'}=2;
 $head_hash{'error'}=0;
 $head_hash{'errorString'}='';
 
