@@ -322,7 +322,7 @@ while ( defined( $res->[2]{'active_conns'}[$active_conns_int] ) ){
 			$protos{$service}{'total'}{$state}++;
 
 			if ( 
-				( $conn->{'foreign_port'} eq $service ) &&
+				( $conn->{'foreign_port'} eq getservbyname($service, 'tcp') ) &&
 				( $state ne 'LISTEN' )
 				){
 				$protos{$service}{'total_from'}++;
@@ -331,7 +331,7 @@ while ( defined( $res->[2]{'active_conns'}[$active_conns_int] ) ){
 			}
 
 			if (
-				( $conn->{'local_port'} eq $service ) &&
+				( $conn->{'local_port'} eq getservbyname($service, 'tcp') ) &&
 				( $state ne 'LISTEN' ) &&
 				( ! $processed )
 				){
