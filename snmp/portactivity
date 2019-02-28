@@ -282,8 +282,8 @@ while ( defined( $res->[2]{'active_conns'}[$active_conns_int] ) ){
 			){
 			#check if this matches either ports
 			if (
-				( $protos_array[ $protos_array_int ] eq $conn->{'local_port'} ) ||
-				( $protos_array[ $protos_array_int ] eq $conn->{'foreign_port'} )
+				( getservbyname($protos_array[ $protos_array_int ], 'tcp'  ) eq $conn->{'local_port'} ) ||
+				( getservbyname($protos_array[ $protos_array_int ], 'tcp'  ) eq $conn->{'foreign_port'} )
 				){
 				$service=$protos_array[ $protos_array_int ];
 			}
