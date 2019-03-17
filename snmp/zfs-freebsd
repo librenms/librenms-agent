@@ -51,7 +51,7 @@ use Getopt::Std;
 
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 sub main::VERSION_MESSAGE {
-        print "FreeBSD ZFS stats extend 0.0.0\n";
+        print "FreeBSD ZFS stats extend 0.2.0\n";
 }
 
 sub main::HELP_MESSAGE {
@@ -157,7 +157,10 @@ my $real_hits = $mfu_hits + $mru_hits;
 my $cache_hit_percent = $arc_hits / $arc_accesses_total * 100;
 my $cache_miss_percent = $arc_misses / $arc_accesses_total * 100;
 my $actual_hit_percent = $real_hits / $arc_accesses_total * 100;
-my $data_demand_percent = $demand_data_hits / $demand_data_total * 100;
+my $data_demand_percent = 'U';
+if ( $demand_data_total != 0 ){
+	$data_demand_percent = $demand_data_hits / $demand_data_total * 100;
+}
 
 my $data_prefetch_percent;
 if ( $prefetch_data_total != 0 ) {
@@ -236,14 +239,14 @@ my $pools_int=0;
 my @toShoveIntoJSON;
 while ( defined( $pools[$pools_int] ) ) {
 	my %newPool;
-	
+
 	my $pool=$pools[$pools_int];
 	$pool =~ s/\t/,/g;
-	$pool =~ s/\,\-\,/\,0\,/g;
+	$pool =~ s/\,\-\,\-\,/\,0\,0\,/g;
 	$pool =~ s/\%//g;
 	$pool =~ s/\,([0-1\.]*)x\,/,$1,/;
 
-	( $newPool{name}, $newPool{size}, $newPool{alloc}, $newPool{free}, $newPool{expandsz}, $newPool{frag}, $newPool{cap}, $newPool{dedup} )=split(/\,/, $pool);
+	( $newPool{name}, $newPool{size}, $newPool{alloc}, $newPool{free}, $newPool{ckpoint}, $newPool{expandsz}, $newPool{frag}, $newPool{cap}, $newPool{dedup} )=split(/\,/, $pool);
 
 	push(@toShoveIntoJSON, \%newPool);
 
@@ -251,13 +254,19 @@ while ( defined( $pools[$pools_int] ) ) {
 }
 $tojson{pools}=\@toShoveIntoJSON;
 
+my %head_hash;
+$head_hash{'data'}=\%tojson;
+$head_hash{'version'}=2;
+$head_hash{'error'}=0;
+$head_hash{'errorString'}='';
+
 my $j=JSON->new;
 
 if ( $opts{p} ){
 	$j->pretty(1);
 }
 
-print $j->encode( \%tojson );
+print $j->encode( \%head_hash );
 
 if (! $opts{p} ){
 	print "\n";
