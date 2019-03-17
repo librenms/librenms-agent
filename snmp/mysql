@@ -1,28 +1,17 @@
 #!/usr/bin/env php
 <?php
-# Add this to your snmpd.conf as below and then verify the user/pass/host are correct below.
-# extend mysql /etc/snmp/mysql
-#
-# Enter the correct information to connect to your mysql server in mysql.cnf or below.
 
+// MYSQL Check - FIXME
+// 1 UNKNOWN
 
 ### This script requires php-cli and php-mysql packages
 
 # ============================================================================
-# This program is copyright (c) 2007 Baron Schwartz. Feedback and improvements
-# are welcome.
-#
-# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
-# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
-# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
-#
-# This program is free software; you can redistribute it and/or modify it under
-# the terms of the GNU General Public License as published by the Free Software
-# Foundation, version 2.
-#
-# You should have received a copy of the GNU General Public License along with
-# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
-# Place, Suite 330, Boston, MA  02111-1307  USA.
+# This program is part of Percona Monitoring Plugins
+# License: GPL License (see COPYING)
+# Copyright 2008-2016 Baron Schwartz, 2012-2016 Percona
+# Authors:
+#  Baron Schwartz, Roman Vynar
 # ============================================================================
 
 # ============================================================================
@@ -38,8 +27,9 @@ if (!array_key_exists('SCRIPT_FILENAME', $_SERVER)
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-# Instead of defining parameters here, you can define them in another
-# file named the same as this file, with a .cnf extension.
+# Define MySQL connection constants in config.php. Instead of defining 
+# parameters here, you can define them in another file named the same as this
+# file, with a .cnf extension.
 # ============================================================================
 
 $mysql_user = '';
@@ -47,9 +37,20 @@ $mysql_pass = '';
 $mysql_host = 'localhost';
 $mysql_port = 3306;
 $mysql_ssl  = FALSE;   # Whether to use SSL to connect to MySQL.
+$mysql_ssl_key  = '/etc/pki/tls/certs/mysql/client-key.pem';
+$mysql_ssl_cert = '/etc/pki/tls/certs/mysql/client-cert.pem';
+$mysql_ssl_ca   = '/etc/pki/tls/certs/mysql/ca-cert.pem';
+$mysql_connection_timeout = 5;
 
-$heartbeat   = '';      # db.tbl in case you use mk-heartbeat from Maatkit.
+$check_mk  = FALSE;        # FALSE for SNMP extend, TRUE for check_mk agent
+
+$heartbeat = FALSE;        # Whether to use pt-heartbeat table for repl. delay calculation.
+$heartbeat_utc = FALSE;    # Whether pt-heartbeat is run with --utc option.
+$heartbeat_server_id = 0;  # Server id to associate with a heartbeat. Leave 0 if no preference.
+$heartbeat_table = 'percona.heartbeat'; # db.tbl.
+
 $cache_dir  = '/tmp';   # If set, this uses caching to avoid multiple calls.
+$timezone   = null;    # If not set, uses the system default.  Example: "UTC"
 $cache_time  = 30;      # How long to cache data.
 
 $chk_options = array (
@@ -57,6 +58,7 @@ $chk_options = array (
    'master' => true,    # Do you want to check binary logging?
    'slave'  => true,    # Do you want to check slave status?
    'procs'  => true,    # Do you want to check SHOW PROCESSLIST?
+   'get_qrt' => true,   # Get query response times from Percona Server or MariaDB?
 );
 
 $use_ss    = FALSE; # Whether to use the script server or not
@@ -71,9 +73,13 @@ $version = "1.1.7";
 # ============================================================================
 # Include settings from an external config file (issue 39).
 # ============================================================================
+if ($check_mk) {
+  echo("<<<mysql>>>\n");
+}
 
 if (file_exists(__FILE__ . '.cnf' ) ) {
    require(__FILE__ . '.cnf');
+   debug('Found configuration file ' . __FILE__ . '.cnf');
 } else {
   echo("No ".__FILE__ . ".cnf found!\n");
   exit();
@@ -110,6 +116,19 @@ function error_handler($errno, $errstr, $errfile, $errline) {
 #      include_once(dirname(__FILE__) . "/../include/config.php");
 #   }
 #}
+
+# ============================================================================
+# Set the default timezone either to the configured, system timezone, or the
+# default set above in the script.
+# ============================================================================
+if ( function_exists("date_default_timezone_set")
+   && function_exists("date_default_timezone_get") ) {
+   $tz = ($timezone ? $timezone : @date_default_timezone_get());
+   if ( $tz ) {
+      @date_default_timezone_set($tz);
+   }
+}
+
 
 # ============================================================================
 # Make sure we can also be called as a script.
@@ -168,7 +187,7 @@ if (!function_exists('array_change_key_case') ) {
 # ============================================================================
 function validate_options($options) {
    debug($options);
-   $opts = array('items', 'user', 'pass', 'heartbeat', 'nocache', 'port');
+   $opts = array('items', 'user', 'pass', 'heartbeat', 'nocache', 'port', 'server-id');
    # Required command-line options
    foreach ( array() as $option ) {
       if (!isset($options[$option]) || !$options[$option] ) {
@@ -186,21 +205,23 @@ function validate_options($options) {
 # Print out a brief usage summary
 # ============================================================================
 function usage($message) {
-   global $mysql_host, $mysql_user, $mysql_pass, $mysql_port, $heartbeat;
+   global $mysql_host, $mysql_user, $mysql_pass, $mysql_port;
 
    $usage = <<<EOF
 $message
-Usage: ./mysql --host <host> --items <item,...> [OPTION]
+Usage: php ss_get_mysql_stats.php --host <host> --items <item,...> [OPTION]
 
-   --host      Hostname to connect to; use host:port syntax to specify a port
-               Use :/path/to/socket if you want to connect via a UNIX socket
-   --items     Comma-separated list of the items whose data you want
-   --user      MySQL username; defaults to $mysql_user if not given
-   --pass      MySQL password; defaults to $mysql_pass if not given
-   --heartbeat MySQL heartbeat table; defaults to '$heartbeat' (see mk-heartbeat)
-   --nocache   Do not cache results in a file
-   --port      MySQL port; defaults to $mysql_port if not given
-   --mysql_ssl Add the MYSQL_CLIENT_SSL flag to mysql_connect() call
+   --host               MySQL host
+   --items              Comma-separated list of the items whose data you want
+   --user               MySQL username
+   --pass               MySQL password
+   --port               MySQL port
+   --socket             MySQL socket
+   --flags              MySQL flags
+   --connection-timeout MySQL connection timeout
+   --server-id          Server id to associate with a heartbeat if heartbeat usage is enabled
+   --nocache            Do not cache results in a file
+   --help               Show usage
 
 EOF;
    die($usage);
@@ -252,8 +273,11 @@ function parse_cmdline( $args ) {
 # ============================================================================
 function ss_get_mysql_stats( $options ) {
    # Process connection options and connect to MySQL.
-   global $debug, $mysql_user, $mysql_pass, $heartbeat, $cache_dir, $cache_time,
-          $chk_options, $mysql_host, $mysql_port, $mysql_ssl;
+   global $debug, $mysql_host, $mysql_user, $mysql_pass, $cache_dir, $poll_time, $chk_options,
+          $mysql_port, $mysql_socket, $mysql_flags,
+          $mysql_ssl, $mysql_ssl_key, $mysql_ssl_cert, $mysql_ssl_ca,
+          $mysql_connection_timeout,
+          $heartbeat, $heartbeat_table, $heartbeat_server_id, $heartbeat_utc;
 
    # Connect to MySQL.
    $user = isset($options['user']) ? $options['user'] : $mysql_user;
@@ -261,26 +285,15 @@ function ss_get_mysql_stats( $options ) {
    $port = isset($options['port']) ? $options['port'] : $mysql_port;
    $host = isset($options['host']) ? $options['host'] : $mysql_host;
 
-   $heartbeat = isset($options['heartbeat']) ? $options['heartbeat'] : $heartbeat;
+   $socket = isset($options['socket']) ? $options['socket'] : $mysql_socket;
+   $flags = isset($options['flags']) ? $options['flags'] : $mysql_flags;
+   $connection_timeout = isset($options['connection-timeout']) ? $options['connection-timeout'] : $mysql_connection_timeout;
+   $heartbeat_server_id = isset($options['server-id']) ? $options['server-id'] : $heartbeat_server_id;
+   
    # If there is a port, or if it's a non-standard port, we add ":$port" to the
    # hostname.
    $host_str  = $host.($port != 3306 ? ":$port" : '');
-   debug(array('connecting to', $host_str, $user, $pass));
-   if (!extension_loaded('mysqli') ) {
-      debug("The MySQL extension is not loaded");
-      die("The MySQL extension is not loaded");
-   }
-   if ($mysql_ssl || (isset($options['mysql_ssl']) && $options['mysql_ssl']) ) {
-      $conn = ((($GLOBALS["___mysqli_ston"] = mysqli_init()) && (mysqli_real_connect($GLOBALS["___mysqli_ston"], $host_str,
-              $user,  $pass, NULL, 3306, NULL, MYSQLI_CLIENT_SSL))) ? $GLOBALS["___mysqli_ston"] : FALSE);
-   }
-   else {
-      $conn = ($GLOBALS["___mysqli_ston"] = mysqli_connect($host_str,  $user,  $pass));
-   }
-   if (!$conn ) {
-      die("MySQL: " . ((is_object($GLOBALS["___mysqli_ston"])) ? mysqli_error($GLOBALS["___mysqli_ston"]) :
-              (($___mysqli_res = mysqli_connect_error()) ? $___mysqli_res : false)));
-   }
+
 
    $sanitized_host = str_replace(array(":", "/"), array("", "_"), $host);
    $cache_file = "$cache_dir/agent-local-mysql";
@@ -288,12 +301,12 @@ function ss_get_mysql_stats( $options ) {
 
    # First, check the cache.
    $fp = null;
-   if (!isset($options['nocache']) ) {
-      if ($fp = fopen($cache_file, 'a+') ) {
+   if ( $cache_dir && !array_key_exists('nocache', $options) ) {
+      if ( $fp = fopen($cache_file, 'a+') ) {
          $locked = flock($fp, 1); # LOCK_SH
-         if ($locked ) {
-            if (filesize($cache_file) > 0
-               && filectime($cache_file) + ($cache_time) > time()
+         if ( $locked ) {
+            if ( filesize($cache_file) > 0
+               && filectime($cache_file) + ($poll_time/2) > time()
                && ($arr = file($cache_file))
             ) {# The cache file is good to use.
                debug("Using the cache file");
@@ -303,12 +316,12 @@ function ss_get_mysql_stats( $options ) {
             else {
                debug("The cache file seems too small or stale");
                # Escalate the lock to exclusive, so we can write to it.
-               if (flock($fp, 2) ) { # LOCK_EX
+               if ( flock($fp, 2) ) { # LOCK_EX
                   # We might have blocked while waiting for that LOCK_EX, and
                   # another process ran and updated it.  Let's see if we can just
                   # return the data now:
-                  if (filesize($cache_file) > 0
-                     && filectime($cache_file) + ($cache_time) > time()
+                  if ( filesize($cache_file) > 0
+                     && filectime($cache_file) + ($poll_time/2) > time()
                      && ($arr = file($cache_file))
                   ) {# The cache file is good to use.
                      debug("Using the cache file");
@@ -320,48 +333,79 @@ function ss_get_mysql_stats( $options ) {
             }
          }
          else {
-            debug("Couldn't lock the cache file, ignoring it.");
             $fp = null;
+            debug("Couldn't lock the cache file, ignoring it");
          }
+      }
+      else {
+         $fp = null;
+         debug("Couldn't open the cache file");
       }
    }
    else {
-      $fp = null;
-      debug("Couldn't open the cache file");
+      debug("Caching is disabled.");
    }
+
+   # Connect to MySQL.
+   debug(array('Connecting to', $host, $port, $user, $pass));
+   if ( !extension_loaded('mysqli') ) {
+      debug("PHP MySQLi extension is not loaded");
+      die("PHP MySQLi extension is not loaded");
+   }
+   if ( $mysql_ssl ) {
+      $conn = mysqli_init();
+      $conn->options(MYSQLI_OPT_CONNECT_TIMEOUT, $connection_timeout);
+      mysqli_ssl_set($conn, $mysql_ssl_key, $mysql_ssl_cert, $mysql_ssl_ca, NULL, NULL);
+      mysqli_real_connect($conn, $host, $user, $pass, NULL, $port, $socket, $flags);
+   }
+   else {
+      $conn = mysqli_init();
+      $conn->options(MYSQLI_OPT_CONNECT_TIMEOUT, $connection_timeout);
+      mysqli_real_connect($conn, $host, $user, $pass, NULL, $port, $socket, $flags);
+   }
+   if ( mysqli_connect_errno() ) {
+      debug("MySQL connection failed: " . mysqli_connect_error());
+      die("ERROR: " . mysqli_connect_error());
+   }
+
+   # MySQL server version.
+   # The form of this version number is main_version * 10000 + minor_version * 100 + sub_version
+   # i.e. version 5.5.44 is 50544.
+   $mysql_version = mysqli_get_server_version($conn);
+   debug("MySQL server version is " . $mysql_version);
 
    # Set up variables.
    $status = array( # Holds the result of SHOW STATUS, SHOW INNODB STATUS, etc
       # Define some indexes so they don't cause errors with += operations.
       'relay_log_space'       => null,
       'binary_log_space'      => null,
-      'current_transactions'  => null,
-      'locked_transactions'   => null,
-      'active_transactions'   => null,
-      'innodb_locked_tables'  => null,
-      'innodb_tables_in_use'  => null,
-      'innodb_lock_structs'   => null,
-      'innodb_lock_wait_secs' => null,
-      'innodb_sem_waits'      => null,
-      'innodb_sem_wait_time_ms'=> null,
+      'current_transactions'  => 0,
+      'locked_transactions'   => 0,
+      'active_transactions'   => 0,
+      'innodb_locked_tables'  => 0,
+      'innodb_tables_in_use'  => 0,
+      'innodb_lock_structs'   => 0,
+      'innodb_lock_wait_secs' => 0,
+      'innodb_sem_waits'      => 0,
+      'innodb_sem_wait_time_ms'=> 0,
       # Values for the 'state' column from SHOW PROCESSLIST (converted to
       # lowercase, with spaces replaced by underscores)
-      'State_closing_tables'       => null,
-      'State_copying_to_tmp_table' => null,
-      'State_end'                  => null,
-      'State_freeing_items'        => null,
-      'State_init'                 => null,
-      'State_locked'               => null,
-      'State_login'                => null,
-      'State_preparing'            => null,
-      'State_reading_from_net'     => null,
-      'State_sending_data'         => null,
-      'State_sorting_result'       => null,
-      'State_statistics'           => null,
-      'State_updating'             => null,
-      'State_writing_to_net'       => null,
-      'State_none'                 => null,
-      'State_other'                => null, # Everything not listed above
+      'State_closing_tables'       => 0,
+      'State_copying_to_tmp_table' => 0,
+      'State_end'                  => 0,
+      'State_freeing_items'        => 0,
+      'State_init'                 => 0,
+      'State_locked'               => 0,
+      'State_login'                => 0,
+      'State_preparing'            => 0,
+      'State_reading_from_net'     => 0,
+      'State_sending_data'         => 0,
+      'State_sorting_result'       => 0,
+      'State_statistics'           => 0,
+      'State_updating'             => 0,
+      'State_writing_to_net'       => 0,
+      'State_none'                 => 0,
+      'State_other'                => 0, # Everything not listed above
    );
 
    # Get SHOW STATUS and convert the name-value array into a simple
@@ -378,8 +422,15 @@ function ss_get_mysql_stats( $options ) {
    }
 
    # Get SHOW SLAVE STATUS, and add it to the $status array.
-   if ($chk_options['slave'] ) {
-      $result = run_query("SHOW SLAVE STATUS", $conn);
+   if ( $chk_options['slave'] ) {
+      # Leverage lock-free SHOW SLAVE STATUS if available
+      $result = run_query("SHOW SLAVE STATUS NONBLOCKING", $conn);
+      if ( !$result ) {
+         $result = run_query("SHOW SLAVE STATUS NOLOCK", $conn);
+         if ( !$result ) {
+            $result = run_query("SHOW SLAVE STATUS", $conn);
+         }
+      }
       $slave_status_rows_gotten = 0;
       foreach ( $result as $row ) {
          $slave_status_rows_gotten++;
@@ -390,23 +441,30 @@ function ss_get_mysql_stats( $options ) {
          $status['slave_lag']        = $row['seconds_behind_master'];
 
          # Check replication heartbeat, if present.
-         if ($heartbeat ) {
+         if ( $heartbeat ) {
+            if ( $heartbeat_utc ) {
+               $now_func = 'UNIX_TIMESTAMP(UTC_TIMESTAMP)';
+            }
+            else {
+               $now_func = 'UNIX_TIMESTAMP()';
+            }
             $result2 = run_query(
-               "SELECT GREATEST(0, UNIX_TIMESTAMP() - UNIX_TIMESTAMP(ts) - 1)"
-               . " AS delay FROM $heartbeat WHERE id = 1", $conn);
+               "SELECT MAX($now_func - ROUND(UNIX_TIMESTAMP(ts)))"
+               . " AS delay FROM $heartbeat_table"
+               . " WHERE $heartbeat_server_id = 0 OR server_id = $heartbeat_server_id", $conn);
             $slave_delay_rows_gotten = 0;
             foreach ( $result2 as $row2 ) {
                $slave_delay_rows_gotten++;
-               if ($row2 && is_array($row2)
+               if ( $row2 && is_array($row2)
                   && array_key_exists('delay', $row2) )
                {
                   $status['slave_lag'] = $row2['delay'];
                }
                else {
-                  debug("Couldn't get slave lag from $heartbeat");
+                  debug("Couldn't get slave lag from $heartbeat_table");
                }
             }
-            if ($slave_delay_rows_gotten == 0 ) {
+            if ( $slave_delay_rows_gotten == 0 ) {
                debug("Got nothing from heartbeat query");
             }
          }
@@ -417,11 +475,11 @@ function ss_get_mysql_stats( $options ) {
          $status['slave_stopped'] = ($row['slave_sql_running'] == 'Yes')
             ? 0 : $status['slave_lag'];
       }
-      if ($slave_status_rows_gotten == 0 ) {
+      if ( $slave_status_rows_gotten == 0 ) {
          debug("Got nothing from SHOW SLAVE STATUS");
       }
    }
-
+  
    # Get SHOW MASTER STATUS, and add it to the $status array.
    if ($chk_options['master']
          && array_key_exists('log_bin', $status)
@@ -445,18 +503,22 @@ function ss_get_mysql_stats( $options ) {
 
    # Get SHOW PROCESSLIST and aggregate it by state, then add it to the array
    # too.
-   if ($chk_options['procs'] ) {
+   if ( $chk_options['procs'] ) {
       $result = run_query('SHOW PROCESSLIST', $conn);
       foreach ( $result as $row ) {
          $state = $row['State'];
-         if (is_null($state) ) {
+         if ( is_null($state) ) {
             $state = 'NULL';
          }
-         if ($state == '' ) {
+         if ( $state == '' ) {
             $state = 'none';
          }
+         # MySQL 5.5 replaces the 'Locked' state with a variety of "Waiting for
+         # X lock" types of statuses.  Wrap these all back into "Locked" because
+         # we don't really care about the type of locking it is.
+         $state = preg_replace('/^(Table lock|Waiting for .*lock)$/', 'Locked', $state);
          $state = str_replace(' ', '_', strtolower($state));
-         if (array_key_exists("State_$state", $status) ) {
+         if ( array_key_exists("State_$state", $status) ) {
             increment($status, "State_$state", 1);
          }
          else {
@@ -465,15 +527,63 @@ function ss_get_mysql_stats( $options ) {
       }
    }
 
+   # Get SHOW ENGINES to be able to determine whether InnoDB is present.
+   $engines = array();
+   $result = run_query("SHOW ENGINES", $conn);
+   foreach ( $result as $row ) {
+      $engines[$row[0]] = $row[1];
+   }
+
    # Get SHOW INNODB STATUS and extract the desired metrics from it, then add
    # those to the array too.
    if ($chk_options['innodb']
-         && array_key_exists('have_innodb', $status)
-         && $status['have_innodb'] == 'YES'
+         && array_key_exists('InnoDB', $engines)
+         && ( $engines['InnoDB'] == 'YES'
+         ||   $engines['InnoDB'] == 'DEFAULT' )
    ) {
       $result        = run_query("SHOW /*!50000 ENGINE*/ INNODB STATUS", $conn);
       $istatus_text = $result[0]['Status'];
-      $istatus_vals = get_innodb_array($istatus_text);
+      $istatus_vals = get_innodb_array($istatus_text, $mysql_version);
+
+      # Get response time histogram from Percona Server or MariaDB if enabled.
+      if ( $chk_options['get_qrt']
+           && (( isset($status['have_response_time_distribution'])
+           && $status['have_response_time_distribution'] == 'YES')
+           || (isset($status['query_response_time_stats'])
+           && $status['query_response_time_stats'] == 'ON')) )
+      {
+         debug('Getting query time histogram');
+         $i = 0;
+         $result = run_query(
+            "SELECT `count`, ROUND(total * 1000000) AS total "
+               . "FROM INFORMATION_SCHEMA.QUERY_RESPONSE_TIME "
+               . "WHERE `time` <> 'TOO LONG'",
+            $conn);
+         foreach ( $result as $row ) {
+            if ( $i > 13 ) {
+               # It's possible that the number of rows returned isn't 14.
+               # Don't add extra status counters.
+               break;
+            }
+            $count_key = sprintf("Query_time_count_%02d", $i);
+            $total_key = sprintf("Query_time_total_%02d", $i);
+            $status[$count_key] = $row['count'];
+            $status[$total_key] = $row['total'];
+            $i++;
+         }
+         # It's also possible that the number of rows returned is too few.
+         # Don't leave any status counters unassigned; it will break graphs.
+         while ( $i <= 13 ) {
+            $count_key = sprintf("Query_time_count_%02d", $i);
+            $total_key = sprintf("Query_time_total_%02d", $i);
+            $status[$count_key] = 0;
+            $status[$total_key] = 0;
+            $i++;
+         }
+      }
+      else {
+         debug('Not getting time histogram because it is not enabled');
+      }
 
       # Override values from InnoDB parsing with values from SHOW STATUS,
       # because InnoDB status might not have everything and the SHOW STATUS is
@@ -494,6 +604,8 @@ function ss_get_mysql_stats( $options ) {
          'Innodb_rows_inserted'           => 'rows_inserted',
          'Innodb_rows_read'               => 'rows_read',
          'Innodb_rows_updated'            => 'rows_updated',
+	 'Innodb_buffer_pool_reads'       => 'pool_reads',
+         'Innodb_buffer_pool_read_requests' => 'pool_read_requests',
       );
 
       # If the SHOW STATUS value exists, override...
@@ -536,9 +648,9 @@ function ss_get_mysql_stats( $options ) {
    }
 
    # Define the variables to output.  I use shortened variable names so maybe
-   # it'll all fit in 1024 bytes for Cactid and Spine's benefit.  This list must
-   # come right after the word MAGIC_VARS_DEFINITIONS.  The Perl script parses
-   # it and uses it as a Perl variable.
+   # it'll all fit in 1024 bytes for Cactid and Spine's benefit.
+   # This list must come right after the word MAGIC_VARS_DEFINITIONS.  The Perl script
+   # parses it and uses it as a Perl variable.
    $keys = array(
        'Key_read_requests'          => 'a0',
        'Key_reads'                  => 'a1',
@@ -650,7 +762,6 @@ function ss_get_mysql_stats( $options ) {
        'binary_log_space'           => 'cz',
        'innodb_locked_tables'       => 'd0',
        'innodb_lock_structs'        => 'd1',
-
        'State_closing_tables'       => 'd2',
        'State_copying_to_tmp_table' => 'd3',
        'State_end'                  => 'd4',
@@ -667,7 +778,6 @@ function ss_get_mysql_stats( $options ) {
        'State_writing_to_net'       => 'df',
        'State_none'                 => 'dg',
        'State_other'                => 'dh',
-
        'Handler_commit'             => 'di',
        'Handler_delete'             => 'dj',
        'Handler_discover'           => 'dk',
@@ -709,6 +819,53 @@ function ss_get_mysql_stats( $options ) {
       'key_buffer_size'         => 'ei',
       'Innodb_row_lock_time'    => 'ej',
       'Innodb_row_lock_waits'   => 'ek',
+
+      # Values not parsed by LibreNMS
+      'Query_time_count_00'         =>  'ol',
+      'Query_time_count_01'         =>  'om',
+      'Query_time_count_02'         =>  'on',
+      'Query_time_count_03'         =>  'oo',
+      'Query_time_count_04'         =>  'op',
+      'Query_time_count_05'         =>  'oq',
+      'Query_time_count_06'         =>  'or',
+      'Query_time_count_07'         =>  'os',
+      'Query_time_count_08'         =>  'ot',
+      'Query_time_count_09'         =>  'ou',
+      'Query_time_count_10'         =>  'ov',
+      'Query_time_count_11'         =>  'ow',
+      'Query_time_count_12'         =>  'ox',
+      'Query_time_count_13'         =>  'oy',
+      'Query_time_total_00'         =>  'oz',
+      'Query_time_total_01'         =>  'pg',
+      'Query_time_total_02'         =>  'ph',
+      'Query_time_total_03'         =>  'pi',
+      'Query_time_total_04'         =>  'pj',
+      'Query_time_total_05'         =>  'pk',
+      'Query_time_total_06'         =>  'pl',
+      'Query_time_total_07'         =>  'pm',
+      'Query_time_total_08'         =>  'pn',
+      'Query_time_total_09'         =>  'po',
+      'Query_time_total_10'         =>  'pp',
+      'Query_time_total_11'         =>  'pq',
+      'Query_time_total_12'         =>  'pr',
+      'Query_time_total_13'         =>  'ps',
+      'wsrep_replicated_bytes'      =>  'pt',
+      'wsrep_received_bytes'        =>  'pu',
+      'wsrep_replicated'            =>  'pv',
+      'wsrep_received'              =>  'pw',
+      'wsrep_local_cert_failures'   =>  'px',
+      'wsrep_local_bf_aborts'       =>  'py',
+      'wsrep_local_send_queue'      =>  'pz',
+      'wsrep_local_recv_queue'      =>  'qg',
+      'wsrep_cluster_size'          =>  'qh',
+      'wsrep_cert_deps_distance'    =>  'qi',
+      'wsrep_apply_window'          =>  'qj',
+      'wsrep_commit_window'         =>  'qk',
+      'wsrep_flow_control_paused'   =>  'ql',
+      'wsrep_flow_control_sent'     =>  'qm',
+      'wsrep_flow_control_recv'     =>  'qn',
+      'pool_reads'                  =>  'qo',
+      'pool_read_requests'          =>  'qp',
    );
 
    # Return the output.
@@ -737,7 +894,7 @@ function ss_get_mysql_stats( $options ) {
 # MySQL 5.0, and XtraDB or enhanced InnoDB from Percona if applicable.  Note
 # that extra leading spaces are ignored due to trim().
 # ============================================================================
-function get_innodb_array($text) {
+function get_innodb_array($text, $mysql_version) {
    $results  = array(
       'spin_waits'  => array(),
       'spin_rounds' => array(),
@@ -811,12 +968,25 @@ function get_innodb_array($text) {
          $results['spin_rounds'][] = to_int($row[5]);
          $results['os_waits'][]    = to_int($row[8]);
       }
-      elseif (strpos($line, 'RW-shared spins') === 0 ) {
+      elseif (strpos($line, 'RW-shared spins') === 0
+            && strpos($line, ';') > 0 ) {
          # RW-shared spins 3859028, OS waits 2100750; RW-excl spins 4641946, OS waits 1530310
          $results['spin_waits'][] = to_int($row[2]);
          $results['spin_waits'][] = to_int($row[8]);
          $results['os_waits'][]   = to_int($row[5]);
          $results['os_waits'][]   = to_int($row[11]);
+      }
+      elseif (strpos($line, 'RW-shared spins') === 0 && strpos($line, '; RW-excl spins') === FALSE) {
+         # Post 5.5.17 SHOW ENGINE INNODB STATUS syntax
+         # RW-shared spins 604733, rounds 8107431, OS waits 241268
+         $results['spin_waits'][] = to_int($row[2]);
+         $results['os_waits'][]   = to_int($row[7]);
+      }
+      elseif (strpos($line, 'RW-excl spins') === 0) {
+         # Post 5.5.17 SHOW ENGINE INNODB STATUS syntax
+         # RW-excl spins 604733, rounds 8107431, OS waits 241268
+         $results['spin_waits'][] = to_int($row[2]);
+         $results['os_waits'][]   = to_int($row[7]);
       }
       elseif (strpos($line, 'seconds the semaphore:') > 0) {
          # --Thread 907205 has waited at handler/ha_innodb.cc line 7156 for 1.00 seconds the semaphore:
@@ -826,18 +996,35 @@ function get_innodb_array($text) {
       }
 
       # TRANSACTIONS
-      elseif (strpos($line, 'Trx id counter') === 0 ) {
+      elseif ( strpos($line, 'Trx id counter') === 0 ) {
          # The beginning of the TRANSACTIONS section: start counting
          # transactions
-         # Trx id counter 0 1170664159
-         # Trx id counter 861B144C
-         $results['innodb_transactions'] = make_bigint($row[3], $row[4]);
+         if ( $mysql_version < 50600 ) {
+            # For versions prior 5.6: two decimals or one hex
+            # Trx id counter 0 1170664159
+            # Trx id counter 861B144C
+            $results['innodb_transactions'] = isset($row[4]) ? make_bigint(
+               $row[3], $row[4]) : base_convert($row[3], 16, 10);
+         }
+         else {
+            # For versions 5.6+ and MariaDB 10.x: one decimal
+            # Trx id counter 2903813
+            $results['innodb_transactions'] = $row[3];
+         }
          $txn_seen = TRUE;
       }
-      elseif (strpos($line, 'Purge done for trx') === 0 ) {
-         # Purge done for trx's n:o < 0 1170663853 undo n:o < 0 0
-         # Purge done for trx's n:o < 861B135D undo n:o < 0
-         $purged_to = make_bigint($row[6], $row[7] == 'undo' ? null : $row[7]);
+      elseif ( strpos($line, 'Purge done for trx') === 0 ) {
+         if ( $mysql_version < 50600 ) {
+            # For versions prior 5.6: two decimals or one hex
+            # Purge done for trx's n:o < 0 1170663853 undo n:o < 0 0
+            # Purge done for trx's n:o < 861B135D undo n:o < 0
+            $purged_to = $row[7] == 'undo' ? base_convert($row[6], 16, 10) : make_bigint($row[6], $row[7]);
+         }
+         else {
+            # For versions 5.6+ and MariaDB 10.x: one decimal
+            # Purge done for trx's n:o < 2903354 undo n:o < 0 state: running but idle
+            $purged_to = $row[6];
+         }
          $results['unpurged_txns']
             = big_sub($results['innodb_transactions'], $purged_to);
       }
@@ -845,31 +1032,31 @@ function get_innodb_array($text) {
          # History list length 132
          $results['history_list'] = to_int($row[3]);
       }
-      elseif ($txn_seen && strpos($line, '---TRANSACTION') === 0 ) {
+      elseif ( $txn_seen && strpos($line, '---TRANSACTION') === 0 ) {
          # ---TRANSACTION 0, not started, process no 13510, OS thread id 1170446656
          increment($results, 'current_transactions', 1);
-         if (strpos($line, 'ACTIVE') > 0 ) {
+         if ( strpos($line, 'ACTIVE') > 0 ) {
             increment($results, 'active_transactions', 1);
          }
       }
-      elseif ($txn_seen && strpos($line, '------- TRX HAS BEEN') === 0 ) {
+      elseif ( $txn_seen && strpos($line, '------- TRX HAS BEEN') === 0 ) {
          # ------- TRX HAS BEEN WAITING 32 SEC FOR THIS LOCK TO BE GRANTED:
          increment($results, 'innodb_lock_wait_secs', to_int($row[5]));
       }
-      elseif (strpos($line, 'read views open inside InnoDB') > 0 ) {
+      elseif ( strpos($line, 'read views open inside InnoDB') > 0 ) {
          # 1 read views open inside InnoDB
          $results['read_views'] = to_int($row[0]);
       }
-      elseif (strpos($line, 'mysql tables in use') === 0 ) {
+      elseif ( strpos($line, 'mysql tables in use') === 0 ) {
          # mysql tables in use 2, locked 2
          increment($results, 'innodb_tables_in_use', to_int($row[4]));
          increment($results, 'innodb_locked_tables', to_int($row[6]));
       }
-      elseif ($txn_seen && strpos($line, 'lock struct(s)') > 0 ) {
+      elseif ( $txn_seen && strpos($line, 'lock struct(s)') > 0 ) {
          # 23 lock struct(s), heap size 3024, undo log entries 27
          # LOCK WAIT 12 lock struct(s), heap size 3024, undo log entries 5
          # LOCK WAIT 2 lock struct(s), heap size 368
-         if (strpos($line, 'LOCK WAIT') === 0 ) {
+         if ( strpos($line, 'LOCK WAIT') === 0 ) {
             increment($results, 'innodb_lock_structs', to_int($row[2]));
             increment($results, 'locked_transactions', 1);
          }
@@ -896,7 +1083,7 @@ function get_innodb_array($text) {
          $results['pending_aio_log_ios']    = to_int($row[6]);
          $results['pending_aio_sync_ios']   = to_int($row[9]);
       }
-      elseif (strpos($line, 'Pending flushes (fsync)') === 0 ) {
+      elseif ( strpos($line, 'Pending flushes (fsync)') === 0 ) {
          # Pending flushes (fsync) log: 0; buffer pool: 0
          $results['pending_log_flushes']      = to_int($row[4]);
          $results['pending_buf_pool_flushes'] = to_int($row[7]);
@@ -917,6 +1104,16 @@ function get_innodb_array($text) {
          $results['ibuf_used_cells']  = to_int($row[2]);
          $results['ibuf_free_cells']  = to_int($row[6]);
          $results['ibuf_cell_count']  = to_int($row[9]);
+         if (strpos($line, 'merges')) {
+            $results['ibuf_merges']  = to_int($row[10]);
+         }
+      }
+      elseif (strpos($line, ', delete mark ') > 0 && strpos($prev_line, 'merged operations:') === 0 ) {
+         # Output of show engine innodb status has changed in 5.5
+         # merged operations:
+         # insert 593983, delete mark 387006, delete 73092
+         $results['ibuf_inserts'] = to_int($row[1]);
+         $results['ibuf_merged']  = to_int($row[1]) + to_int($row[4]) + to_int($row[6]);
       }
       elseif (strpos($line, ' merged recs, ') > 0 ) {
          # 19817685 inserts, 19817684 merged recs, 3552620 merges
@@ -972,40 +1169,41 @@ function get_innodb_array($text) {
       }
 
       # BUFFER POOL AND MEMORY
-      elseif (strpos($line, "Total memory allocated") === 0 ) {
+      elseif (strpos($line, "Total memory allocated") === 0 && strpos($line, "in additional pool allocated") > 0 ) {
          # Total memory allocated 29642194944; in additional pool allocated 0
+         # Total memory allocated by read views 96
          $results['total_mem_alloc']       = to_int($row[3]);
          $results['additional_pool_alloc'] = to_int($row[8]);
       }
-      elseif (strpos($line, 'Adaptive hash index ') === 0 ) {
+      elseif(strpos($line, 'Adaptive hash index ') === 0 ) {
          #   Adaptive hash index 1538240664 	(186998824 + 1351241840)
          $results['adaptive_hash_memory'] = to_int($row[3]);
       }
-      elseif (strpos($line, 'Page hash           ') === 0 ) {
+      elseif(strpos($line, 'Page hash           ') === 0 ) {
          #   Page hash           11688584
          $results['page_hash_memory'] = to_int($row[2]);
       }
-      elseif (strpos($line, 'Dictionary cache    ') === 0 ) {
+      elseif(strpos($line, 'Dictionary cache    ') === 0 ) {
          #   Dictionary cache    145525560 	(140250984 + 5274576)
          $results['dictionary_cache_memory'] = to_int($row[2]);
       }
-      elseif (strpos($line, 'File system         ') === 0 ) {
+      elseif(strpos($line, 'File system         ') === 0 ) {
          #   File system         313848 	(82672 + 231176)
          $results['file_system_memory'] = to_int($row[2]);
       }
-      elseif (strpos($line, 'Lock system         ') === 0 ) {
+      elseif(strpos($line, 'Lock system         ') === 0 ) {
          #   Lock system         29232616 	(29219368 + 13248)
          $results['lock_system_memory'] = to_int($row[2]);
       }
-      elseif (strpos($line, 'Recovery system     ') === 0 ) {
+      elseif(strpos($line, 'Recovery system     ') === 0 ) {
          #   Recovery system     0 	(0 + 0)
          $results['recovery_system_memory'] = to_int($row[2]);
       }
-      elseif (strpos($line, 'Threads             ') === 0 ) {
+      elseif(strpos($line, 'Threads             ') === 0 ) {
          #   Threads             409336 	(406936 + 2400)
          $results['thread_hash_memory'] = to_int($row[1]);
       }
-      elseif (strpos($line, 'innodb_io_pattern   ') === 0 ) {
+      elseif(strpos($line, 'innodb_io_pattern   ') === 0 ) {
          #   innodb_io_pattern   0 	(0 + 0)
          $results['innodb_io_pattern_memory'] = to_int($row[1]);
       }
@@ -1053,6 +1251,7 @@ function get_innodb_array($text) {
          $results['queries_inside'] = to_int($row[0]);
          $results['queries_queued'] = to_int($row[4]);
       }
+      $prev_line = $line;
    }
 
    foreach ( array('spin_waits', 'spin_rounds', 'os_waits') as $key ) {
@@ -1063,15 +1262,8 @@ function get_innodb_array($text) {
    $results['uncheckpointed_bytes']
       = big_sub($results['log_bytes_written'], $results['last_checkpoint']);
 
-
-#    foreach ($results as $key => $value) {
-#      echo(strtolower($key).":".strtolower($value)."\n");
-#    }
-
-
    return $results;
 }
-
 
 # ============================================================================
 # Returns a bigint from two ulint or a single hex number.  This is tested in
@@ -1118,26 +1310,33 @@ function to_int ( $str ) {
 # Wrap mysql_query in error-handling, and instead of returning the result,
 # return an array of arrays in the result.
 # ============================================================================
+
+# ============================================================================
 function run_query($sql, $conn) {
    global $debug;
    debug($sql);
-   $result = @mysqli_query( $conn, $sql);
-   if ($debug ) {
-      $error = @((is_object($conn)) ? mysqli_error($conn) : (($___mysqli_res = mysqli_connect_error()) ? $___mysqli_res : false));
-      if ($error ) {
+   $result = @mysqli_query($conn, $sql);
+   if ( $debug && strpos($sql, 'SHOW SLAVE STATUS ') === false ) {
+      $error = @mysqli_error($conn);
+      if ( $error ) {
          debug(array($sql, $error));
          die("SQLERR $error in $sql");
       }
    }
    $array = array();
-   while ( $row = @mysqli_fetch_array($result) ) {
-      $array[] = $row;
+   $count = @mysqli_num_rows($result);
+   if ( $count > 10000 ) {
+      debug('Abnormal number of rows returned: ' . $count);
+   }
+   else {
+      while ( $row = @mysqli_fetch_array($result) ) {
+         $array[] = $row;
+      }
    }
    debug(array($sql, $array));
    return $array;
 }
 
-# ============================================================================
 # Safely increments a value that might be null.
 # ============================================================================
 function increment(&$arr, $key, $howmuch) {

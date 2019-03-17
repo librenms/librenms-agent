@@ -1,0 +1,35 @@
+#!/bin/sh
+# Please make sure the paths below are correct.
+# Alternatively you can put them in $0.conf, meaning if you've named
+# this script ntp-client then it must go in ntp-client.conf .
+#
+# NTPQV output version of "ntpq -c rv"
+# Version 4 is the most common and up to date version.
+#
+# If you are unsure, which to set, run this script and make sure that
+# the JSON output variables match that in "ntpq -c rv".
+#
+################################################################
+# Don't change anything unless you know what are you doing     #
+################################################################
+BIN_NTPQ='/usr/bin/env ntpq'
+BIN_NTPD='/usr/bin/env ntpd'
+BIN_GREP='/usr/bin/env grep'
+BIN_AWK='/usr/bin/env awk'
+BIN_HEAD='/usr/bin/env head'
+
+CONFIG=$0".conf"
+if [ -f $CONFIG ]; then
+    . $CONFIG
+fi
+
+NTP_OFFSET=`$BIN_NTPQ -c rv | $BIN_GREP "offset" | $BIN_AWK -Foffset= '{print $2}' | $BIN_AWK -F, '{print $1}'`
+NTP_FREQUENCY=`$BIN_NTPQ -c rv | $BIN_GREP "frequency" | $BIN_AWK -Ffrequency= '{print $2}' | $BIN_AWK -F, '{print $1}'`
+NTP_SYS_JITTER=`$BIN_NTPQ -c rv | $BIN_GREP "sys_jitter" | $BIN_AWK -Fsys_jitter= '{print $2}' | $BIN_AWK -F, '{print $1}'`
+NTP_CLK_JITTER=`$BIN_NTPQ -c rv | $BIN_GREP "clk_jitter" | $BIN_AWK -Fclk_jitter= '{print $2}' | $BIN_AWK -F, '{print $1}'`
+NTP_WANDER=`$BIN_NTPQ -c rv | $BIN_GREP "clk_wander" | $BIN_AWK -Fclk_wander= '{print $2}' | $BIN_AWK -F, '{print $1}'`
+NTP_VERSION=`$BIN_NTPD --version | $BIN_AWK -F'ntpd ' '{print $2}' | $BIN_HEAD -c 1`
+
+echo '{"data":{"offset":"'$NTP_OFFSET'","frequency":"'$NTP_FREQUENCY'","sys_jitter":"'$NTP_SYS_JITTER'","clk_jitter":"'$NTP_CLK_JITTER'","clk_wander":"'$NTP_WANDER'"},"version":"'$NTP_VERSION'","error":"0","errorString":""}'
+
+exit 0

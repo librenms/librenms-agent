@@ -1,117 +1,168 @@
 #!/usr/local/bin/perl
 
-# Add this to snmpd.conf as below.
-# extend fbsdnfsserver /etc/snmp/fbsdnfsserver
+=head1 DESCRIPTION
+
+This is a SNMP extend for FreeBSD NFS server stats for use with LibreNMS.
+
+For more information, see L<https://docs.librenms.org/#Extensions/Applications/#fbsd-nfs-server>.
+
+=head1 SWITCHES
+
+=head2 -p
+
+Pretty print the JSON.
+
+=head1 SNMPD SETUP EXAMPLES
+
+Below is a basic example of setting it up snmpd.conf for NetSNMP.
+
+    extend fbsdnfsserver /etc/snmp/fbsdnfsserver
+
+=cut
+
+#Copyright (c) 2018, Zane C. Bowers-Hadley
+#All rights reserved.
+#
+#Redistribution and use in source and binary forms, with or without modification,
+#are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+#THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+#WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+#IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+#DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+#LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+#THE POSSIBILITY OF SUCH DAMAGE.
+
+
+use strict;
+use warnings;
+use JSON;
+use Getopt::Std;
+
+#gets the options
+my %opts=();
+getopts('p', \%opts);
+
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
+sub main::VERSION_MESSAGE {
+	print "fbsdnfsclient SNMP extend 0.0.0\n";
+}
+
+sub main::HELP_MESSAGE {
+	print "\n".
+		"-p   Print the JSON in a pretty manner.\n";
+	exit 0;
+}
+
+my $VERSION=1;
+
+#the data to return
+my %to_return;
+$to_return{'version'}=$VERSION;
+$to_return{'error'}='0';
+$to_return{'errorString'}='';
 
 my $nfsstatOutput=`/usr/bin/nfsstat`;
+$to_return{error}=$?;
+
+# check for bad exit codes
+if ( $? == -1){
+	$to_return{errorString}='failed to run nfsstat';
+}
+elsif ($? & 127) {
+	$to_return{errorString}= sprintf "nfsstat died with signal %d, %s coredump\n",
+		($? & 127),  ($? & 128) ? 'with' : 'without';
+} else {
+	$to_return{error}=$? >> 8;
+	$to_return{errorString}="nfsstat exited with ".$to_return{error};
+}
+
+
 my @nfsstatOutputA=split( /\n/, $nfsstatOutput );
 my $int=0;
-
-my (
-	$Getattr,
-	$Setattr,
-	$Lookup,
-	$Readlink,
-	$Read,
-	$Write,
-	$Create,
-	$Remove,
-	$Rename,
-	$Link,
-	$Symlink,
-	$Mkdir,
-	$Rmdir,
-	$Readdir,
-	$RdirPlus,
-	$Access,
-	$Mknod,
-	$Fsstat,
-	$Fsinfo,
-	$PathConf,
-	$Commit,
-	$RetFailed,
-	$Faults,
-	$Inprog,
-	$Idem,
-	$Nonidem,
-	$Misses,
-	$WriteOps,
-	$WriteRPC,
-	$Opsaved
-	);
-
+my %data;
 while( defined( $nfsstatOutputA[$int] ) ){
 	$nfsstatOutputA[$int]=~s/^ +//;
 	$nfsstatOutputA[$int]=~s/ +/ /g;
 
 	if ( $int == 19 ){
 		(
-		 $Getattr,
-		 $Setattr,
-		 $Lookup,
-		 $Readlink,
-		 $Read,
-		 $Write,
-		 $Create,
-		 $Remove,
+		 $data{'Getattr'},
+		 $data{'Setattr'},
+		 $data{'Lookup'},
+		 $data{'Readlink'},
+		 $data{'Read'},
+		 $data{'Write'},
+		 $data{'Create'},
+		 $data{'Remove'},
 		)=split( /\ /, $nfsstatOutputA[$int] );
 	
 	}
 
 	if ( $int == 21 ){
 		(
-		 $Rename,
-		 $Link,
-		 $Symlink,
-		 $Mkdir,
-		 $Rmdir,
-		 $Readdir,
-		 $RdirPlus,
-		 $Access
+		 $data{'Rename'},
+		 $data{'Link'},
+		 $data{'Symlink'},
+		 $data{'Mkdir'},
+		 $data{'Rmdir'},
+		 $data{'Readdir'},
+		 $data{'RdirPlus'},
+		 $data{'Access'}
 		)=split( /\ /, $nfsstatOutputA[$int] );
 	
 	}
 
 	if ( $int == 23 ){
 		(
-		 $Mknod,
-		 $Fsstat,
-		 $Fsinfo,
-		 $PathConf,
-		 $Commit
+		 $data{'Mknod'},
+		 $data{'Fsstat'},
+		 $data{'Fsinfo'},
+		 $data{'PathConf'},
+		 $data{'Commit'}
 		)=split( /\ /, $nfsstatOutputA[$int] );
 	
 	}
 
 	if ( $int == 25 ){
 		(
-		 $RetFailed
+		 $data{'RetFailed'}
 		)=split( /\ /, $nfsstatOutputA[$int] );
 	
 	}
 
 	if ( $int == 27 ){
 		(
-		 $Faults
+		 $data{'Faults'}
 		)=split( /\ /, $nfsstatOutputA[$int] );
 	
 	}
 
 	if ( $int == 30 ){
 		(
-		 $Inprog,
-		 $Idem,
-		 $Nonidem,
-		 $Misses
+		 $data{'Inprog'},
+		 $data{'Idem'},
+		 $data{'Nonidem'},
+		 $data{'Misses'}
 		)=split( /\ /, $nfsstatOutputA[$int] );
 	
 	}
 
 	if ( $int == 33 ){
 		(
-		 $WriteOps,
-		 $WriteRPC,
-		 $Opsaved
+		 $data{'WriteOps'},
+		 $data{'WriteRPC'},
+		 $data{'Opsaved'}
 		)=split( /\ /, $nfsstatOutputA[$int] );
 		
 	}
@@ -119,33 +170,15 @@ while( defined( $nfsstatOutputA[$int] ) ){
 	$int++;
 }
 
-print $Getattr."\n".
-	$Setattr."\n".
-	$Lookup."\n".
-	$Readlink."\n".
-	$Read."\n".
-	$Write."\n".
-	$Create."\n".
-	$Remove."\n".
-	$Rename."\n".
-	$Link."\n".
-	$Symlink."\n".
-	$Mkdir."\n".
-	$Rmdir."\n".
-	$Readdir."\n".
-	$RdirPlus."\n".
-	$Access."\n".
-	$Mknod."\n".
-	$Fsstat."\n".
-	$Fsinfo."\n".
-	$PathConf."\n".
-	$Commit."\n".
-	$RetFailed."\n".
-	$Faults."\n".
-	$Inprog."\n".
-	$Idem."\n".
-	$Nonidem."\n".
-	$Misses."\n".
-	$WriteOps."\n".
-	$WriteRPC."\n".
-	$Opsaved."\n";
+#add the data has to the return hash
+$to_return{data}=\%data;
+
+#finally render the JSON
+my $j=JSON->new;
+if ( $opts{p} ){
+        $j->pretty(1);
+}
+print $j->encode( \%to_return );
+if ( ! $opts{p} ){
+	print "\n";
+}
