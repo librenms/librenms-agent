@@ -157,16 +157,15 @@ my $real_hits = $mfu_hits + $mru_hits;
 my $cache_hit_percent = $arc_hits / $arc_accesses_total * 100;
 my $cache_miss_percent = $arc_misses / $arc_accesses_total * 100;
 my $actual_hit_percent = $real_hits / $arc_accesses_total * 100;
-my $data_demand_percent = 'U';
+
+my $data_demand_percent = 0;
 if ( $demand_data_total != 0 ){
-	$data_demand_percent = $demand_data_hits / $demand_data_total * 100;
+	$demand_data_hits / $demand_data_total * 100;
 }
 
-my $data_prefetch_percent;
+my $data_prefetch_percent=0;
 if ( $prefetch_data_total != 0 ) {
 	$data_prefetch_percent = $prefetch_data_hits / $prefetch_data_total * 100;
-}else{
-	$data_prefetch_percent = 0;
 }
 
 my $anon_hits_percent;
