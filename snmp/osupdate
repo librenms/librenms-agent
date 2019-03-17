@@ -1,34 +1,34 @@
 #!/usr/bin/env bash
 ################################################################
 # copy this script to /etc/snmp/ and make it executable:       #
-# chmod +x /etc/snmp/os-updates.sh                             #
+# chmod +x /etc/snmp/osupdate                                  #
 # ------------------------------------------------------------ #
 # edit your snmpd.conf and include:                            #
-# extend osupdate /opt/os-updates.sh 			       #
+# extend osupdate /etc/snmp/osupdate                           #
 #--------------------------------------------------------------#
 # restart snmpd and activate the app for desired host          #
 #--------------------------------------------------------------#
 # please make sure you have the path/binaries below            #
-################################################################ 
-BIN_WC='/usr/bin/wc'
-BIN_GREP='/bin/grep'
+################################################################
+BIN_WC='/usr/bin/env wc'
+BIN_GREP='/usr/bin/env grep'
 CMD_GREP='-c'
 CMD_WC='-l'
-BIN_ZYPPER='/usr/bin/zypper'
+BIN_ZYPPER='/usr/bin/env zypper'
 CMD_ZYPPER='-q lu'
-BIN_YUM='/usr/bin/yum'
+BIN_YUM='/usr/bin/env yum'
 CMD_YUM='-q check-update'
-BIN_DNF='/usr/bin/dnf'
+BIN_DNF='/usr/bin/env dnf'
 CMD_DNF='-q check-update'
-BIN_APT='/usr/bin/apt-get'
+BIN_APT='/usr/bin/env apt-get'
 CMD_APT='-qq -s upgrade'
-BIN_PACMAN='/usr/bin/pacman'
+BIN_PACMAN='/usr/bin/env pacman'
 CMD_PACMAN='-Sup'
 
 ################################################################
 # Don't change anything unless you know what are you doing     #
 ################################################################
-if [ -f $BIN_ZYPPER ]; then
+if command -v zypper &>/dev/null ; then
     # OpenSUSE
     UPDATES=`$BIN_ZYPPER $CMD_ZYPPER | $BIN_WC $CMD_WC`
     if [ $UPDATES -ge 2 ]; then
@@ -36,7 +36,7 @@ if [ -f $BIN_ZYPPER ]; then
     else
         echo "0";
     fi
-elif [ -f $BIN_DNF ]; then
+elif command -v dnf &>/dev/null ; then
     # Fedora
     UPDATES=`$BIN_DNF $CMD_DNF | $BIN_WC $CMD_WC`
     if [ $UPDATES -ge 1 ]; then
@@ -44,7 +44,7 @@ elif [ -f $BIN_DNF ]; then
     else
         echo "0";
     fi
-elif [ -f $BIN_PACMAN ]; then
+elif command -v pacman &>/dev/null ; then
     # Arch
     UPDATES=`$BIN_PACMAN $CMD_PACMAN | $BIN_WC $CMD_WC`
     if [ $UPDATES -ge 1 ]; then
@@ -52,7 +52,7 @@ elif [ -f $BIN_PACMAN ]; then
     else
         echo "0";
     fi
-elif [ -f $BIN_YUM ]; then
+elif command -v yum &>/dev/null ; then
     # CentOS / Redhat
     UPDATES=`$BIN_YUM $CMD_YUM | $BIN_WC $CMD_WC`
     if [ $UPDATES -ge 1 ]; then
@@ -60,7 +60,7 @@ elif [ -f $BIN_YUM ]; then
     else
         echo "0";
     fi
-elif [ -f $BIN_APT ]; then
+elif command -v apt-get &>/dev/null ; then
     # Debian / Devuan / Ubuntu
     UPDATES=`$BIN_APT $CMD_APT | $BIN_GREP $CMD_GREP 'Inst'`
     if [ $UPDATES -ge 1 ]; then
