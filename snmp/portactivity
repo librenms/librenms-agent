@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 
-#Copyright (c) 2018, Zane C. Bowers-Hadley
+#Copyright (c) 2019, Zane C. Bowers-Hadley
 #All rights reserved.
 #
 #Redistribution and use in source and binary forms, with or without modification,
@@ -91,7 +91,7 @@ use Parse::Netstat qw(parse_netstat);
 
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 sub main::VERSION_MESSAGE {
-	print "Port Activity SNMP stats extend 0.0.0\n";
+	print "Port Activity SNMP stats extend 0.0.1\n";
 }
 
 sub main::HELP_MESSAGE {
@@ -175,7 +175,7 @@ sub return_json{
 	}
 
 	print $j->encode( \%to_return );
-	
+
 	if ( ! $pretty ){
 		print "\n";
 	}
@@ -218,6 +218,7 @@ my @protos_array=split(/\,/, $opts{p});
 
 #holds the various protocol hashes
 my %protos;
+my %proto_lookup;
 
 #make sure each one specificied is defined and build the hash that will be returned
 my $protos_array_int=0;
@@ -234,27 +235,17 @@ while ( defined( $protos_array[$protos_array_int] ) ){
 		return_json(\%to_return, $opts{P});
 		exit 4;
 	}
-	
+
+	$proto_lookup{ $port } = $protos_array [$protos_array_int ];
+
 	$protos_array_int++;
 }
 
+my $netstat='netstat -n';
+
 my $os=$^O;
 
-my $netstat;
-
-#make sure this is a supported OS
-if ( $os eq 'freebsd' ){
-	$netstat='netstat -S -p tcp'	
-}elsif( $os eq 'linux' ){
-	$netstat='netstat -n'
-}else{
-    $to_return{errorString}=$os.' is not a supported OS as of currently';
-	$to_return{error}=3;
-	return_json(\%to_return, $opts{P});
-	exit 3;
-}
-
-my $res = parse_netstat(output => join("", `$netstat`), flavor=>$os);
+my $res = parse_netstat(output => join("", `$netstat`), flavor=>$os, udp=>0, unix=>0);
 
 #check to make sure that it was able to parse the output
 if (
@@ -273,7 +264,9 @@ while ( defined( $res->[2]{'active_conns'}[$active_conns_int] ) ){
 	my $conn=$res->[2]{active_conns}[$active_conns_int];
 
 	#we only care about TCP currently
-	if ( $conn->{proto} =~ /^[Tt][Cc][Pp]/ ){
+	if ( defined( $conn->{proto} ) &&
+		( $conn->{proto} =~ /^[Tt][Cc][Pp]/ )
+		){
 		$protos_array_int=0;
 		my $service;
 		while(
@@ -282,8 +275,8 @@ while ( defined( $res->[2]{'active_conns'}[$active_conns_int] ) ){
 			){
 			#check if this matches either ports
 			if (
-				( $protos_array[ $protos_array_int ] eq $conn->{'local_port'} ) ||
-				( $protos_array[ $protos_array_int ] eq $conn->{'foreign_port'} )
+				( defined($proto_lookup{ $conn->{'local_port'} }) ) ||
+				( defined($proto_lookup{ $conn->{'foreign_port'} }) )
 				){
 				$service=$protos_array[ $protos_array_int ];
 			}
@@ -294,7 +287,7 @@ while ( defined( $res->[2]{'active_conns'}[$active_conns_int] ) ){
 		#only handle it if is a service we are watching for
 		if ( defined( $service ) ){
 			my $processed=0;
-			
+
 			my $state=$conn->{'state'};
 			#translate the state names
 			if ( $os eq 'linux' ){
@@ -311,7 +304,7 @@ while ( defined( $res->[2]{'active_conns'}[$active_conns_int] ) ){
 			if ( $state ne 'LISTEN' ){
 				$protos{$service}{'total_conns'}++;
 			}
-			
+
 			#make sure the state is a valid one
 			# if it is not a valid one, set it to other, meaning something unexpected was set for the state that should not be
 			if ( ! defined( $valid_states{$state} ) ){
@@ -338,11 +331,11 @@ while ( defined( $res->[2]{'active_conns'}[$active_conns_int] ) ){
 				$protos{$service}{'total_to'}++;
 				$protos{$service}{'to'}{$state}++;
 			}
-			
+
 		}
-		
+
 	}
-	
+
 	$active_conns_int++;
 }
 
