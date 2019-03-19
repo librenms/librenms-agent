@@ -73,9 +73,8 @@ my $useSN=1;
 
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 sub main::VERSION_MESSAGE {
-        print "SMART SNMP extend 0.0.0\n";
+        print "SMART SNMP extend 0.1.0\n";
 };
-
 
 sub main::HELP_MESSAGE {
 	print "\n".
@@ -108,75 +107,70 @@ if ( defined( $opts{g} ) ){
 		$cache='cache='.$cache."\n";
 	}
 
-	my %found_disks;
-	
-	#check for drives named /dev/sd*
-	my @matches=glob('/dev/sd*');
-	@matches=grep(!/[0-9]/, @matches);
-	my $matches_int=0;
-	while ( defined( $matches[$matches_int] ) ){
-		my $device=$matches[$matches_int];
-		system( $smartctl.' -A '.$device.' > /dev/null' );
-		if ( $? == 0 ){
-			$device =~ s/\/dev\///;
-			$found_disks{$device}=1;
-		}
-		
-		$matches_int++;
-	}
-
-	#check for drives named /dev/ada*
-	@matches=glob('/dev/ada*');
-	@matches=grep(!/[ps]/, @matches);
-	$matches_int=0;
-	while ( defined( $matches[$matches_int] ) ){
-		my $device=$matches[$matches_int];
-		system( $smartctl.' -A '.$device.' > /dev/null' );
-		if ( $? == 0 ){
-			$device =~ s/\/dev\///;
-			$found_disks{$device}=1;
-		}
-		
-		$matches_int++;
-	}
-
-	#check for drives named /dev/da*
-	@matches=glob('/dev/da*');
-	@matches=grep(!/[ps]/, @matches);
-	$matches_int=0;
-	while ( defined( $matches[$matches_int] ) ){
-		my $device=$matches[$matches_int];
-		system( $smartctl.' -A '.$device.' > /dev/null' );
-		if ( $? == 0 ){
-			$device =~ s/\/dev\///;
-			$found_disks{$device}=1;
-		}
-		
-		$matches_int++;
-	}
+	# used for checking if a disk has been found more than once
+	my %found_disks_names;
+	my @argumentsA;
 
 	#have smartctl scan and see if it finds anythings not get found
 	my $scan_output=`$smartctl --scan-open`;
 	my @scan_outputA=split(/\n/, $scan_output);
+
+	# remove non-SMART devices sometimes returned
 	@scan_outputA=grep(!/ses[0-9]/, @scan_outputA);  # not a disk, but may or may not have SMART attributes
 	@scan_outputA=grep(!/pass[0-9]/, @scan_outputA); # very likely a duplicate and a disk under another name
-	$matches_int=0;
-	while ( defined( $scan_outputA[$matches_int] ) ){
-		my $device=$scan_outputA[$matches_int];
-		$device =~ s/ .*//;
-		system( $smartctl.' -A '.$device.' > /dev/null' );
-		if ( $? == 0 ){
-			$device =~ s/\/dev\///;
-			$found_disks{$device}=1;
-		}
-		
-		$matches_int++;
+	@scan_outputA=grep(!/cd[0-9]/, @scan_outputA); # CD drive
+	if ( $^O eq 'freebsd' ){
+		@scan_outputA=grep(!/sa[0-9]/, @scan_outputA); # tape drive
+		@scan_outputA=grep(!/ctl[0-9]/, @scan_outputA); # CAM target layer
+	}elsif( $^O eq 'linux' ){
+		@scan_outputA=grep(!/st[0-9]/, @scan_outputA); # SCSI tape drive
+		@scan_outputA=grep(!/ht[0-9]/, @scan_outputA); # ATA tape drive
 	}
-	
+
+	# make the first pass, figuring out what all we have and trimming comments
+	foreach my $arguments ( @scan_outputA ){
+		my $name = $arguments;
+
+		$arguments =~ s/ \#.*//; # trim the comment out of the argument
+		$name =~ s/ .*//;
+		$name =~ s/\/dev\///;
+		if (defined( $found_disks_names{$name} )){
+			$found_disks_names{$name}++;
+		}else{
+			$found_disks_names{$name}=0;
+		}
+
+		push( @argumentsA, $arguments );
+
+	}
+
+	# second pass, putting the lines together
+	my %current_disk;
+	my $drive_lines='';
+	foreach my $arguments ( @argumentsA ){
+		my $name = $arguments;
+		$name =~ s/ .*//;
+		$name =~ s/\/dev\///;
+
+		if ( $found_disks_names{$name} == 0 ){
+			# If no other devices, just name it after the base device.
+			$drive_lines=$drive_lines.$name." ".$arguments."\n";
+		}else{
+			# if more than one, start at zero and increment, apennding comma number to the base device name
+			if (defined( $current_disk{$name} )){
+				$current_disk{$name}++;
+			}else{
+				$current_disk{$name}=0;
+			}
+			$drive_lines=$drive_lines.$name.",".$current_disk{$name}." ".$arguments."\n";
+		}
+
+	}
+
 	print "useSN=0\n".'smartctl='.$smartctl."\n".
-		$cache.
-		join( "\n", keys(%found_disks) )."\n";
-	
+	$cache.
+	$drive_lines;
+
 	exit 0;
 }
 
@@ -208,7 +202,7 @@ while ( defined( $configA[$configA_int] ) ){
 	if ( $var eq 'cache' ){
 		$cache=$val;
 	}
-	
+
 	if ( $var eq 'smartctl' ){
 		$smartctl=$val;
 	}
@@ -216,11 +210,11 @@ while ( defined( $configA[$configA_int] ) ){
 	if ( $var eq 'useSN' ){
 		$useSN=$val;
 	}
-	
+
 	if ( !defined( $val ) ){
 		push(@disks, $var);
 	}
-	
+
 	$configA_int++;
 }
 
@@ -267,7 +261,7 @@ while ( defined($disks[$int]) ) {
 			  '231'=>'null',
 			  '233'=>'null',
 	);
-    
+
     my @outputA=split( /\n/, $output );
 	my $outputAint=0;
 	while ( defined($outputA[$outputAint]) ) {
@@ -281,7 +275,7 @@ while ( defined($disks[$int]) ) {
 			my $id=$lineA[0];
 
 			# single int raw values
-			if ( 
+			if (
 				( $id == 5 ) ||
 				( $id == 10 ) ||
 				( $id == 173 ) ||
@@ -319,8 +313,8 @@ while ( defined($disks[$int]) ) {
 				) {
 				my ( $temp )=split(/\ /, $raw);
 				$IDs{$id}=$temp;
-			}			
-			
+			}
+
 		}
 
 		$outputAint++;
@@ -337,7 +331,7 @@ while ( defined($disks[$int]) ) {
 	my $short=scalar grep(/Short/, @outputA);
 	my $conveyance=scalar grep(/Conveyance/, @outputA);
 	my $selective=scalar grep(/Selective/, @outputA);
-	
+
 	# get the drive serial number, if needed
 	my $disk_id=$disk;
 	if ( $useSN ){
