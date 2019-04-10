@@ -109,12 +109,12 @@ def main(args):
 
     ## account for variations between ZoL zfs versions
     proc = subprocess.run(zpool_cmd_list, **std)
-    if (proc.returncode == 1) and (('root' in proc.stderr) or ('admin' in proc.stderr)):
-        zpool_cmd = ['sudo'] + zpool_cmd  # elevate zpool with sudo
-        zpool_cmd_list = zpool_cmd + ['list', '-p', '-H']
-        proc = subprocess.run(zpool_cmd_list, **std)
     if (proc.returncode == 2):
         # -p option is not present in older versions
+        # edit snmpd.conf zfs extend section to the following:
+        #   extend zfs /usr/bin/sudo /etc/snmp/zfs-linux
+        # make sure to edit your sudo users (usually visudo) and add at the bottom:
+        #   snmp ALL=(ALL) NOPASSWD: /etc/snmp/zfs-linux
         del zpool_cmd_list[zpool_cmd_list.index('-p')]  # try removing -p to fix the issue
         proc = subprocess.run(zpool_cmd_list, **std)
         exact_size = False
