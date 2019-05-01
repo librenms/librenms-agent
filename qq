@@ -1,0 +1,2069 @@
+[33mcommit 3361bf4c3ae5868b00d09215e10359f58a36ac12[m
+Author: SourceDoctor <sourcehhdoctor@googlemail.com>
+Date:   Wed May 1 14:55:54 2019 +0200
+
+    add mdadm support
+
+[33mcommit d822c899a78bdfd1e7d9f4df2bd5cd512b1696bd[m
+Merge: 8fbfbd5 544fd8b
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Sun Mar 24 03:56:16 2019 -0500
+
+    Merge pull request #226 from VVelox/smart-update
+    
+    SMART monitoring update adding RAID support
+
+[33mcommit 544fd8bd6e525b3c29d9965c2b405b39ba49a98d[m
+Author: Zane C. Bowers-Hadley <vvelox@vvelox.net>
+Date:   Tue Mar 19 02:58:30 2019 -0500
+
+    update the date
+
+[33mcommit 8fbfbd5b39bbc22ca606327813c4fe54b38e4d30[m
+Merge: cb04f8c 38acc2b
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Tue Mar 19 02:53:30 2019 -0500
+
+    Merge pull request #225 from VVelox/pa-fix
+    
+    portactivity fixes
+
+[33mcommit 503fb9f7389d8307074ed856f96a870a0d26dd72[m
+Author: Zane C. Bowers-Hadley <vvelox@vvelox.net>
+Date:   Tue Mar 19 02:25:17 2019 -0500
+
+    tested and it appears to work properly... documentation updated
+
+[33mcommit bdfd0ceea948382684a2bd96659731f9ac5f15b1[m
+Author: Zane C. Bowers-Hadley <vvelox@vvelox.net>
+Date:   Tue Mar 19 00:40:06 2019 -0500
+
+    update the guessing to only use smartctl --scan-open and generate with more complex options
+
+[33mcommit 38acc2bd3d8e81414b4bfc2cb2bb3e955877fbc1[m
+Author: Zane C. Bowers-Hadley <vvelox@vvelox.net>
+Date:   Mon Mar 18 03:39:17 2019 -0500
+
+    actually make this work on system not FreeBSD and deal with the bug where a connection may not have a protocol
+
+[33mcommit cb04f8c0ac148cb2b250d0a408f672db22e99ed5[m
+Merge: 147cb67 af32f56
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Sun Mar 17 23:27:46 2019 -0500
+
+    Merge pull request #224 from VVelox/zfs-fix
+    
+    ZFS-FreeBSD divide by zero fix
+
+[33mcommit af32f56a74e0d9915b4beb419a28814e9bf058d8[m
+Author: Zane C. Bowers-Hadley <vvelox@vvelox.net>
+Date:   Sun Mar 17 06:07:59 2019 -0500
+
+    merge... and update version
+
+[33mcommit 658c3c6ead712837bbb763c6b9ecdd782b043629[m
+Merge: 6564128 147cb67
+Author: Zane C. Bowers-Hadley <vvelox@vvelox.net>
+Date:   Sun Mar 17 06:06:57 2019 -0500
+
+    Merge branch 'zfs-fix' of https://github.com/VVelox/librenms-agent into zfs-fix
+
+[33mcommit 656412830564593cfefeee5dceeae89bfa371000[m
+Author: Zane C. Bowers-Hadley <vvelox@vvelox.net>
+Date:   Sun Mar 17 06:02:43 2019 -0500
+
+    remove unneeded else statement and re-apply patch
+
+[33mcommit 3ce06d6defc63f200f2bbfec7718748c8ec9e832[m
+Author: Zane C. Bowers-Hadley <vvelox@vvelox.net>
+Date:   Sun Mar 17 05:55:33 2019 -0500
+
+    freshly initilized ZFS pulls that are not in use don't have a $data_demand_total
+
+[33mcommit 147cb67824b213045826677946166c8ee807f23c[m
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Tue Feb 12 20:33:05 2019 -0600
+
+    Use os-release whenever possible for the distro script (#220)
+    
+    Except centos... https://bugs.centos.org/view.php?id=8359
+
+[33mcommit c9a0d2893e44f89f7c8c9450a9d42438eff1404d[m
+Author: Felicián Hoppál <felici@users.noreply.github.com>
+Date:   Mon Feb 11 23:06:57 2019 +0100
+
+    Fix: zpool list output changed, incorrect values (#219)
+    
+    * fix zpool data, output of zpool list -pH changed in freebsd 11
+    
+    * fix zpool data, output of zpool list -pH changed in freebsd 11
+    
+    * bump version
+    
+    * version dump to 2
+
+[33mcommit 3a407e3f721b7677fb2724af736ea87838d4dcc5[m
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Thu Jan 17 11:44:02 2019 -0600
+
+    Update powerdns script to json (#218)
+
+[33mcommit ad300c035a2be4a55553c2994d5ce7ba69d57432[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Wed Jan 9 23:41:39 2019 -0600
+
+    various misc fixes for the postfix poller (#112)
+    
+    * update postfix
+    
+    * move a few things to reduce the number of changed lines
+    
+    * move mself to the end
+    
+    * white space cleanup and another small cleanup of $chr
+    
+    * use $chrNew instead of $chrC when writing the current values
+    
+    * more white space cleanup
+    
+    * replace one more missed instance of iuoscp
+
+[33mcommit c40606140114b9059409f17a21b06fe8655b760e[m
+Author: Slashdoom <5092581+slashdoom@users.noreply.github.com>
+Date:   Thu Jan 10 18:40:40 2019 +1300
+
+    Fix: InnoDB stat support for MariaDB v10+ (#211)
+    
+    * mariadb innodb support for v10+
+    
+    * fix newer innodb insert buffers
+    
+    * agent mysql to snmp extend
+
+[33mcommit 6fdaffa1b2ba8c49ed8bd38fb6445335b3146329[m
+Author: Mike Centola <mcentola@appliedengdesign.com>
+Date:   Thu Jan 10 00:35:28 2019 -0500
+
+    Added gpsd script for SNMP Extend (#217)
+    
+    Fixed Typos
+    
+    Fixed another typo
+
+[33mcommit f54c442d06abd7d2112dc4dc5db315524030308c[m
+Merge: 1b90904 107d72e
+Author: CrazyMax <crazy-max@users.noreply.github.com>
+Date:   Sat Dec 29 22:17:13 2018 +0100
+
+    Merge pull request #216 from jasoncheng7115/patch-2
+    
+    Added Proxmox VE Versoin support
+
+[33mcommit 1b90904f61c6d4078f2b427e17c82cf1f8b926ba[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Fri Dec 28 20:10:13 2018 -0600
+
+    convert the FreeBSD NFS stuff over to JSON and add in lots of sanity (#190)
+    
+    * convert fbsdnfsclient over to JSON
+    
+    * Convert the server stuff to JSON and fix the output of the client extend.
+    
+    * misc. stuff
+    
+    * lots of cleanup and sanity added to the FreeBSD NFS scripts
+    
+    * fix the #! line
+    
+    * update the docs at the top
+
+[33mcommit 5be1b168ba4e03ba3a58b3833a26587474ff7b29[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Fri Dec 28 20:08:46 2018 -0600
+
+    JSON SNMP extend for UPS-APC app. (#189)
+    
+    * add snmp/ups-apcups, a Perl rewrite of snmp/ups-apcups.sh to support JSON
+    
+    * finish documenting it
+    
+    * add version and remove units from the returned values
+
+[33mcommit 107d72e862c2e2a53870272859252a5d39bf8c72[m
+Author: Jason Cheng <30381035+jasoncheng7115@users.noreply.github.com>
+Date:   Tue Dec 25 09:15:22 2018 +0800
+
+    Added Proxmox VE Versoin support
+
+[33mcommit 433d744953fa800ce49fa060b141c10663c0b952[m
+Author: Jason Cheng <30381035+jasoncheng7115@users.noreply.github.com>
+Date:   Sun Dec 16 22:21:00 2018 +0800
+
+    Added FreeNAS Version support (#215)
+    
+    Hi,
+    
+    I added FreeNAS version information support, as shown in the figure:
+    
+    ![2018-12-15 11 53 31](https://user-images.githubusercontent.com/30381035/50044886-2329a580-00c5-11e9-817c-b89a8374270d.png)
+    ![2018-12-15 11 53 49](https://user-images.githubusercontent.com/30381035/50044887-2329a580-00c5-11e9-93b4-b140809f84a3.png)
+
+[33mcommit 3c4511d987c2058bd6e8605bb0e87c6fc1d36861[m
+Merge: ff124a1 dc3d267
+Author: CrazyMax <crazy-max@users.noreply.github.com>
+Date:   Fri Dec 14 19:03:01 2018 +0100
+
+    Merge pull request #214 from dsgagi/patch-1
+    
+    Fix Debian detection on Proxmox - lsb_release binary doesn't exist
+
+[33mcommit dc3d2673ddc86d02ca2cd8d93bbf2fd53ca43c55[m
+Author: dsgagi <dragan.savic@netcast.rs>
+Date:   Fri Dec 14 18:49:58 2018 +0100
+
+    Update distro
+    
+    Remove extra white spaces.
+
+[33mcommit 456d2e7672d8532af4df7f6da2b5c18b02778bf7[m
+Author: dsgagi <dragan.savic@netcast.rs>
+Date:   Fri Dec 14 18:47:54 2018 +0100
+
+    Update distro
+    
+    Minor changes to the code, for better output.
+
+[33mcommit 5b53ab54c8a6d9f3b81abf42725b5da2b3ebec3d[m
+Author: dsgagi <dragan.savic@netcast.rs>
+Date:   Wed Dec 12 16:09:25 2018 +0100
+
+    Update distro
+
+[33mcommit ff124a1358755ceddc0ae6a4187d358da0d54d06[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Thu Nov 22 09:04:58 2018 -0600
+
+    add portactivity SNMP extend (#159)
+    
+    * add portactivity SNMP extend in its initial form
+    
+    * update for the current json_app_get
+    
+    * add version to the returned JSON
+    
+    * add basic POD documentation
+
+[33mcommit a827734c0ec0e0cdf5e2a04730ec68dbad3fd477[m
+Author: gardar <gardar@users.noreply.github.com>
+Date:   Thu Oct 25 19:19:20 2018 +0000
+
+    CloudLinux distro detection (#208)
+    
+    Added CloudLinux distro detection, previously CloudLinux got identified as RedHat
+
+[33mcommit 8d66211adc47d3bad5dd042e3ddbc59a23a28819[m
+Author: sparknsh <38894705+sparknsh@users.noreply.github.com>
+Date:   Thu Oct 25 07:17:42 2018 -0400
+
+    Fix package manager detection (#204)
+    
+    * Fix package manager detection
+    
+    * use release file for os detection
+    
+    * Use command to to validate package manager type
+    
+    * check if exists and the execute permission is granted
+    
+    * make script more portable
+
+[33mcommit d49fe954dfdeffbeee091051f1f0c515d020f281[m
+Author: Félim Whiteley <felim@whiteleytech.ie>
+Date:   Tue Oct 23 17:46:54 2018 +0100
+
+    Add divide by zero check (#191)
+    
+    On several servers (Ubuntu 18.04) DEMAND_DATA_TOTAL is 0 currently and is causing an error
+    
+    Traceback (most recent call last):
+      File "/usr/local/bin/zfs-linux", line 178, in <module>
+        sys.exit(main(sys.argv[1:]))
+      File "/usr/local/bin/zfs-linux", line 76, in main
+        DATA_DEMAND_PERCENT = DEMAND_DATA_HITS / DEMAND_DATA_TOTAL * 100
+    ZeroDivisionError: division by zero
+
+[33mcommit 381cc2466af521772607c682a9a707471a38ff4b[m
+Author: sparknsh <38894705+sparknsh@users.noreply.github.com>
+Date:   Tue Oct 23 08:51:12 2018 -0400
+
+    fix nginx script indentation (#205)
+
+[33mcommit 3dada041e433318592e137678d24c32dd1a134b4[m
+Author: sparknsh <38894705+sparknsh@users.noreply.github.com>
+Date:   Thu Oct 18 10:37:10 2018 -0400
+
+    Fix binary operator expected error (#203)
+
+[33mcommit ccb244aa09de36e4e4dd85120702580144e86383[m
+Author: sparknsh <38894705+sparknsh@users.noreply.github.com>
+Date:   Wed Oct 17 12:28:39 2018 -0400
+
+    osupdate script clean up (#199)
+    
+    - Change script name for simplify of configuration management orchestration scripts.
+    - Update code syntax.
+
+[33mcommit f0f34b4a2d1a36836f6bffe4307d5d51524009b4[m
+Author: sparknsh <38894705+sparknsh@users.noreply.github.com>
+Date:   Wed Oct 17 12:28:07 2018 -0400
+
+    phpfpmsf script clean up (#198)
+    
+    - Change script name for simplify of configuration management orchestration scripts.
+    - Update code syntax.
+
+[33mcommit e0dcd4a064cedb09241e4af17198bf61e8fd1bf3[m
+Author: sparknsh <38894705+sparknsh@users.noreply.github.com>
+Date:   Wed Oct 17 12:27:21 2018 -0400
+
+    nginx script clean up (#197)
+    
+    - Change script name for simplify of configuration management orchestration scripts.
+    - Change 172.0.0.1 to localhost for better nginx handling.
+
+[33mcommit 1c61a96344317c13fce90811c11c0fa4cb7efb36[m
+Author: sparknsh <38894705+sparknsh@users.noreply.github.com>
+Date:   Wed Oct 17 12:26:45 2018 -0400
+
+    ntp-client data correction (#196)
+    
+    NTP was not displaying data right for linux servers. It was putting the frequency data into the offset data. This was giving bad graphs in the UI. Tested the correction on both RHEL and Debian based operating systems and all passes.
+    
+    Remove the .sh to simplify for configuration management orchestration scripts.
+
+[33mcommit 28a2f8ae55db7ca773f881560017b4890bc4bbce[m
+Author: voxnil <14983067+voxnil@users.noreply.github.com>
+Date:   Mon Oct 15 13:00:16 2018 -0700
+
+    Update zfs-linux to use env for python
+
+[33mcommit ca7a5cdafe6dd603538aad8f63bc624143f98377[m
+Author: Brock Alberry <vowywowy@gmail.com>
+Date:   Wed Sep 19 09:09:04 2018 -0400
+
+    PhotonOS distro detection (#193)
+    
+    * PhotonOS distro detection
+    
+    Detection before `/etc/os-release` since that is present yet missing the build number.
+    
+    * awk detection
+    
+    combining https://github.com/librenms/librenms-agent/pull/193 and https://github.com/librenms/librenms-agent/pull/194
+
+[33mcommit 7542bd26f4c883c7e622056a1a34909d1dc9aa2c[m
+Author: Allison <acreely@outlook.com>
+Date:   Tue Sep 18 20:20:23 2018 -0700
+
+    Update distro (#194)
+    
+    Adding full detection for ASUSWRT-Merlin
+
+[33mcommit 7c173b160c5be401fa36d85edf15add61a3146d7[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Mon Aug 27 04:03:01 2018 -0500
+
+    convert all the NTP stuff to JSON (#174)
+    
+    This requires https://github.com/librenms/librenms/pull/8571 and is for https://github.com/librenms/librenms/pull/8608 .
+    
+    Also converted this to regular sh instead of bash, so it will work on more systems with less dependencies.
+    
+    Has been tested as working on DD-WRT and FreeBSD.
+
+[33mcommit 99ad80740cb2fcea1c33e59caf1c05af5a53a14f[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Sun Aug 19 17:47:07 2018 -0500
+
+    update for the new json_app_get stuff (#179)
+
+[33mcommit c772ac97d3f5b805c311fd13d924513b4561d10b[m
+Author: crcro <crc@nuamchefazi.ro>
+Date:   Fri Aug 10 00:44:02 2018 +0300
+
+    added rockstor nas distro detection (#187)
+
+[33mcommit c535b1286c7701a2cefcd10ffd799fba65e56dd2[m
+Author: TheGreatDoc <32565115+TheGreatDoc@users.noreply.github.com>
+Date:   Thu Jul 19 22:39:08 2018 +0200
+
+    Asterisk Script (#183)
+    
+    Asterisk App support.
+    - Channels
+    - Calls
+    - Total SIP Peers
+    - Monitored Online
+    - Monitored Offline
+    - Unmonitored Online
+    - Unmonitored Offline
+
+[33mcommit 7e55d1cd5db04019de09aff7b134a85df71e901a[m
+Author: István Sárándi <prog@istvansarandi.com>
+Date:   Mon Jun 25 16:10:00 2018 +0200
+
+    Update fail2ban extend script to new JSON format (#181)
+    
+    As seen at [this location](https://github.com/librenms/librenms/blob/7fab99cfc13b80a543fb779d68c659b52fc074b1/includes/polling/functions.inc.php#L768) the JSON output needs to contain a `data` field. The poller php script actually also extracts this `data` field as one of the first steps, see at [this line](https://github.com/librenms/librenms/blob/c3007b483a12758042e5d0c6009a8ef48e3e1a39/includes/polling/applications/fail2ban.inc.php#L36).
+    Before I changed these parts the graph didn't show up because the RRD files simply weren't generated as an exception occurred in the poller. This fixes this problem.
+
+[33mcommit b5d77f1a999c5e0f08bc02550fd24e7c37b759c7[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Mon May 28 07:22:09 2018 -0500
+
+    convert fail2ban-client to JSON (#172)
+    
+    * convert to JSON
+    
+    * add version return
+    
+    * change the version number of the returned data to 1
+
+[33mcommit 41d36dc97f6886bae4ae6e8ba928892ef9d3c8c3[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Fri Apr 27 16:46:57 2018 -0500
+
+    make using SN or device name selectable for SMART reporting (#168)
+    
+    * make using SN or device name selectable
+    
+    * change the default to SN
+
+[33mcommit 385d466eee1adc06eecd4a84cfd6615f2e4ba2ec[m
+Author: Sander Steffann <sander@steffann.nl>
+Date:   Fri Apr 13 17:42:27 2018 +0100
+
+    Add random entropy monitoring (#173)
+
+[33mcommit a56adb467a1cdf9785f977420dd07a48335f41b3[m
+Author: Serphentas <Serphentas@users.noreply.github.com>
+Date:   Wed Apr 11 10:39:32 2018 +0200
+
+    add zfs support for linux (#170)
+    
+    * add zfs support for linux
+    
+    * fix pools and anon_hits_per
+    
+    * strip percent sign for pool cap
+    
+    * fix anon_hits json key typo
+    
+    * fix demand_data_hits json key typo
+    
+    * fix comparison as in #169
+    
+    * fix min_size_percent
+
+[33mcommit 8ec6017246edc9784e670d84bd8b52ec094dbb82[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Wed Apr 11 02:34:39 2018 -0500
+
+    correct arc size breakdown (#171)
+
+[33mcommit 3ddb1d6be6b4a4a0cd006251b497bb1ccf8170e8[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Tue Apr 10 22:04:07 2018 -0500
+
+    correct arc size breakdown
+
+[33mcommit 90fd6f60f3aed5f71140d23a8d022ae9909e7473[m
+Author: Dylan Underwood <dylan@rebelmedia.io>
+Date:   Fri Mar 23 11:24:02 2018 -0500
+
+    Should be greater than or equal to (#167)
+
+[33mcommit 3a8462461595535a53554b0ad66bc922118e83d1[m
+Author: endofline <enilfodne@users.noreply.github.com>
+Date:   Tue Feb 27 23:10:35 2018 +0200
+
+    Replace disk identifier with disk serial in S.M.A.R.T snmp script (#164)
+
+[33mcommit bbd3b1309aaa3ecaf6f502e92718719539715c58[m
+Author: endofline <enilfodne@users.noreply.github.com>
+Date:   Sun Feb 18 22:33:42 2018 +0200
+
+    Fix Command_Timeout missing from SMART output (#163)
+
+[33mcommit fd9fd178a4b43feafb414822167b3033693c8efc[m
+Author: crcro <crc@nuamchefazi.ro>
+Date:   Sat Jan 6 22:06:45 2018 +0200
+
+    extend: powerdns-dnsdist (#158)
+    
+    * powerdns-dnsdist app
+    
+    * fix script in help
+    
+    * removed local data manipulation
+    
+    * again name of file in script help
+    
+    * removed personal api info
+
+[33mcommit bacaca0be4104cc003222b941e433d5470cae76d[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Sat Dec 30 05:42:37 2017 -0600
+
+    ZFS SNMP agent :3 <3 (#156)
+    
+    * Add it as it currently is. Needs to be moved over to JSON
+    
+    * rename it to zfs-freebsd as it is FreeBSD specific
+    
+    now uses JSON
+    
+    * misc. updates and document it all
+    
+    * minor spelling correction
+
+[33mcommit c7cae0765e0f5072fdf3dd224f357290e2697fb5[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Sat Dec 30 05:39:36 2017 -0600
+
+    update the fail2ban stuff (#155)
+    
+    Dropping firewall checking as the new fail2ban uses pf and anchors on
+    FreeBSD, which while esoteric as fuck works nicely and is reliable.
+
+[33mcommit 8920cd3f290e8c13a3bb7db96ceb8db05845869d[m
+Author: Slashdoom <5092581+slashdoom@users.noreply.github.com>
+Date:   Wed Dec 13 16:13:10 2017 +1300
+
+    freeradius.sh: new agent for incoming main PR (#151)
+    
+    * Update os-updates.sh
+    
+    * Update os-updates.sh
+    
+    * Update os-updates.sh
+    
+    * Create freeradius.sh
+    
+    * Update freeradius.sh
+    
+    * Update freeradius.sh
+
+[33mcommit 3b9d632a8d6dbd6ac3f42f75ba36faa235ef4440[m
+Author: arrmo <arrmo@users.noreply.github.com>
+Date:   Mon Dec 4 14:11:17 2017 -0600
+
+    hddtemp, ignore devices not supporting SMART (#153)
+
+[33mcommit 7fb48df8579a8e113153c1439a4fa92829847d9f[m
+Author: Daniel Bull <github@neonhorizon.co.uk>
+Date:   Fri Oct 27 06:41:05 2017 +0100
+
+    Fix: Apache SNMP extend IndexError (#116)
+    
+    See issue for more information:
+    https://github.com/librenms/librenms-agent/issues/95
+
+[33mcommit 2996ad88b00f24777c0e5629cb931b8b448dd515[m
+Author: dragans <dragan.savic@netcast.rs>
+Date:   Fri Oct 27 07:39:09 2017 +0200
+
+    fix: Update mysql (#127)
+    
+    Update mysql agent script based on updated changes in newest version of Percona Monitoring Plugins (Cacti template).
+    
+    Changes enable correct parsing of status data for newer versions of MySQL/MariaDB database servers and should be backward compatible with older versions.
+
+[33mcommit d0762871b4cfb0a7cbfcc5ba99bc1fe0b0c51cf3[m
+Author: Slashdoom <5092581+slashdoom@users.noreply.github.com>
+Date:   Tue Oct 10 08:02:05 2017 +1300
+
+    os-update.sh: back to package management based and count fixes (#149)
+    
+    * Update os-updates.sh
+    
+    * Update os-updates.sh
+    
+    * Update os-updates.sh
+
+[33mcommit 6a40ca1e9cc4319e6b7363541feb9681dcf5bc5f[m
+Author: tomarch <tomarch@gagniere.me>
+Date:   Wed Sep 20 21:47:11 2017 +0200
+
+    fix munin agent (#148)
+    
+    Without the full munin-scripts path, this script won't find munin file and return nothing.
+
+[33mcommit 1b03d2f9f74ca29b177e596c0ff2ba13a0e1292d[m
+Author: Uwe Arzt <mail@uwe-arzt.de>
+Date:   Wed Sep 6 20:42:58 2017 +0200
+
+    Add Oracle Linux Distribution to distro script (#146)
+    
+    * Add Oracle Linux to distro script
+    
+    * Revert local change
+
+[33mcommit 45478555df856af51e707c3cd6ace716c709e0fb[m
+Author: arrmo <arrmo@users.noreply.github.com>
+Date:   Sun Aug 27 14:59:15 2017 -0500
+
+    Update Distro, for Raspbian Support (#144)
+
+[33mcommit 3380a85ff13f0dad706690b71b2bd8e9d9452926[m
+Author: Zucht <Zucht@users.noreply.github.com>
+Date:   Sat Aug 12 17:30:02 2017 +0200
+
+    Update raspberry.sh (#143)
+    
+    Fix state WMV9
+
+[33mcommit a50e1dffb89738814a1183e2e0560ab86daaf3f0[m
+Author: Neil Lathwood <neil@lathwood.co.uk>
+Date:   Thu Aug 3 17:11:26 2017 +0100
+
+    Update raspberry.sh (#140)
+
+[33mcommit 584fd645d470e85e30607b8be3102292b4a7b54e[m
+Author: drid <drid@users.noreply.github.com>
+Date:   Wed Jul 12 22:55:02 2017 +0300
+
+    C.H.I.P. power values (#134)
+    
+    * C.H.I.P. power values
+    
+    * Added attribution
+    
+    * Fix ACIN current calculation
+    
+    * Battery current fix
+
+[33mcommit 3f9dc0f5f02c1590d6e84ac10c6f7c973d54f771[m
+Author: RedChops <RedChops@users.noreply.github.com>
+Date:   Thu Jun 29 16:11:26 2017 -0400
+
+    Fix for bug https://github.com/librenms/librenms/issues/6821 (#138)
+
+[33mcommit a4efb62466c58ee05b3c078283a2a9fecb7cd3ce[m
+Author: Stefan Funke <stefan@stadtaffe.eu>
+Date:   Wed Jun 28 22:36:26 2017 +0200
+
+    unnecessary use of wc while already calling grep (#137)
+    
+    * useless call of wc while already calling grep
+    
+    * move grep count call to CMD_GREP to stay in project style
+
+[33mcommit cc6d7882dba89bce0a1f3a27d9fd3b399a2430b9[m
+Author: einarjh <einar@haraldseid.net>
+Date:   Sat Jun 10 11:20:48 2017 +0200
+
+    Strip all non-ASCII characters from hddtemp output (#136)
+
+[33mcommit 3903f431f7f56ef4f48bd50d28c05aec8e795bc0[m
+Author: crcro <crc@nuamchefazi.ro>
+Date:   Tue Jun 6 01:00:29 2017 +0300
+
+    bash script for pi-hole app (#135)
+
+[33mcommit 84630dfb84539936efa47bfe3b13638f809a82c5[m
+Author: Félim Whiteley <felim@whiteleytech.ie>
+Date:   Wed May 31 22:23:38 2017 +0100
+
+    Fix for first line as localhost (#130)
+    
+    An example output like below where the first line of output is just "localhost" so it causes the splitting to cause an out of index error.
+    
+    Example:
+    cat /tmp/apache-snmp
+    localhost
+    ServerVersion: Apache/2.4.25 (Ubuntu) PHP/5.6.30-5+deb.sury.org~trusty+2
+    ServerMPM: prefork
+    Server Built: 2016-12-21T00:00:00
+    CurrentTime: Thursday, 18-May-2017 19:26:43 EDT
+    RestartTime: Thursday, 18-May-2017 11:35:48 EDT
+    ParentServerConfigGeneration: 2
+    ParentServerMPMGeneration: 1
+    ServerUptimeSeconds: 28255
+    ServerUptime: 7 hours 50 minutes 55 seconds
+    Load1: 0.04
+    Load5: 0.05
+    Load15: 0.10
+    Total Accesses: 5367
+    Total kBytes: 61432
+    CPUUser: 19.69
+    CPUSystem: 1.05
+    CPUChildrenUser: 0
+    CPUChildrenSystem: 0
+    CPULoad: .0734029
+    Uptime: 28255
+    ReqPerSec: .189949
+    BytesPerSec: 2226.38
+    BytesPerReq: 11721
+    BusyWorkers: 1
+    IdleWorkers: 6
+    Scoreboard: ___....._.__.W........................................................................................................................................
+
+[33mcommit 16178c6ac31ed2511243ccfab5b25b69b031d3fa[m
+Author: Aldemir Akpinar <aldemira@users.noreply.github.com>
+Date:   Thu Jun 1 00:23:07 2017 +0300
+
+    Added devuan support for os-updates.sh and removed code repitition (#131)
+
+[33mcommit f473c5e30ca0649baa590dd5a7f041ce91f57e73[m
+Author: BlackDex <black.dex@gmail.com>
+Date:   Tue May 23 14:44:05 2017 +0200
+
+    Added try-except checks for global values. (#107)
+    
+    Fixed an error which prevented output.
+    It seems some ceph version probably use different values or something. This is a quick fix to have the script output the correct values.
+
+[33mcommit 6fdcc91f7041ad49cbb906b814a1b5ecf8fd2e4c[m
+Author: Karl Shea <karlshea@gmail.com>
+Date:   Thu May 4 02:06:32 2017 -0500
+
+    Fix bind config file read (#125)
+
+[33mcommit e3dad6cfc9c6549e1f5cfef41ef2cf20a9827352[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Wed May 3 09:23:40 2017 -0500
+
+    BIND cleanup and expansion (#108)
+    
+    * add BIND named SNMP extend
+    
+    * nolonger piss the entire stats across the wire, but crunch them and return them
+    
+    * more work on bind
+    
+    * more misc. updates
+    
+    * add proper agent support as well as optional zeroing
+    
+    * add -m
+
+[33mcommit 69eee9fb898bd521e3f4ab5d2d93cf5b34949e1d[m
+Author: Aldemir Akpinar <aldemira@users.noreply.github.com>
+Date:   Tue May 2 12:22:19 2017 +0300
+
+    Added Devuan GNU/Linux support (#124)
+
+[33mcommit eaa6af235978405418d8e6d6e0beb04f761a578b[m
+Author: crcro <crc@nuamchefazi.ro>
+Date:   Thu Apr 27 22:54:55 2017 +0300
+
+    snmp-extend: sdfsinfo (#122)
+    
+    * sdfsinfo app snmp extend
+    
+    * rewrite script to bash
+    
+    * more vars
+
+[33mcommit 69e1ace889cfee6963cc6506a5e96fb30cabac1b[m
+Author: RedChops <RedChops@users.noreply.github.com>
+Date:   Sat Apr 22 19:29:00 2017 -0400
+
+    Include missing SMART ids in the output (#120)
+
+[33mcommit 705cc0f3fe62e4837ecf4be86dec95558ca07ff3[m
+Author: Svennd <svennson@gmail.com>
+Date:   Tue Apr 18 22:34:05 2017 +0200
+
+    add support for SGE/rocks job tracker (#118)
+
+[33mcommit d7085e001cebf0bf086b84ac0c65cad54f90ee38[m
+Author: Chris Putnam <putnam@users.noreply.github.com>
+Date:   Tue Apr 18 13:32:41 2017 -0700
+
+    hddtemp: parallelize calls to hddtemp for performance (#117)
+    
+    This poll script runs hddtemp with a list of all drives as arguments and reads the output. hddtemp scans each drive's SMART status serially, which scales poorly with a large number of drives.
+    
+    In lieu of a patch to the actual hddtemp project, optionally use GNU parallel when available to parallelize the call to hddtemp.
+    
+    In testing a machine with 58 drives I went from a runtime of about 5 seconds per run to 0.5s, a performance improvement of 10x.
+
+[33mcommit 5f47aad492a679a81da0a19f2649f60d6637e199[m
+Author: Chris Putnam <putnam@users.noreply.github.com>
+Date:   Fri Apr 7 01:45:56 2017 -0500
+
+    hddtemp: improve detection of drives (#115)
+    
+    Previously, this script was only able to find 26 drives (sda-sdz) due to the use of globbing.
+    
+    A better strategy for detecting drives would be to use lsblk on systems that support it, failing over to globbing.
+    
+    This patch adds support both for lsblk and a more comprehensive glob solution with find that will at least catch 26^2 drives.
+
+[33mcommit 67bae5a86cfe47c90ade541c1e613f7e5e788cfd[m
+Author: Philip Rosenberg-Watt <PhilRW@users.noreply.github.com>
+Date:   Thu Apr 6 03:24:36 2017 -0600
+
+    fix: Update proxmox agent to use new Perl module (#88)
+    
+    PVE::API2Client is deprecated in Proxmox 4.4-6. Agent now requires
+    installation of libpve-apiclient-perl via apt.
+    
+    This commit fixes #81.
+
+[33mcommit a7fe1f8e6f98640463a93f934ac2580311db09ca[m
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Wed Mar 29 19:11:23 2017 -0500
+
+    Copy powerdns-recursor to snmp and remove <<<powerdns-recursor>>> header (#111)
+
+[33mcommit 74faec281c13928e60c140d85bb3138e7297fa79[m
+Author: Florian Beer <fb@42dev.eu>
+Date:   Thu Mar 30 00:00:26 2017 +0200
+
+    Postfix app bug fixes (#105)
+    
+    * Postfix app bug fixes
+    
+    - add missing DS
+    - fix some totals
+    
+    * Move new variable to end of output
+
+[33mcommit 1e7762fb4eb832ed9d7530994804a284028c9c7c[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Wed Mar 22 09:28:57 2017 -0500
+
+    add SMART SNMP extend script (#101)
+    
+    * add SMART SNMP extend
+    
+    * cleanup default disk examples
+    
+    * correct a small typo
+    
+    * add option caching support
+    
+    * add checking selftest log and nolonger zeros non-existent IDs
+    
+    * now uses a config file
+    
+    * add the ability to guess at the config
+    
+    * properly remove device entries with partitions now and avoid adding dupes in a better manner
+    
+    * now have smartctl scan as well to see if it missed anything
+    
+    * note why ses and pass are ignored
+    
+    * properly use the cache file in the config now
+    
+    * actually use the cache now
+
+[33mcommit 94aa0feacdfc71b6d8044c66992069538071ca39[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Sun Mar 19 13:03:59 2017 -0500
+
+    add unbound SNMP extend script (#102)
+
+[33mcommit 495f46afb431a0ef29fe58c40a01c7f9d352c3d5[m
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Fri Mar 10 06:29:19 2017 -0600
+
+    Update mysql script to php7 version... (#104)
+    
+    * Update mysql script to php7 version...
+    
+    * Update mysql
+
+[33mcommit 61579bf0ace0a963f6ffbf9ca263910c5f6614fe[m
+Author: Tuxis Internet Engineering V.O.F <mark@tuxis.nl>
+Date:   Wed Mar 8 09:51:04 2017 +0100
+
+    Enable ipv6 in Xinetd (#100)
+    
+    * Fix indenting and enable IPv6 in Xinetd
+    
+    * Fix changelog
+    
+    * Typo
+
+[33mcommit 7f79fc4167adac967d89d0ee6277f78886a5c7b9[m
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Tue Mar 7 23:48:15 2017 -0600
+
+    Update mysql
+
+[33mcommit 1b1d8b491f842edc3e04c5405ae13de4f60a6751[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Tue Mar 7 23:40:09 2017 -0600
+
+    clean up  snmp/mysql_stats.php and make it a proper snmpd extend script now (#99)
+    
+    * cleanup and make it something that can properly be invoked via cli
+    
+    * blank the user/pass/host bits increasing the chances it will work out of the box
+    
+    * Update mysql_stats.php
+    
+    * Update mysql_stats.php
+    
+    * Update mysql_stats.php
+    
+    * Update mysql_stats.php
+    
+    * Rename mysql_stats.php to mysql
+
+[33mcommit e7c331070100290b3780ba6907add81be82165c6[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Fri Mar 3 14:41:38 2017 -0600
+
+    add Nvidia SNMP extend poller (#94)
+    
+    * add Nvidia SNMP extend
+    
+    * update the extend path
+    
+    * now support more than 4 GPUs
+    
+    this will now support how ever many GPUs are installed on a system...
+    
+    Just double checked and it appears nvidia-smi dmon only reports up to 4 GPUs at a time... so if we have more than 4, begin checking they exist and if so print them
+
+[33mcommit 2308481188f72bbad12d7d94ebd941a73fc97655[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Fri Mar 3 12:55:55 2017 -0600
+
+    add squid snmp extend (#93)
+
+[33mcommit 2700598925c8481641def507a4bf902a27cb01af[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Fri Mar 3 08:49:15 2017 -0600
+
+    FreeBSD NFS extends (#90)
+    
+    * add the FreeBSD NFS client and server extends
+    
+    * white space cleanup
+    
+    * white space cleanup
+
+[33mcommit db3b5c7cec8fa35832739e742c84fa61e465bd9f[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Wed Mar 1 17:46:13 2017 -0600
+
+    add Postgres SNMP extend (#91)
+    
+    * add Postgres SNMP extend
+    
+    * minor comment cleanups
+    
+    * use env for check_postgres.pl
+    
+    * quote the string
+
+[33mcommit 42e488743917fd39019ac9300caf391a5a8120c8[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Wed Mar 1 12:35:06 2017 -0600
+
+    add detailed Postfix poller (#92)
+    
+    * add detailed postfix poller
+    
+    * env perl
+
+[33mcommit c4101c9ef2a8e8dffbfaee55f067c7c89fe18e27[m
+Merge: bb4c67b 8343e7f
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Fri Feb 24 11:10:43 2017 -0600
+
+    Merge pull request #84 from VVelox/master
+    
+    add a snmpd extend script for fail2ban
+
+[33mcommit 8343e7f34e1c382051f65bb9d7cf5bad454b934e[m
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Fri Feb 24 11:09:21 2017 -0600
+
+    Update fail2ban
+
+[33mcommit 4fcce9f01dd5b0c7979a2ebc95298ff40239bfd9[m
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Fri Feb 24 11:02:19 2017 -0600
+
+    Redefining $firewalled
+
+[33mcommit 8bfbce68e503b2ddcdcc9619307d168b1c332df3[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Thu Feb 23 09:54:38 2017 -0600
+
+    if cache older than 360 seconds, don't use it
+
+[33mcommit 0a78888889d1e67e5696bb59e2c8fff4fd76f9ff[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Thu Feb 23 09:13:59 2017 -0600
+
+    use $f2bc for getting jail status now and not just only overall status
+
+[33mcommit 1e160b86e46ff7023ea13d8de13fe98e52e3b270[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Thu Feb 23 08:46:18 2017 -0600
+
+    don't reuse the variable $iptables
+
+[33mcommit 4b53918a7d09dc705c761c6eba3d0b68caca7159[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Thu Feb 23 08:45:04 2017 -0600
+
+    poke the user about setting a iptables path as well
+
+[33mcommit 90620a8558e0b164fb2a714c007b14b1ba1b1567[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Thu Feb 23 08:40:59 2017 -0600
+
+    misc. path cleanups
+
+[33mcommit 5ee0faa2c38e887b61b34fd4140ae23a8583d350[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Wed Feb 22 21:58:03 2017 -0600
+
+    make caching optional
+
+[33mcommit 4ffd86f8bdbe8825ac0793c1cf0b86a886656f34[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Wed Feb 22 21:42:53 2017 -0600
+
+    Update fail2ban
+
+[33mcommit 0227094c6fc9cf31d7d5f9a45a63e093b6e38aa5[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Mon Feb 20 13:18:50 2017 -0600
+
+    track both firewall and fail2ban-client
+
+[33mcommit 3932875ce04c1b51b8bf4c43c9934f2b29800acb[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Mon Feb 20 03:50:59 2017 -0600
+
+    correct a comment
+
+[33mcommit c367e9ff9d61f9cee619c19278a2bdc6d8fc7637[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Mon Feb 20 03:49:50 2017 -0600
+
+    now requires cron usage
+
+[33mcommit d90f3e879200108794beb7a2a4cc047f2938899e[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Sun Feb 19 23:41:51 2017 -0600
+
+    use fail2ban-client instead
+
+[33mcommit 710f38e8ff7cee520f9c7cc8ada421b6f32684c5[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Sat Feb 18 00:09:12 2017 -0600
+
+    move this over to perl and properly check iptables
+
+[33mcommit 6f76427952194ca6036181c31402887e72317308[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Fri Feb 17 23:08:53 2017 -0600
+
+    remove pointless exit
+
+[33mcommit 4b600ad2b41be4f338f1745320b3dbd64c5f5ba9[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Fri Feb 17 23:08:25 2017 -0600
+
+    whoops, forgot to remove \ as well
+
+[33mcommit bb4c67b217fc6f553c36861d4da0c5edfd61913c[m
+Merge: ff6ee0e e3f3bd3
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Fri Feb 17 22:42:57 2017 -0600
+
+    Merge pull request #86 from florianbeer/patch-1
+    
+    Update shebang
+
+[33mcommit 6955e5d410f87be4423ac86111841721292911fd[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Fri Feb 17 10:33:02 2017 -0600
+
+    don't assume it appends the jail name
+
+[33mcommit 8b78f863d34f24858ca3d061df02efa6213d3b3b[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Fri Feb 17 10:32:27 2017 -0600
+
+    update to check fail2ban and f2b
+
+[33mcommit e3f3bd3efb36ee391430d61d363afa1e8d322ae3[m
+Author: Florian Beer <fb@42dev.eu>
+Date:   Fri Feb 17 16:37:00 2017 +0100
+
+    Update shebang
+    
+    With the original shebang this script didn't work on Debian and Ubuntu machines. Using `/usr/bin/env bash` makes the script more portable.
+
+[33mcommit ff6ee0e2bc0e84ce1b0c4276713f8cb70d3154a2[m
+Author: Robert Verspuy <robert@exa.nl>
+Date:   Fri Feb 17 01:46:13 2017 +0100
+
+    Fixed correct amount of pipeline symbols when degrees symbol is missing. (#85)
+    
+    When the script is called through xinetd/check_mk (on my system), there is no degree symbol, but a space.
+    Changed the script to handle both correctly
+
+[33mcommit 21c953d11af41e1256ecf92070fc36b999b1e084[m
+Merge: 1ec8f20 58d1726
+Author: kitsune <kitsune@vixen42.vulpes.vvelox.net>
+Date:   Thu Feb 16 11:30:03 2017 -0600
+
+    Merge branch 'master' of https://github.com/librenms/librenms-agent
+
+[33mcommit 1ec8f204ee0c96ca0a9cf77dff7bdb0f79402462[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Thu Feb 16 10:50:46 2017 -0600
+
+    add fail2ban snmpd extend script
+
+[33mcommit 58d17264c7d57978a408b800084f153857d3b3f9[m
+Author: rockyluke <rockyluke@offline.net>
+Date:   Thu Feb 16 16:12:01 2017 +0100
+
+    Use command -v instead binary path (#80)
+
+[33mcommit 60becc9b3a9429a42faae18440821b90ac6586fc[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Thu Feb 16 09:10:53 2017 -0600
+
+    add a single pool php-fpm net-snmpd extend poller (#83)
+
+[33mcommit 677bd4187e90211a70419e01fe97a809c6cabfd0[m
+Author: VVelox <vvelox-github@vvelox.net>
+Date:   Wed Feb 15 11:37:18 2017 -0600
+
+    add a single pool php-fpm net-snmpd extend poller
+
+[33mcommit 575956cae3ea5fcb014db3777a83e52026f95baa[m
+Author: crcro <crc@nuamchefazi.ro>
+Date:   Fri Jan 20 10:47:30 2017 +0200
+
+    snmp: exim-stats (#79)
+    
+    * exim-stats frozen mails
+    
+    * added total queue info
+
+[33mcommit d090686b722a1b0d8ded3ebfedec5c3b0f8a46a3[m
+Merge: ae43e5f dc60463
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Wed Dec 14 16:39:59 2016 -0600
+
+    Merge pull request #75 from bungojungo/master
+    
+    Added fedora support to distro/os-updates
+
+[33mcommit ae43e5f493941aab81c96e3dc9378da434b55ce6[m
+Merge: 6c130ea de1f177
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Wed Dec 14 16:39:47 2016 -0600
+
+    Merge pull request #73 from paulgear/master
+    
+    Make ups-nut work on Debian Jessie
+
+[33mcommit 6c130ea65e191d76a12b7d6d31d4726937b0f3e4[m
+Merge: e527768 3d061d2
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Wed Dec 14 16:34:10 2016 -0600
+
+    Merge pull request #76 from murrant/powerdns-python26
+    
+    Support python2.6 for powerdns scripts
+
+[33mcommit 3d061d24079d0dcb7458a75b3d83d5aaba43acc9[m
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Wed Dec 14 16:27:15 2016 -0600
+
+    Support python2.6 for powerdns scripts
+    fixes #67
+
+[33mcommit dc604636bccd8779bd261b013af4872cad14e1f0[m
+Author: Jason Scalia <jscalia@gmail.com>
+Date:   Wed Dec 7 22:11:48 2016 -0500
+
+    added fedora/dnf support
+
+[33mcommit 8b3ca2dac293ef132f1e48afa871b7158d692d90[m
+Author: Jason Scalia <jscalia@gmail.com>
+Date:   Wed Dec 7 21:48:22 2016 -0500
+
+    Added fedora support
+
+[33mcommit de1f1775cc26aacb931141182c212de706b80b5f[m
+Author: Paul Gear <github@libertysys.com.au>
+Date:   Sat Dec 3 14:16:54 2016 +1000
+
+    Restore previous default UPS name
+
+[33mcommit 465ec12dd4757baa95560b11f89a433f05fb7454[m
+Author: Paul Gear <github@libertysys.com.au>
+Date:   Sat Dec 3 14:07:02 2016 +1000
+
+    Make ups-nut work on Debian Jessie
+    
+    This script was broken on Debian Jessie (and probably
+    all other Debian-based distros, including Ubuntu).
+    This commit removes the hard-coding of paths and uses
+    $PATH per normal bash practice, and should work on a
+    wider range of shell variants.
+
+[33mcommit e52776889cea5e3379422ce4ffb7171bba4fbdf1[m
+Author: arrmo <arrmo@users.noreply.github.com>
+Date:   Sat Nov 26 02:12:41 2016 -0600
+
+    Update to Distro (to support dd-wrt) (#72)
+
+[33mcommit c5fea261dea71cc9600936455bdf357cc062b220[m
+Author: Mathias B <matunixe@users.noreply.github.com>
+Date:   Thu Nov 17 09:31:56 2016 +0100
+
+    Add Debian support (#71)
+    
+    Before that only Ubuntu was supported, now Debian users can use this nice script too!
+
+[33mcommit 36ed3f008c6f2a0cc0be0cdb1ce9199a6e495dbc[m
+Author: Karl Shea <karlshea@gmail.com>
+Date:   Sat Oct 8 15:26:07 2016 -0500
+
+    Agent: script to collect data from GPSD (#69)
+
+[33mcommit 91c251fd94d73f44e8757b242db82ed240f80a1d[m
+Author: Tuxis Internet Engineering V.O.F <mark@tuxis.nl>
+Date:   Wed Oct 5 11:06:48 2016 +0200
+
+    fix: a dirty hack to prevent failing of stats when the cluster is rebuilding (#68)
+    
+    because Ceph returns '-inf' which the json decompiler doesn't seem to get..
+
+[33mcommit dd365168a5eedf655d87e34e89664b191f855a15[m
+Author: crcro <crc@nuamchefazi.ro>
+Date:   Mon Oct 3 21:27:56 2016 +0300
+
+    fix conflict (#66)
+
+[33mcommit 58e16b794a0e33d0dd71d8c1f936bc8b25ad7ced[m
+Author: crcro <crc@nuamchefazi.ro>
+Date:   Sun Sep 25 16:28:37 2016 +0300
+
+    snmp-extend: os-updates (#65)
+    
+    * reverted back to os-release checks, added arch pacman
+    
+    * fixed file name
+
+[33mcommit 2699cde73fcbca9e556a762dcfd90c81e5561d26[m
+Author: crcro <crc@nuamchefazi.ro>
+Date:   Sun Sep 25 16:28:00 2016 +0300
+
+    snmp-extend: ups-apcups (#58)
+    
+    * snmp-extend-ups-apcups
+    
+    * rewrite of apc ups
+    
+    * header fix
+    
+    * header fix
+
+[33mcommit fa308bfe3f388f110e9df083d6b2c649fa69472e[m
+Author: crcro <crc@nuamchefazi.ro>
+Date:   Sat Sep 24 20:30:09 2016 +0300
+
+    snmp-extend: ups-nut update 1 (#63)
+    
+    * new code for better matching, snmp-extend compliance
+    
+    * removed unused vars
+    
+    * extra fixes
+    
+    * removed the need of tmp file
+    
+    * removed charge_low, deemed useless by user
+    
+    * removed values that are not plottable
+    
+    * readded ds
+
+[33mcommit f63c4ab7bea382b08d0450b42a374db082ccd0ef[m
+Merge: c1c537e d9f36a8
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Mon Sep 12 22:01:51 2016 -0500
+
+    Merge pull request #61 from crcro/app-ntp-server-update-1
+    
+    app: ntp-server update 1
+
+[33mcommit c1c537eea11fde70435e88b28b17292dc7c72f75[m
+Merge: 9a2716d 11a9fce
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Mon Sep 12 22:01:24 2016 -0500
+
+    Merge pull request #57 from crcro/snmp-extend-ups-nut
+    
+    snmp-extend: ups-nut
+
+[33mcommit 9a2716dc83ad11462495e5ee804fb122eb402faa[m
+Merge: 87cc835 85ae77c
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Mon Sep 12 19:33:07 2016 -0500
+
+    Merge pull request #60 from crcro/remove-ntp-php
+    
+    remove obsolete ntp scripts
+
+[33mcommit d9f36a84b13dd42361d24df11d6cb60c7b71f260[m
+Author: crcro <crc@nuamchefazi.ro>
+Date:   Mon Sep 12 12:48:17 2016 +0300
+
+    cleaner code
+
+[33mcommit 28cae5cff3b87532fd145c55de5b22aa0f4c6d05[m
+Author: crcro <crc@nuamchefazi.ro>
+Date:   Mon Sep 12 11:52:13 2016 +0300
+
+    better handling default case
+
+[33mcommit aeecb1621c8ed5863d5c7563ffc96047909b8cfa[m
+Author: crcro <crc@nuamchefazi.ro>
+Date:   Mon Sep 12 11:45:14 2016 +0300
+
+    header fix
+
+[33mcommit f48f4cc6e513773fac094d6b3115954deaeacbc7[m
+Author: crcro <crc@nuamchefazi.ro>
+Date:   Mon Sep 12 11:43:34 2016 +0300
+
+    update 1 ntp server
+
+[33mcommit 87cc835096ffdd4f8310b51e684f63aa7726d14d[m
+Author: crcro <crc@nuamchefazi.ro>
+Date:   Sat Sep 10 19:08:03 2016 +0300
+
+    os-updates.sh clean (#59)
+
+[33mcommit 85ae77c01c28308dd1f58b897aa7c8efe5b87386[m
+Author: crcro <crc@nuamchefazi.ro>
+Date:   Sat Sep 10 04:50:33 2016 +0300
+
+    remove obsolete ntpd-server.php
+
+[33mcommit 262f798a9737a5b62bef0ab7a657782a934b86ac[m
+Author: crcro <crc@nuamchefazi.ro>
+Date:   Sat Sep 10 04:48:55 2016 +0300
+
+    remove obsolete ntp-client.php script
+
+[33mcommit 11a9fcef62571e12168b8c1e9d1ac604b65c227d[m
+Author: crcro <crc@nuamchefazi.ro>
+Date:   Fri Sep 9 15:36:01 2016 +0300
+
+    snmp-extend-ups-nut
+
+[33mcommit 6128dc3c7133802ff66b199bc99289fb07761d6e[m
+Author: vectr0n <vectr0n@users.noreply.github.com>
+Date:   Fri Sep 9 02:16:28 2016 -0400
+
+    Update hddtemp to include hddtemp -w option (#56)
+    
+    hddtemp gives inconsistent values in it's current state, after some debugging I was able to resolve the issue by passing -w to the hddtemp command, this will wake-up the drive if it is in a sleep state to gather information.
+
+[33mcommit 42bc0a07aab450e242471e271380fc29642b34e7[m
+Author: crcro <crc@nuamchefazi.ro>
+Date:   Wed Sep 7 22:37:31 2016 +0300
+
+    ntp-client app using shell only, tested with ntpq 4.2.8p8 (#54)
+
+[33mcommit 718d627cfdbad19848a384fc8eaba332dcaef504[m
+Author: crcro <crc@nuamchefazi.ro>
+Date:   Wed Sep 7 22:37:23 2016 +0300
+
+    app: ntp-server  (#55)
+    
+    * ntp-server app using shell only, tested with 4.2.8p8
+    
+    * fix for higher stratum value
+    
+    * change the description in comment to reflect latest webui push
+
+[33mcommit 351e5aa7bc6f1a79d51b1bd098cace659c1b0e9f[m
+Author: Tatermen <rick@fuzzi.org.uk>
+Date:   Sun Aug 28 20:06:04 2016 +0100
+
+    Freeswitch (#53)
+    
+    feature: Added freeswitch support
+
+[33mcommit 839b518358d2acb488c3d7709e12392ee2b4c224[m
+Merge: 6a84755 561efa4
+Author: Neil Lathwood <neil@lathwood.co.uk>
+Date:   Tue Aug 23 21:48:08 2016 +0100
+
+    Merge pull request #52 from murrant/move-scripts
+    
+    SNMP extend scripts from the main repo
+
+[33mcommit 561efa41be5e22614912300ac9242582340e0662[m
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Mon Aug 22 21:35:13 2016 -0500
+
+    SNMP extend scripts from the main repo
+
+[33mcommit 6a84755105f651d03939310b4bd5a3cd85dc90dd[m
+Merge: c2e4c33 deb3683
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Sun Aug 21 19:58:13 2016 -0500
+
+    Merge pull request #51 from crcro/dhcp_pretty
+    
+    rewrite dhcp-stats with loop
+
+[33mcommit deb36833f17d31ddd6176aa7dfc3767817e7c446[m
+Author: crcro <crc@nuamchefazi.ro>
+Date:   Mon Aug 22 01:45:23 2016 +0300
+
+    @paulgear recomandation
+
+[33mcommit c2e4c33abf5edbc0b7a5a00f8871f87d4d0f0513[m
+Merge: 672918c 9cd81f1
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Wed Aug 17 09:59:11 2016 -0500
+
+    Merge pull request #50 from OpcaoTelecom/unbound
+    
+    Added unbound stats script
+
+[33mcommit 9cd81f1b930e2ed777ecf3bf6c7deff65df6e564[m
+Author: Alan Gregory <alan@opcaonet.com.br>
+Date:   Wed Aug 17 09:36:39 2016 -0300
+
+    Added unbound stats script
+
+[33mcommit 672918c40fd87455398267cbf744a52362f738a7[m
+Merge: 9fe5444 87584e7
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Tue Aug 16 12:43:10 2016 -0500
+
+    Merge pull request #48 from crcro/raspberry-sensors
+    
+    raspberry sensors
+
+[33mcommit 9fe5444738d086b1d33f92ca0e5905a14cd9c8a0[m
+Merge: c3afbf3 b6bdb9e
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Mon Aug 15 22:57:52 2016 -0500
+
+    Merge pull request #49 from murrant/ntp
+    
+    Copy ntp scripts from the main repo.
+
+[33mcommit b6bdb9ea45d579becc8f858090e8b7d3e4c809ea[m
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Mon Aug 15 22:56:31 2016 -0500
+
+    Copy ntp scripts from the main repo.
+
+[33mcommit 87584e7ef79996db60cd62e64dd4cbaf53a0bac8[m
+Author: crcro <crc@nuamchefazi.ro>
+Date:   Sun Aug 14 17:43:27 2016 +0300
+
+    added snmp extend to get raspberry sensors
+
+[33mcommit c3afbf35bd81bff0dbcdb67e6657dd042ae67588[m
+Merge: 9623342 aa59548
+Author: Neil Lathwood <neil@lathwood.co.uk>
+Date:   Tue Aug 9 19:47:51 2016 +0100
+
+    Merge pull request #45 from murrant/os-updates
+    
+    Do not detect os, detect package managers
+
+[33mcommit 9623342554317ba55f7a987d18250e941a0a7c1f[m
+Merge: 0f5a115 7828777
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Tue Aug 9 13:08:41 2016 -0500
+
+    Merge pull request #46 from murrant/distro
+    
+    Update distro to match the main repo file
+
+[33mcommit aa59548e0c3d6e5462cd2342ca671dc72430c3f1[m
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Tue Aug 9 12:50:23 2016 -0500
+
+    Do not detect os, detect package managers.
+    Add pacman support.
+
+[33mcommit 78287777696f6569dfe575770f1c47553fddd5a9[m
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Tue Aug 9 11:40:01 2016 -0500
+
+    Update distro to match the main repo file
+
+[33mcommit 0f5a1150f373371fc508e160e58c56cea5adbb99[m
+Merge: d6308e4 05fe3f8
+Author: Neil Lathwood <neil@lathwood.co.uk>
+Date:   Thu Aug 4 18:53:10 2016 +0100
+
+    Merge pull request #40 from florianbeer/patch-1
+    
+    Add Debian and make update call more robust
+
+[33mcommit d6308e4e1c04d69688d724c7c5c04ab0a3c94fbc[m
+Merge: 3740f3e 2accc28
+Author: Neil Lathwood <neil@lathwood.co.uk>
+Date:   Wed Aug 3 21:09:08 2016 +0100
+
+    Merge pull request #42 from crcro/app-dhcp-stats
+    
+    app-dhcp-stats snmp extend
+
+[33mcommit 2accc2848c44f8c2c33a455eb1a2e4ffe801921c[m
+Author: crcro <crc@nuamchefazi.ro>
+Date:   Wed Aug 3 22:09:55 2016 +0300
+
+    app-dhcp-stats snmp extend
+
+[33mcommit 05fe3f8cc195b797f69b0599ca2a2e198f0b5d0c[m
+Author: Florian Beer <fb@42dev.eu>
+Date:   Wed Aug 3 12:16:22 2016 +0200
+
+    Remove update call as this requires root
+    
+    See discussion here https://github.com/librenms/librenms-agent/pull/40#issuecomment-237198796
+
+[33mcommit fac01628a07cf8083f91d9924ab8d63a9d4141db[m
+Author: Florian Beer <fb@42dev.eu>
+Date:   Wed Aug 3 04:51:35 2016 +0200
+
+    Add Debian and make update call more robust
+    
+    - Debian based systems need to update the index before being able to report upgradable packages.
+    - Debian old-stable doesn't have `apt` yet and Ubuntu 14.04 emits the following warning when using `apt` in a script:
+    `WARNING: /usr/bin/apt does not have a stable CLI interface yet. Use with caution in scripts.`
+    
+    By using `apt-get`, issuing a `update` call first and then counting the result of `grep 'Inst'`, this script now works on Debian 7, Debian 8, Ubuntu 14.04 and Ubuntu 16.04.
+
+[33mcommit 3740f3e147d7d97e10e4b8e77757ab67deb2bb84[m
+Merge: fb678cb 1964aec
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Tue Aug 2 20:35:16 2016 -0500
+
+    Merge pull request #38 from crcro/master
+    
+    app: nfs-v3-stats
+
+[33mcommit fb678cb58df6277be2176e8a45a08af1d8dcb8d5[m
+Merge: 1d4c452 8d7e0df
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Mon Aug 1 11:26:27 2016 -0500
+
+    Merge pull request #39 from xbeaudouin/fix_distro_freebsd
+    
+    Add FreeBSD detection to distro script
+
+[33mcommit 8d7e0df4eb1e35b776aa17d2e6c2ea202cc021a7[m
+Author: xavier.beaudouin <xavier.beaudouin@gandi.net>
+Date:   Mon Aug 1 11:15:52 2016 +0200
+
+    Add FreeBSD detection to distro script
+
+[33mcommit 1d4c4529ae907b343b7ffcb6eaeb94563ad2cb69[m
+Merge: dde18e9 760f9de
+Author: Paul Gear <github@libertysys.com.au>
+Date:   Sat Jul 30 14:14:39 2016 +1000
+
+    Merge pull request #37 from xbeaudouin/master
+    
+    Fix some bash scripts to work with FreeBSD
+
+[33mcommit 1964aece5e421391cc6cb589c668da0b5f2eeaee[m
+Author: crcro <crc@nuamchefazi.ro>
+Date:   Fri Jul 29 20:22:35 2016 +0300
+
+    added snmp extend script for os-updates application
+
+[33mcommit 57b6224254eb3992e09358df2d867573512f6809[m
+Author: crcro <crc@nuamchefazi.ro>
+Date:   Fri Jul 29 20:19:41 2016 +0300
+
+    added snmp extend script for nfs-v3-stats application
+
+[33mcommit 760f9de567a2876b0ad793979754661946b92c5c[m
+Author: xavier.beaudouin <xavier.beaudouin@gandi.net>
+Date:   Fri Jul 29 13:23:20 2016 +0200
+
+     /bin/bash  => /usr/bin/env bash to allow freebsd agent work without patching each files
+
+[33mcommit dde18e98954c83fb52ae89083214814b5515a6c1[m
+Merge: 18f4006 9a3846c
+Author: Neil Lathwood <neil@lathwood.co.uk>
+Date:   Tue Jul 26 20:46:20 2016 +0100
+
+    Merge pull request #36 from murrant/powerdns-recursor
+    
+    PowerDNS Recursor agent
+
+[33mcommit 18f4006e09a1436013eee8ed77927585f714fc43[m
+Merge: f75fc9f fc07e27
+Author: Neil Lathwood <neil@lathwood.co.uk>
+Date:   Tue Jul 26 20:45:38 2016 +0100
+
+    Merge pull request #33 from murrant/mysql-php7
+    
+    Use mysqli instead of mysql
+
+[33mcommit f75fc9fce5a82c47e1303f5514eb0c421ad5cf93[m
+Merge: bfdf71d c70d12c
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Fri Jul 22 21:13:58 2016 -0500
+
+    Merge pull request #35 from murrant/duplicate-nfsstats
+    
+    Remove duplicate nfsstats file
+
+[33mcommit 9a3846cac30515a7a01a44ecc9fc6e08e78df1f5[m
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Fri Jul 22 15:33:16 2016 -0500
+
+    PowerDNS Recursor agent
+
+[33mcommit c70d12c83c00e180da8a7e8281acdbd8e4741fa1[m
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Fri Jul 22 15:22:48 2016 -0500
+
+    Remove duplicate nfsstats file
+
+[33mcommit bfdf71d6995ced14ebd1e25042a60c7107a57dc0[m
+Merge: 41cb583 9501c2f
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Thu Jul 21 22:30:29 2016 -0500
+
+    Merge pull request #34 from murrant/nfs
+    
+    Copy nfsstats script from main repo.
+
+[33mcommit 9501c2f4ffd4649982521c387b3d9dcab1de83d9[m
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Thu Jul 21 22:28:41 2016 -0500
+
+    Copy nfsstats script from main repo.
+    Send PR to remove scripts from the main repo.
+
+[33mcommit fc07e27c37c74d47c61aeac3cb966062f8da63a2[m
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Thu Jul 21 22:26:02 2016 -0500
+
+    Fix permissions
+
+[33mcommit 41cb5835ff3b0ca41a6392f19e43d590bd08d785[m
+Merge: db44c10 9bad4df
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Thu Jul 21 21:48:27 2016 -0500
+
+    Merge pull request #32 from tuxis-ie/proxmox-issue-28
+    
+    Proxmox issue 28
+
+[33mcommit e80b025818f2f993f4443be3100c5bcd1331812a[m
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Thu Jul 21 21:31:25 2016 -0500
+
+    Use mysqli instead of mysql
+
+[33mcommit 9bad4dfb3e586d7892709284cccf17417cf5ec03[m
+Author: Mark Schouten <mark@tuxis.nl>
+Date:   Wed Jul 13 15:06:57 2016 +0200
+
+    Something like this @einarjh ?
+
+[33mcommit 6d27c7edb3f4972a89fbf5641c4ece106b5dbc09[m
+Author: Mark Schouten <mark@tuxis.nl>
+Date:   Mon Jul 11 17:06:14 2016 +0200
+
+    Wrap these calls in an eval to prevent it from dying if its a container instead of a qemu vm. Fixes #28
+
+[33mcommit db44c1070950c2e06565a39395bb09f09a023b4a[m
+Merge: d00ce4a 5b21301
+Author: Neil Lathwood <neil@lathwood.co.uk>
+Date:   Sat Jul 9 19:12:59 2016 +0100
+
+    Merge pull request #31 from librenms/nfsstats
+    
+    Added nfsstats.sh file
+
+[33mcommit 5b21301ecdb761fa0e32f9295c8ea60aef44f3a7[m
+Author: Neil Lathwood <neil@lathwood.co.uk>
+Date:   Sat Jul 9 19:12:13 2016 +0100
+
+    Added nfsstats.sh file
+
+[33mcommit d00ce4a15a6b52753d108d1aeb2a768e7bfafe36[m
+Merge: c996b54 ca5a5a1
+Author: Neil Lathwood <neil@lathwood.co.uk>
+Date:   Thu Jun 30 08:57:07 2016 +0100
+
+    Merge pull request #29 from murrant/powerdns-python3
+    
+    Python3 fixes for powerdns agent.  Compatible with python2.
+
+[33mcommit ca5a5a12c065eb67e48410ed09ff97630a76f6b8[m
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Wed Jun 29 19:52:10 2016 -0500
+
+    Python3 fixes for powerdns agent.  Compatible with python2.
+
+[33mcommit c996b54e79b317785c58963abb6f71c31e61ba10[m
+Merge: fb7912b 8328d71
+Author: Neil Lathwood <neil@lathwood.co.uk>
+Date:   Thu Jun 9 11:38:43 2016 +0100
+
+    Merge pull request #27 from murrant/rrdcached
+    
+    Local script to collect stats from rrdcached
+
+[33mcommit 8328d71c0995fa8f6dc7c50de940fbe9b242fc41[m
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Wed Jun 8 20:35:19 2016 -0500
+
+    Local script to collect stats from rrdcached
+    Being able to connect to local unix sockets is the primary advantage of this.
+
+[33mcommit fb7912beda4181b23d8cbbbf500a1e7ed4527001[m
+Merge: 601ac84 8d856e2
+Author: Daniel Preussker <f0o@users.noreply.github.com>
+Date:   Thu May 5 13:32:02 2016 +0200
+
+    Merge pull request #25 from Exa-Omicron/master
+    
+    Improved hddtemp agent module
+
+[33mcommit 8d856e27648b6df2d89af852ad1cd912319a965f[m
+Author: Robert Verspuy <robert@exa.nl>
+Date:   Thu May 5 10:27:30 2016 +0200
+
+    Improved hddtemp agent module
+    
+    I had some issues with the netcat / daemon implementation of the module.
+    netcat was stallingor sometimes netcat did not return the full output of hddtemp.
+    Running hddtemp directly without running it as a daemon is much more stable for me.
+    
+    This new version also does not give any stdout output when hddtemp is not installed or when no disks can be found.
+    Running the script manually on a server does give stderr output for easy debugging.
+
+[33mcommit 601ac843c303d29b8149142a3fac967aaa4a2638[m
+Merge: 21817b6 1c13779
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Thu Apr 21 09:46:49 2016 -0500
+
+    Merge pull request #23 from librenms/freebsd-agent
+    
+    Create check_mk_agent_freebsd
+
+[33mcommit 1c1377958e6c8cfd8ca7fd1fd4fcafdae92e1a1b[m
+Author: Neil Lathwood <neil@lathwood.co.uk>
+Date:   Thu Apr 21 15:41:06 2016 +0100
+
+    Update check_mk_agent_freebsd
+
+[33mcommit cdd235a12a0bd4d0cbffe330048fd476aa5fddd5[m
+Author: Neil Lathwood <neil@lathwood.co.uk>
+Date:   Thu Apr 21 15:39:59 2016 +0100
+
+    Create check_mk_agent_freebsd
+    
+    Added freebsd agent
+
+[33mcommit 21817b6b36692bdca8fac8f3ee4a0258a2d2bcee[m
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Tue Mar 29 08:29:02 2016 -0500
+
+    Fix wording for systemd unit
+
+[33mcommit 88c4b00b19370bea3e597770793d90b24f24b10b[m
+Merge: dd2b95d 50a3c25
+Author: Neil Lathwood <neil@lathwood.co.uk>
+Date:   Tue Mar 29 09:51:00 2016 +0100
+
+    Merge pull request #22 from murrant/master
+    
+    Add systemd unit files
+
+[33mcommit 50a3c25115e501db4bd9fc97a8a8e3b7d81a635e[m
+Author: Tony Murray <murraytony@gmail.com>
+Date:   Mon Mar 28 12:56:26 2016 -0500
+
+    Add systemd unit files
+
+[33mcommit dd2b95d8d2eb35bf1b3f0aea34d843af33f1c28e[m
+Merge: 6d0babe ff2bbe6
+Author: Neil Lathwood <neil@lathwood.co.uk>
+Date:   Wed Nov 25 13:37:25 2015 +0000
+
+    Merge pull request #17 from f0o/upstream-snapshot
+    
+    Snapshot upstream changes
+
+[33mcommit ff2bbe6882a9b79b93883980b0360f780fc24d76[m
+Author: f0o <f0o@librenms.org>
+Date:   Wed Nov 25 13:26:26 2015 +0000
+
+    Snapshot upstream changes
+
+[33mcommit 6d0babe0973d5cb8e2d35fd33e2f45e96ae96c15[m
+Merge: 8e847b9 12e31c1
+Author: Daniel Preussker <f0o@users.noreply.github.com>
+Date:   Wed Nov 25 13:28:17 2015 +0000
+
+    Merge pull request #16 from tuxis-ie/powerdns-support
+    
+    Powerdns support
+
+[33mcommit 12e31c16c3c42e6d1c73a196978acf18e554e4b0[m
+Author: Mark Schouten <mark@tuxis.nl>
+Date:   Mon Nov 23 14:10:17 2015 +0100
+
+    Add PowerDNS Authoritative Agent
+
+[33mcommit d16462bb5ac978cfd5b7cb213359989b2aabc791[m
+Author: Mark Schouten <mark@tuxis.nl>
+Date:   Mon Nov 23 14:10:15 2015 +0100
+
+    Add PowerDNS Authoritative Agent
+
+[33mcommit 8e847b986aa3af50eb6c2302c3d1f0df158a47bd[m
+Merge: da7e40c 66d5028
+Author: Neil Lathwood <neil@lathwood.co.uk>
+Date:   Wed Nov 11 17:17:24 2015 -0400
+
+    Merge pull request #15 from SaaldjorMike/mysql1
+    
+    Moved mysql tag a bit up and added a newline to error msg.
+
+[33mcommit 66d502837d2643c59d7f87af076fd851b0ba12c1[m
+Author: Mike Rostermund <mike@kollegienet.dk>
+Date:   Wed Nov 11 14:21:49 2015 +0100
+
+    Moved mysql tag a bit up and added a newline to error msg.
+
+[33mcommit da7e40c43eb3155d3253c1eb695a78a0d9362a51[m
+Merge: f6f0079 0cc7b49
+Author: Neil Lathwood <neil@lathwood.co.uk>
+Date:   Tue Nov 10 08:08:34 2015 -0400
+
+    Merge pull request #14 from tuxis-ie/ceph-support
+    
+    Ceph support
+
+[33mcommit 0cc7b493978c06f0f3e73749bac1fbadf56c1be8[m
+Author: Mark Schouten <mark@tuxis.nl>
+Date:   Tue Nov 10 11:00:58 2015 +0100
+
+    Add support for Ceph
+
+[33mcommit 9b4c3b34009a441df579051336bf3ea0647fe73c[m
+Author: Mark Schouten <mark@tuxis.nl>
+Date:   Tue Nov 10 10:58:24 2015 +0100
+
+    Add support for Ceph
+
+[33mcommit f6f0079c6620ee3d75adf7511006006353903dd3[m
+Merge: d90957a 30b7651
+Author: Daniel Preussker <f0o@users.noreply.github.com>
+Date:   Wed Nov 4 13:42:29 2015 +0000
+
+    Merge pull request #13 from tuxis-ie/master
+    
+    Crap, forgot this line...
+
+[33mcommit 30b7651e0142826202276a7bf9a31343d759c68a[m
+Author: Mark Schouten <mark@tuxis.nl>
+Date:   Wed Nov 4 14:40:19 2015 +0100
+
+    Crap, forgot this line...
+
+[33mcommit d90957a0bc9e484056eaf26b206672b940fc7a9f[m
+Merge: 25fcd5a 6554087
+Author: Daniel Preussker <f0o@users.noreply.github.com>
+Date:   Wed Nov 4 13:35:33 2015 +0000
+
+    Merge pull request #12 from tuxis-ie/master
+    
+    Fix the proxmox-agent for Proxmox VE 4.0
+
+[33mcommit 65540872e7a1215cfdca1d4b480670a67cf50a77[m
+Author: Mark Schouten <mark@tuxis.nl>
+Date:   Wed Nov 4 14:30:21 2015 +0100
+
+    Fix the proxmox-agent for Proxmox VE 4.0
+
+[33mcommit 25fcd5ae76682006ed61aa09212738381968208f[m
+Merge: 20e2d22 b6bfbba
+Author: Paul Gear <github@libertysys.com.au>
+Date:   Mon Oct 26 09:39:15 2015 +1000
+
+    Merge pull request #10 from librenms/laf-patch-1
+    
+    Update distro to use env
+
+[33mcommit b6bfbbaf2c99945aceb92e9c7f950a53196c26fc[m
+Author: Neil Lathwood <neil@lathwood.co.uk>
+Date:   Sun Oct 25 21:51:43 2015 +0000
+
+    Update distro to use env
+
+[33mcommit 20e2d220bde9e4edec76d00551c955274d06130c[m
+Merge: 87a20db 2b96259
+Author: Daniel Preussker <f0o@users.noreply.github.com>
+Date:   Fri Aug 28 09:07:49 2015 +0000
+
+    Merge pull request #7 from tuxis-ie/master
+    
+    Add a proxmox-agent
+
+[33mcommit 2b9625953240ade30cf5ccef22a9293a016b819b[m
+Author: Mark Schouten <mark@tuxis.nl>
+Date:   Fri Aug 28 10:52:04 2015 +0200
+
+    Add license
+
+[33mcommit d6795c60a171eba023b8c0e5b151376c6bcfa0d1[m
+Author: Mark Schouten <mark@tuxis.nl>
+Date:   Fri Aug 28 10:49:24 2015 +0200
+
+    Add proxmox-agent
+
+[33mcommit fee2ed820bedb4613871aa9747b40121e3ae7879[m
+Author: Mark Schouten <mark@tuxis.nl>
+Date:   Fri Aug 28 10:49:19 2015 +0200
+
+    Add proxmox-agent
+
+[33mcommit 87a20db845517070fdb2eec70d264e18bfde2871[m
+Merge: 8ae2b15 6493263
+Author: Daniel Preussker <f0o@users.noreply.github.com>
+Date:   Thu Aug 20 17:14:11 2015 +0000
+
+    Merge pull request #5 from tuxis-ie/master
+    
+    Add files to create a Debian-package
+
+[33mcommit 64932630f0b67e876d0859df491705b11a71aa07[m
+Author: Mark Schouten <mark@tuxis.nl>
+Date:   Thu Aug 20 14:18:10 2015 +0200
+
+    Do not include the README in the repodir
+
+[33mcommit 77864124dc119b0d89b1c852090e5f283b02123a[m
+Author: Mark Schouten <mark@tuxis.nl>
+Date:   Thu Aug 20 10:34:50 2015 +0200
+
+    Add license
+
+[33mcommit 8ae2b1520b9e75583b87977427415c90256473e1[m
+Merge: 69551b0 63d3166
+Author: Daniel Preussker <f0o@users.noreply.github.com>
+Date:   Tue Aug 18 15:14:00 2015 +0000
+
+    Merge pull request #6 from librenms/f0o-mysql-host-logic
+    
+    Fix MySQL Host Logic
+
+[33mcommit 63d31665cea2afaeadb8c8ba1b58b37605597b80[m
+Author: Daniel Preussker <f0o@users.noreply.github.com>
+Date:   Tue Aug 18 15:08:50 2015 +0000
+
+    Fix MySQL Host Logic
+
+[33mcommit 51270e24c19bed95030a41e3ab7828bb2330d68d[m
+Author: Mark Schouten <mark@tuxis.nl>
+Date:   Mon Aug 17 16:58:33 2015 +0200
+
+    Also include distro in this package
+
+[33mcommit 2b4d17280dd4cbff1b497e2f6ffc17bf75020ea9[m
+Author: Mark Schouten <mark@tuxis.nl>
+Date:   Mon Aug 17 16:57:48 2015 +0200
+
+    Strip comments (on Qemu boxes, this pollutes a lot
+
+[33mcommit 2833310e228e185e78ddbb96589f63e9d2d7b852[m
+Author: Mark Schouten <mark@tuxis.nl>
+Date:   Mon Aug 17 16:50:26 2015 +0200
+
+    Enable dpkg and dmi by default
+
+[33mcommit 3cd06768b5487261ddde819aad6428a3183ffbbf[m
+Author: Mark Schouten <mark@tuxis.nl>
+Date:   Mon Aug 17 16:48:22 2015 +0200
+
+    Place all plugins in a repo-dir and add mk_enplug to enable plugins
+
+[33mcommit 7954d5a085f0ffe31fa1becb6d3132ca63b46942[m
+Author: Mark Schouten <mark@tuxis.nl>
+Date:   Mon Aug 17 16:19:04 2015 +0200
+
+    Add Conflicts/Provides and fix location for xinetd.d
+
+[33mcommit a7df28415a4645293835c79d15201539376be11d[m
+Author: Mark Schouten <mark@tuxis.nl>
+Date:   Mon Aug 17 15:12:12 2015 +0200
+
+    Add files to create a Debian-package
+
+[33mcommit 69551b05e2673c899077a4539d1b6a6ec95b4290[m
+Merge: cfec5ec 4683c68
+Author: Daniel Preussker <f0o@users.noreply.github.com>
+Date:   Tue Jul 28 20:11:44 2015 +0000
+
+    Merge pull request #4 from alangregory/master
+    
+    Added Snmpd.conf example and distro executable
+
+[33mcommit 4683c68d1d23f63ff9977c8a11543004cd4b8a34[m
+Author: Alan Gregory <alan@opcaonet.com.br>
+Date:   Tue Jul 28 15:58:29 2015 -0300
+
+    Added Snmpd.conf example and distro executable
+
+[33mcommit cfec5ec65dc93a6bc9260eb4f1d3f9379d1c7287[m
+Author: Daniel Preussker <f0o@users.noreply.github.com>
+Date:   Tue Jun 9 17:34:00 2015 +0000
+
+    Delete README.md
+
+[33mcommit f1c9d6578a9f5df51047e5246624a96e55e043d4[m
+Merge: a47d95b 195a46c
+Author: Daniel Preussker <f0o@users.noreply.github.com>
+Date:   Mon May 18 13:07:29 2015 +0200
+
+    Merge pull request #1 from f0o/master
+    
+    Initial commit
+
+[33mcommit 195a46c1e377f6729acf38f294153ef40147d2ff[m
+Author: f0o <f0o@librenms.org>
+Date:   Mon May 18 10:57:45 2015 +0000
+
+    Initial commit
+
+[33mcommit a47d95b58cc05e32a3feaa7f0022857da80ba58a[m
+Author: Daniel Preussker <f0o@users.noreply.github.com>
+Date:   Mon May 18 09:28:15 2015 +0000
+
+    Initial commit
