@@ -1,0 +1,104 @@
+#!/bin/bash
+
+CAT=/bin/cat
+LS=/bin/ls
+
+CONFIGFILE=$0.conf
+if [ -f $CONFIGFILE ] ; then
+     . $CONFIGFILE
+fi
+
+VERSION=1
+ERROR_CODE=0
+ERROR_STRING=""
+
+OUTPUT_DATA='['\
+
+if [ -d /dev/md ] ; then
+    for RAID in /sys/block/md* ; do
+
+        # ignore arrays with no slaves
+        if [ -z "$($LS -1 $RAID/slaves)" ] ; then
+            continue
+        fi
+        # ignore "non existing" arrays
+        if [ ! -f "$RAID/md/degraded" ] ; then
+            continue
+        fi
+
+        RAID_NAME=$(basename $RAID)
+        RAID_DEV_LIST=$($LS $RAID/slaves/)
+        RAID_LEVEL=$($CAT $RAID/md/level)
+        RAID_DISC_COUNT=$($CAT $RAID/md/raid_disks)
+        RAID_STATE=$($CAT $RAID/md/array_state)
+        RAID_ACTION=$($CAT $RAID/md/sync_action)
+        RAID_DEGRADED=$($CAT $RAID/md/degraded)
+
+        if [ "$RAID_SYNC_SPEED" = "none" ] ; then
+            RAID_SYNC_SPEED=0
+        else
+            let "RAID_SYNC_SPEED=$($CAT $RAID/md/sync_speed)*1024"
+        fi
+
+        if [ "$($CAT $RAID/md/sync_completed)" = "none" ] ; then
+            RAID_SYNC_COMPLETED=100
+        else
+            let "RAID_SYNC_COMPLETED=100*$($CAT $RAID/md/sync_completed)"
+        fi
+
+        # divide with 2 to size like in /proc/mdstat
+        # and multiply with 1024 to get size in bytes
+        let "RAID_SIZE=$($CAT $RAID/size)*1024/2"
+
+        RAID_DEVICE_LIST='['
+        ALL_DEVICE_COUNT=0
+        for D in $RAID_DEV_LIST ; do
+            RAID_DEVICE_LIST=$RAID_DEVICE_LIST'"'$D'",'
+            let "ALL_DEVICE_COUNT+=1"
+        done
+        if [ ${#RAID_DEVICE_LIST} -gt 3 ] ; then
+            RAID_DEVICE_LIST=${RAID_DEVICE_LIST: : -1}
+        fi
+        RAID_DEVICE_LIST=$RAID_DEVICE_LIST']'
+
+        RAID_MISSING_DEVICES='['
+        for D in $RAID_DEV_LIST ; do
+            if [ -L $RAID/slaves/$D ] && [ -f $RAID/slaves/$D ] ; then
+                RAID_MISSING_DEVICES=$RAID_MISSING_DEVICES'"'$D'",'
+            fi
+        done
+        if [ ${#RAID_MISSING_DEVICES} -gt 3 ] ; then
+            RAID_MISSING_DEVICES=${RAID_MISSING_DEVICES: : -1}
+        fi
+        RAID_MISSING_DEVICES=$RAID_MISSING_DEVICES']'
+
+        let "RAID_HOTSPARE_COUNT=ALL_DEVICE_COUNT-RAID_DISC_COUNT"
+
+        ARRAY_DATA='{'\
+'"name":"'$RAID_NAME\
+'","level":"'$RAID_LEVEL\
+'","size":"'$RAID_SIZE\
+'","disc_count":"'$RAID_DISC_COUNT\
+'","hotspare_count":"'$RAID_HOTSPARE_COUNT\
+'","device_list":'$RAID_DEVICE_LIST\
+',"missing_device_list":'$RAID_MISSING_DEVICES\
+',"state":"'$RAID_STATE\
+'","action":"'$RAID_ACTION\
+'","degraded":"'$RAID_DEGRADED\
+'","sync_speed":"'$RAID_SYNC_SPEED\
+'","sync_completed":"'$RAID_SYNC_COMPLETED\
+'"},'
+
+    OUTPUT_DATA=$OUTPUT_DATA$ARRAY_DATA
+    done
+fi
+
+OUTPUT_DATA=${OUTPUT_DATA: : -1}']'
+
+OUTPUT='{"data":'$OUTPUT_DATA\
+',"error":"'$ERROR_CODE\
+'","errorString":"'$ERROR_STRING\
+'","version":"'$VERSION'"}'
+
+echo $OUTPUT
+
