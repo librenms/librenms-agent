@@ -341,6 +341,37 @@ foreach my $line ( @disks ){
 
 		}
 
+        # SAS Wrapping
+        # Section by Cameron Munroe (munroenet[at]gmail.com)
+
+        # Elements in Grown Defect List.
+        # Marking as 5 Reallocated_Sector_Ct
+
+        if ($line =~ "Elements in grown defect list:"){
+
+            my @lineA=split(/\ /, $line, 10);
+            my $raw=$lineA[5];
+
+            # Reallocated Sector Count ID
+            $IDs{5}=$raw;
+
+        }
+
+        # Current Drive Temperature
+        # Marking as 194 Temperature_Celsius
+
+        if ($line =~ "Current Drive Temperature:"){
+
+            my @lineA=split(/\ /, $line, 10);
+            my $raw=$lineA[3];
+
+            # Temperature C ID
+            $IDs{194}=$raw;
+
+        }
+
+        # End of SAS Wrapper
+
 		$outputAint++;
 	}
 
