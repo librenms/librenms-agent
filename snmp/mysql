@@ -352,17 +352,12 @@ function ss_get_mysql_stats( $options ) {
       debug("PHP MySQLi extension is not loaded");
       die("PHP MySQLi extension is not loaded");
    }
+   $conn = mysqli_init();
+   $conn->options(MYSQLI_OPT_CONNECT_TIMEOUT, $connection_timeout);
    if ( $mysql_ssl ) {
-      $conn = mysqli_init();
-      $conn->options(MYSQLI_OPT_CONNECT_TIMEOUT, $connection_timeout);
       mysqli_ssl_set($conn, $mysql_ssl_key, $mysql_ssl_cert, $mysql_ssl_ca, NULL, NULL);
-      mysqli_real_connect($conn, $host, $user, $pass, NULL, $port, $socket, $flags);
    }
-   else {
-      $conn = mysqli_init();
-      $conn->options(MYSQLI_OPT_CONNECT_TIMEOUT, $connection_timeout);
-      mysqli_real_connect($conn, $host, $user, $pass, NULL, $port, $socket, $flags);
-   }
+   @mysqli_real_connect($conn, $host, $user, $pass, NULL, $port, $socket, $flags);
    if ( mysqli_connect_errno() ) {
       debug("MySQL connection failed: " . mysqli_connect_error());
       die("ERROR: " . mysqli_connect_error());
