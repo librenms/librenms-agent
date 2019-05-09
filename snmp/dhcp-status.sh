@@ -13,7 +13,7 @@ BIN_SED='/usr/bin/sed'
 BIN_SORT='/usr/bin/sort'
 BIN_WC='/usr/bin/wc'
 
-CONFIGFILE=dhcp-status.conf
+CONFIGFILE=/etc/snmp/dhcp-status.conf
 if [ -f $CONFIGFILE ] ; then
     . dhcp-status.conf
 fi
