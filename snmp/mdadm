@@ -3,7 +3,7 @@
 CAT=/bin/cat
 LS=/bin/ls
 
-CONFIGFILE=$0.conf
+CONFIGFILE=/etc/snmp/mdadm.conf
 if [ -f $CONFIGFILE ] ; then
      . $CONFIGFILE
 fi
