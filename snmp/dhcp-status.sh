@@ -4,7 +4,6 @@
 # edit your snmpd.conf add the below line and restart snmpd    #
 # extend dhcpstats /opt/dhcp-status.sh                         #
 ################################################################ 
-
 FILE_DHCP='/var/lib/dhcp/db/dhcpd.leases'
 BIN_CAT='/usr/bin/cat'
 BIN_GREP='/usr/bin/grep'
@@ -15,7 +14,7 @@ BIN_WC='/usr/bin/wc'
 
 CONFIGFILE=/etc/snmp/dhcp-status.conf
 if [ -f $CONFIGFILE ] ; then
-    . dhcp-status.conf
+    . $CONFIGFILE
 fi
 
 DHCP_LEASES='^lease'
