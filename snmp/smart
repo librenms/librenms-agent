@@ -267,7 +267,6 @@ foreach my $line ( @disks ){
 	}else{
 		$output=`$smartctl -A /dev/$disk`;
 	}
-
 	my %IDs=( '5'=>'null',
 			  '10'=>'null',
 			  '173'=>'null',
@@ -284,6 +283,7 @@ foreach my $line ( @disks ){
 			  '199'=>'null',
 			  '231'=>'null',
 			  '233'=>'null',
+			  '9'=>'null',
 	);
 
     my @outputA=split( /\n/, $output );
@@ -317,6 +317,12 @@ foreach my $line ( @disks ){
 				$IDs{$id}=$raw;
 			}
 
+			# 9, power on hours
+			if ( $id == 9 ) {
+				my @runtime=split(/\ /, $raw);
+				$IDs{$id}=$runtime[0];
+			}
+
 			# 188, Command_Timeout
 			if ( $id == 188 ) {
 				my $total=0;
@@ -331,14 +337,13 @@ foreach my $line ( @disks ){
 
 			# 190, airflow temp
 			# 194, temp
-			if ( 
+			if (
 				( $id == 190 ) ||
 				( $id == 194 )
 				) {
 				my ( $temp )=split(/\ /, $raw);
 				$IDs{$id}=$temp;
 			}
-
 		}
 
         # SAS Wrapping
@@ -398,7 +403,7 @@ foreach my $line ( @disks ){
 
 	$toReturn=$toReturn.$disk_id.','.$IDs{'5'}.','.$IDs{'10'}.','.$IDs{'173'}.','.$IDs{'177'}.','.$IDs{'183'}.','.$IDs{'184'}.','.$IDs{'187'}.','.$IDs{'188'}
 	    .','.$IDs{'190'} .','.$IDs{'194'}.','.$IDs{'196'}.','.$IDs{'197'}.','.$IDs{'198'}.','.$IDs{'199'}.','.$IDs{'231'}.','.$IDs{'233'}.','.
-		$completed.','.$interrupted.','.$read_failure.','.$unknown_failure.','.$extended.','.$short.','.$conveyance.','.$selective."\n";
+		$completed.','.$interrupted.','.$read_failure.','.$unknown_failure.','.$extended.','.$short.','.$conveyance.','.$selective.','.$IDs{'9'}."\n";
 
 }
 
