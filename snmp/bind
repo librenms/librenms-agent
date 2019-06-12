@@ -1,4 +1,4 @@
-#!/usr/bin/env perl
+#!/usr/local/bin/perl
 #Copyright (c) 2017, Zane C. Bowers-Hadley
 #All rights reserved.
 #
@@ -52,11 +52,12 @@ it should be.
 ## You should not need to touch anything below here.
 ##
 my $call_rndc=1;
-my $rndc='/usr/bin/env rndc';
+my $rndc='/usr/local/sbin/rndc';
 my $stats_file='/var/run/named/stats';
-my $zero_stats=0;
+my $zero_stats=1;
 my $agent=0;
 my $missing=0;
+my $bind_user='bind'; # if bind runs as root, leave this string blank, otherwise, fill this in.
 
 use strict;
 use warnings;
@@ -181,7 +182,11 @@ if ( -f $config ){
 
 #zero the stats if needed
 if ( $zero_stats ){
-	system('echo > '.$stats_file);
+	if ( $bind_user ) {
+		system("echo 'echo > $stats_file' | su -fm $bind_user");
+	} else {
+		system('echo > '.$stats_file);
+	}
 	if ( $? != 0 ){
 		die ("'echo > $stats_file' failed with a system return value of $?");
 	}
@@ -189,7 +194,11 @@ if ( $zero_stats ){
 
 # call rndc if needed and die if it failes
 if ( $call_rndc ){
-	system($rndc.' stats');
+	if ( $bind_user ) {
+		system("echo $rndc stats | su -fm bind");
+	} else {
+		system($rndc.' stats');
+	}
 	if ( $? != 0 ){
 		die ("'$rndc stats' failed with a system return value of $?");
 	}
