@@ -1,9 +1,9 @@
+#!/usr/bin/env php
 <?php
 
 # This is the status script that goes with the Cacti Templates for opcache via SNMP
 # It can be accessed as a snmpd extension with something like:
-#       extend phpopcache /usr/bin/php -f /etc/snmp/opcachestats
-
+#       extend phpopcache /etc/snmp/opcache
 header('Content-Type: text/plain');
 $opcachestat = opcache_get_status ( False );
 print $opcachestat['memory_usage']['free_memory']."\n";
@@ -17,3 +17,4 @@ print $opcachestat['opcache_statistics']['num_cached_scripts']."\n";
 print $opcachestat['opcache_statistics']['hits']."\n";
 print $opcachestat['opcache_statistics']['misses']."\n";
 print $opcachestat['opcache_statistics']['blacklist_misses'];
+
