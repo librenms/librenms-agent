@@ -84,29 +84,28 @@ my $apcaccess_output=`$apcaccess`;
 $toReturn{error}=$?;
 
 # check for bad exit codes
-if ( $? == -1){
+if ( $? == -1) {
 	$toReturn{errorString}='failed to run apcaccess';
-}
-elsif ($? & 127) {
+} elsif ($? & 127) {
 	$toReturn{errorString}= sprintf "apcaccess died with signal %d, %s coredump\n",
-		($? & 127),  ($? & 128) ? 'with' : 'without';
+	($? & 127),  ($? & 128) ? 'with' : 'without';
 } else {
-		$toReturn{error}=$? >> 8;
-		$toReturn{errorString}="apcaccess exited with ".$toReturn{error};
+	$toReturn{error}=$? >> 8;
+	$toReturn{errorString}="apcaccess exited with ".$toReturn{error};
 }
 
 # if no bad exit codes, we can process $apcaccess_output
-if ( $toReturn{error} == 0 ){
+if ( $toReturn{error} == 0 ) {
 	# holds the found data for the apcupsd status
 	my %status;
 
 	# pulls apart the output
 	my @lines=split(/\n/, $apcaccess_output);
-	foreach my $line ( @lines ){
+	foreach my $line ( @lines ) {
 		my ( $var, $val )=split(/\:\ */, $line, 2);
 		if (
-             defined( $var ) && defined( $val )
-			){
+			defined( $var ) && defined( $val )
+			) {
 			$var=~s/\ .*//;
 			$val=~s/\ .*//;
 			$status{$var}=$val;
@@ -129,11 +128,11 @@ $toReturn{data}=\%data;
 # convert $toReturn to JSON and pretty print if asked to
 my $j=JSON->new;
 $j->canonical(1);
-if ( $opts{p} ){
-        $j->pretty(1);
+if ( $opts{p} ) {
+	$j->pretty(1);
 }
 print $j->encode( \%toReturn );
-if (! $opts{p} ){
-        print "\n";
+if (! $opts{p} ) {
+	print "\n";
 }
 exit 0;
