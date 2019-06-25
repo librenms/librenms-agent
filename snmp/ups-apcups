@@ -103,9 +103,14 @@ if ( $toReturn{error} == 0 ){
 	# pulls apart the output
 	my @lines=split(/\n/, $apcaccess_output);
 	foreach my $line ( @lines ){
-		my ( $var, $val )=split(/\ *\:\ */, $line, 2);
-		$val=~s/\ .*//;
-		$status{$var}=$val;
+		my ( $var, $val )=split(/\:\ */, $line, 2);
+		if (
+             defined( $var ) && defined( $val )
+			){
+			$var=~s/\ .*//;
+			$val=~s/\ .*//;
+			$status{$var}=$val;
+		}
 	}
 
 	#pull the desired variables from the output
@@ -123,6 +128,7 @@ $toReturn{data}=\%data;
 
 # convert $toReturn to JSON and pretty print if asked to
 my $j=JSON->new;
+$j->canonical(1);
 if ( $opts{p} ){
         $j->pretty(1);
 }
