@@ -14,7 +14,7 @@ ERROR_STRING=""
 
 OUTPUT_DATA='['\
 
-if [ -d /dev/md ] ; then
+if [ -e /dev/md* ] ; then
     for RAID in /sys/block/md* ; do
 
         # ignore arrays with no slaves
