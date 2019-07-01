@@ -319,7 +319,7 @@ foreach my $line ( @disks ){
 
 			# 9, power on hours
 			if ( $id == 9 ) {
-				my @runtime=split(/\ /, $raw);
+				my @runtime=split(/[\ h]/, $raw);
 				$IDs{$id}=$runtime[0];
 			}
 
