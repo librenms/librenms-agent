@@ -7,10 +7,10 @@ MAJOR, MINOR = sys.version_info[:2]  # Python version
 
 if MAJOR < 3:
     import urllib2
-    data = urllib2.urlopen('http://127.0.0.1/nginx-status').read().split("\n")
+    data = urllib2.urlopen('http://localhost/nginx-status').read().split("\n")
 else:
     from urllib.request import urlopen
-    data = urlopen('http://127.0.0.1/nginx-status').read().decode().split("\n")
+    data = urlopen('http://localhost/nginx-status').read().decode().split("\n")
 
 params = {}
 
