@@ -2,6 +2,8 @@
 
 CAT=/bin/cat
 LS=/bin/ls
+BASENAME=/usr/bin/basename
+REALPATH=/usr/bin/realpath
 
 CONFIGFILE=/etc/snmp/mdadm.conf
 if [ -f $CONFIGFILE ] ; then
@@ -15,7 +17,8 @@ ERROR_STRING=""
 OUTPUT_DATA='['\
 
 if [ -d /dev/md ] ; then
-    for RAID in /sys/block/md* ; do
+    for ARRAY_BLOCKDEVICE in $(ls -1 /dev/md/*) ; do
+        RAID="/sys/block/"$($BASENAME $($REALPATH $ARRAY_BLOCKDEVICE))
 
         # ignore arrays with no slaves
         if [ -z "$($LS -1 $RAID/slaves)" ] ; then
@@ -26,7 +29,11 @@ if [ -d /dev/md ] ; then
             continue
         fi
 
-        RAID_NAME=$(basename $RAID)
+        if [[ $($BASENAME $ARRAY_BLOCKDEVICE) = [[:digit:]] ]]; then
+            RAID_NAME=$($BASENAME $RAID)
+        else
+            RAID_NAME=$($BASENAME $ARRAY_BLOCKDEVICE)
+        fi
         RAID_DEV_LIST=$($LS $RAID/slaves/)
         RAID_LEVEL=$($CAT $RAID/md/level)
         RAID_DISC_COUNT=$($CAT $RAID/md/raid_disks)
