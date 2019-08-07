@@ -15,8 +15,8 @@ BIN_GREP='/usr/bin/grep'
 BIN_PASTE='/usr/bin/paste'
 BIN_RM='/usr/bin/rm'
 BIN_MV='/usr/bin/mv'
-LOG_OLD='/tmp/nfsstats_old'
-LOG_NEW='/tmp/nfsstats_new'
+LOG_OLD='/var/cache/librenms/nfsstats_old'
+LOG_NEW='/var/cache/librenms/nfsstats_new'
 
 $BIN_NFSSTAT -$CFG_NFSVER -n -l | $BIN_TR -s " " | $BIN_CUT -d ' ' -f 5 | $BIN_GREP -v '^$' > $LOG_NEW 2>&1
 
