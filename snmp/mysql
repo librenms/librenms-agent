@@ -27,7 +27,7 @@ if (!array_key_exists('SCRIPT_FILENAME', $_SERVER)
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-# Define MySQL connection constants in config.php. Instead of defining 
+# Define MySQL connection constants in config.php. Instead of defining
 # parameters here, you can define them in another file named the same as this
 # file, with a .cnf extension.
 # ============================================================================
@@ -49,7 +49,7 @@ $heartbeat_utc = FALSE;    # Whether pt-heartbeat is run with --utc option.
 $heartbeat_server_id = 0;  # Server id to associate with a heartbeat. Leave 0 if no preference.
 $heartbeat_table = 'percona.heartbeat'; # db.tbl.
 
-$cache_dir  = '/tmp';   # If set, this uses caching to avoid multiple calls.
+$cache_dir  = '/var/cache/librenms';   # If set, this uses caching to avoid multiple calls.
 $timezone   = null;    # If not set, uses the system default.  Example: "UTC"
 $cache_time  = 30;      # How long to cache data.
 
@@ -289,7 +289,7 @@ function ss_get_mysql_stats( $options ) {
    $flags = isset($options['flags']) ? $options['flags'] : $mysql_flags;
    $connection_timeout = isset($options['connection-timeout']) ? $options['connection-timeout'] : $mysql_connection_timeout;
    $heartbeat_server_id = isset($options['server-id']) ? $options['server-id'] : $heartbeat_server_id;
-   
+
    # If there is a port, or if it's a non-standard port, we add ":$port" to the
    # hostname.
    $host_str  = $host.($port != 3306 ? ":$port" : '');
@@ -474,7 +474,7 @@ function ss_get_mysql_stats( $options ) {
          debug("Got nothing from SHOW SLAVE STATUS");
       }
    }
-  
+
    # Get SHOW MASTER STATUS, and add it to the $status array.
    if ($chk_options['master']
          && array_key_exists('log_bin', $status)
