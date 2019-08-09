@@ -19,7 +19,7 @@
 #
 
 CACHETIME = 30
-CACHEFILE = '/tmp/apache-snmp'
+CACHEFILE = '/var/cache/librenms/apache-snmp'
 
 # check for cache file newer CACHETIME seconds ago
 import os

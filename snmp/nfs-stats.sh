@@ -12,9 +12,9 @@ BIN_TR='/usr/bin/tr'
 BIN_PASTE='/usr/bin/paste'
 BIN_RM='/usr/bin/rm'
 BIN_MV='/usr/bin/mv'
-LOG_OLD='/tmp/nfsio_old'
-LOG_NEW='/tmp/nfsio_new'
-LOG_FIX='/tmp/nfsio_fix'
+LOG_OLD='/var/cache/librenms/nfsio_old'
+LOG_NEW='/var/cache/librenms/nfsio_new'
+LOG_FIX='/var/cache/librenms/nfsio_fix'
 
 #get reply cache (rc - values: hits, misses, nocache)
 $BIN_CAT $CFG_NFSFILE | $BIN_SED -n 1p | $BIN_AWK '{print $2,$3,$4}' | $BIN_TR " " "\n" > $LOG_NEW
