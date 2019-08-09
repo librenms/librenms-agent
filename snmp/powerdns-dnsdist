@@ -6,7 +6,7 @@ API_AUTH_USER="admin"
 API_AUTH_PASS=""
 API_URL=""
 API_STATS="jsonstat?command=stats"
-TMP_FILE="/tmp/dnsdist_current.stats"
+TMP_FILE=`/usr/bin/mktemp`
 
 #/ Description: BASH script to get PowerDNS dnsdist stats
 #/ Examples: ./powerdns-dnsdist
