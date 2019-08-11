@@ -3,17 +3,45 @@ import json
 import subprocess
 
 def main(args):
+    LINUX = '/proc/spl/kstat/zfs/arcstats'
+    BSD1 = 'sysctl'
+    BSD2 = 'kstat.zfs.misc.arcstats'
+    ILLUMOS = 'kstat -n arcstats'
+    COLUMN = 1
+    SPLIT = None
     res = {}
 
-    ARCSTATS = open('/proc/spl/kstat/zfs/arcstats', 'r')
-    LINES = ARCSTATS.readlines()
-    LINES = [x.strip() for x in LINES]
+    try:
+        LINES = open(LINUX, 'r').readlines()
+        COLUMN = 2
 
+    except IOError as e1:
+        try:
+            proc = subprocess.run([BSD1, BSD2], stdout=subprocess.PIPE, universal_newlines=True)     
+            LINES = proc.stdout.splitlines()
+            LINES = [x[len(BSD2)+1:] for x in LINES]
+            SPLIT = ':'
+        except FileNotFoundError as e2:
+            try:
+                proc = subprocess.run(ILLUMOS.split(), stdout=subprocess.PIPE, universal_newlines=True)
+                LINES = proc.stdout.splitlines()
+            except FileNotFoundError as e3:
+                print('Linux  :', e1)
+                print('BSD    :', e2)
+                print('Illumos:', e3)
+                return 1
+        
+    LINES = [x.strip() for x in LINES]
+    
     STATS = {}
     for line in LINES[2:]:
-        splitline = line.split()
-        STATS[splitline[0]] = int(splitline[2])
-
+        splitline = line.split(SPLIT)
+        try:
+            STATS[splitline[0]] = int(splitline[COLUMN]) 
+        # Skip non int value like Illumos crtime, empty line at the end
+        except:
+            continue
+    
     # ARC misc
     DELETED = STATS['deleted']
     EVICT_SKIP = STATS['evict_skip']
@@ -100,7 +128,10 @@ def main(args):
         return proc.returncode
 
     pools = []
-    FIELDS = ['name', 'size', 'alloc', 'free', 'expandsz', 'frag', 'cap', 'dedup']
+    FIELDS = ['name', 'size', 'alloc', 'free', 'ckpoint', 'expandsz', 'frag', 'cap', 'dedup', 'health', 'altroot']
+    if len(proc.stdout.splitlines()[0].split('\t')) == 10:
+        FIELDS.remove('ckpoint')
+       
     for line in proc.stdout.splitlines():
         info = dict(zip(FIELDS, line.split('\t')))
 
@@ -109,6 +140,8 @@ def main(args):
         info['frag'] = 0 if info['frag'] == '-' else info['frag']
         info['dedup'] = info['dedup'].rstrip('x')
         info['cap'] = info['cap'].rstrip('%')
+        if 'ckpoint' in info:
+            info['ckpoint'] = 0 if info['ckpoint'] == '-' else info['ckpoint']
 
         pools.append(info)
 
