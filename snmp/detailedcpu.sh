@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# This is to get Detailed CPU stats into LibreNMS. 
-# The goal being to track Steal and IOWait in shared virtual enviornements. 
+# This is to get Detailed CPU stats into LibreNMS.
+# The goal being to track Steal and IOWait in shared virtual enviornements.
 
 # Please make sure you have tail, vmstat, and awk installed.
-# Currently modern kernels beyond 2.6.11 should be supported. 
+# Currently modern kernels beyond 2.6.11 should be supported.
 
 # By Munzy https://github.com/Munzy
 
@@ -22,9 +22,10 @@
 # $16 = IO Wait
 # $17 = CPU Steal
 
+VMSTAT=`vmstat 1 2 | tail -n 1`
 
-vmstat | tail -n 1 |  awk '{print $13}'
-vmstat | tail -n 1 |  awk '{print $14}'
-vmstat | tail -n 1 |  awk '{print $15}'
-vmstat | tail -n 1 |  awk '{print $16}'
-vmstat | tail -n 1 |  awk '{print $17}'
+echo $VMSTAT | awk '{print $13}'
+echo $VMSTAT | awk '{print $14}'
+echo $VMSTAT | awk '{print $15}'
+echo $VMSTAT | awk '{print $16}'
+echo $VMSTAT | awk '{print $17}'
