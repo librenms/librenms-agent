@@ -11,6 +11,7 @@
 # please make sure you have the path/binaries below            #
 ################################################################
 BIN_WC='/usr/bin/env wc'
+BIN_FIND='/usr/bin/env find'
 BIN_GREP='/usr/bin/env grep'
 CMD_GREP='-c'
 CMD_WC='-l'
@@ -28,46 +29,75 @@ CMD_PACMAN='-Sup'
 ################################################################
 # Don't change anything unless you know what are you doing     #
 ################################################################
+
+
+CACHE_FILE="/tmp/osupdate.cache"
+#Refresh every 5 hours to reduce load
+CACHE_UPDATE_TIME=300
+
+if [ -f "$CACHE_FILE" ]
+then
+    #Exits with non-zero code if file is newer than $CACHE_UPDATE_TIME minutes
+    $BIN_FIND "$CACHE_FILE" -mmin -$CACHE_UPDATE_TIME -type f -wholename "$CACHE_FILE" -exec false {} +
+    ret=$?
+    if [ $ret = 1 ]
+    then
+        cat "$CACHE_FILE"
+        exit 0
+    fi
+fi
+
 if command -v zypper &>/dev/null ; then
     # OpenSUSE
     UPDATES=`$BIN_ZYPPER $CMD_ZYPPER | $BIN_WC $CMD_WC`
     if [ $UPDATES -ge 2 ]; then
         echo $(($UPDATES-2));
+        echo $(($UPDATES-2)) > "$CACHE_FILE"
     else
         echo "0";
+        echo "0" > "$CACHE_FILE"
     fi
 elif command -v dnf &>/dev/null ; then
     # Fedora
     UPDATES=`$BIN_DNF $CMD_DNF | $BIN_WC $CMD_WC`
     if [ $UPDATES -ge 1 ]; then
         echo $(($UPDATES-1));
+        echo $(($UPDATES-1)) > "$CACHE_FILE"
     else
         echo "0";
+        echo "0" > "$CACHE_FILE"
     fi
 elif command -v pacman &>/dev/null ; then
     # Arch
     UPDATES=`$BIN_PACMAN $CMD_PACMAN | $BIN_WC $CMD_WC`
     if [ $UPDATES -ge 1 ]; then
         echo $(($UPDATES-1));
+        echo $(($UPDATES-1)) > "$CACHE_FILE"
     else
         echo "0";
+        echo "0" > "$CACHE_FILE"
     fi
 elif command -v yum &>/dev/null ; then
     # CentOS / Redhat
     UPDATES=`$BIN_YUM $CMD_YUM | $BIN_WC $CMD_WC`
     if [ $UPDATES -ge 1 ]; then
         echo $(($UPDATES-1));
+        echo $(($UPDATES-1)) > "$CACHE_FILE"
     else
         echo "0";
+        echo "0" > "$CACHE_FILE"
     fi
 elif command -v apt-get &>/dev/null ; then
     # Debian / Devuan / Ubuntu
     UPDATES=`$BIN_APT $CMD_APT | $BIN_GREP $CMD_GREP 'Inst'`
     if [ $UPDATES -ge 1 ]; then
         echo $UPDATES;
+        echo $UPDATES > "$CACHE_FILE"
     else
         echo "0";
+        echo "0" > "$CACHE_FILE"
     fi
 else
     echo "0";
+    echo "0" > "$CACHE_FILE"
 fi
