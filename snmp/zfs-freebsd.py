@@ -97,20 +97,20 @@ def main(args):
 		return p.returncode
 	output['pools'] = []
 	fields = ['name', 'size', 'alloc', 'free', 'ckpoint', 'expandsz', 'frag', 'cap', 'dedup']
-        for l in p.stdout.splitlines():
-                p = dict(zip(fields, l.split('\t')))
-                if p['ckpoint'] == '-': 
-                        p['ckpoint'] = 0 
-                if p['expandsz'] == '-':
-                        p['expandsz'] = 0
-                p['frag'] = p['frag'].rstrip('%')
-                if p['frag'] == '-':
-                        p['frag'] = 0
-                p['cap'] = p['cap'].rstrip('%')
-                if p['cap'] == '-':
-                        p['cap'] = 0
-                p['dedup'] = p['dedup'].rstrip('x')
-                output['pools'].append(p)
+	for l in p.stdout.splitlines():
+		p = dict(zip(fields, l.split('\t')))
+		if p['ckpoint'] == '-': 
+			p['ckpoint'] = 0 
+		if p['expandsz'] == '-':
+			p['expandsz'] = 0
+		p['frag'] = p['frag'].rstrip('%')
+		if p['frag'] == '-':
+			p['frag'] = 0
+		p['cap'] = p['cap'].rstrip('%')
+		if p['cap'] == '-':
+			p['cap'] = 0
+		p['dedup'] = p['dedup'].rstrip('x')
+		output['pools'].append(p)
 
 	print(json.dumps(output))
 
