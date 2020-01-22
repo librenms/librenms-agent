@@ -80,6 +80,9 @@ if [ -d /dev/md ] ; then
         RAID_MISSING_DEVICES=$RAID_MISSING_DEVICES']'
 
         let "RAID_HOTSPARE_COUNT=ALL_DEVICE_COUNT-RAID_DISC_COUNT"
+        if [ $RAID_HOTSPARE_COUNT -lt 0 ] ; then
+            RAID_HOTSPARE_COUNT=0
+        fi
 
         ARRAY_DATA='{'\
 '"name":"'$RAID_NAME\

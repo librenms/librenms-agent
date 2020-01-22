@@ -1,3 +1,12 @@
+librenms-agent (1.1.0) stable; urgency=low
+
+  - New upstream versions
+  - Include SNMP scripts
+  - Fix Ceph scripts
+  - Fix nginx scripts
+
+ -- Mark Schouten <mark@tuxis.nl> Wed, 03 Jul 2019 12:06:00 +0200
+
 librenms-agent (1.0.7) stable; urgency=low
 
   - New upstream versions

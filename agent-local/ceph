@@ -17,6 +17,11 @@
 from subprocess import check_output
 import json
 
+def cephversion():
+    cephv     = check_output(["/usr/bin/ceph", "version"]).replace('ceph version ', '')
+    major, minor = cephv.split('.')[0:2]
+    return [int(major), int(minor)]
+
 def cephdf():
     cephdf    = check_output(["/usr/bin/ceph", "-f", "json", "df"]).replace('-inf', '0')
 
@@ -44,12 +49,18 @@ def cephdf():
 
 
 def osdperf():
+    global major
     osdperf   = check_output(["/usr/bin/ceph", "-f", "json", "osd", "perf"]).replace('-inf', '0')
 
-    for o in json.loads(osdperf)['osd_perf_infos']:
-        print("osd.%s:%i:%i" % (o['id'], o['perf_stats']['apply_latency_ms'], o['perf_stats']['commit_latency_ms']))
+    if major > 13:
+        for o in json.loads(osdperf)['osdstats']['osd_perf_infos']:
+            print("osd.%s:%i:%i" % (o['id'], o['perf_stats']['apply_latency_ms'], o['perf_stats']['commit_latency_ms']))
+    else:
+        for o in json.loads(osdperf)['osd_perf_infos']:
+            print("osd.%s:%i:%i" % (o['id'], o['perf_stats']['apply_latency_ms'], o['perf_stats']['commit_latency_ms']))
 
 def poolstats():
+    global major
     poolstats = check_output(["/usr/bin/ceph", "-f", "json", "osd", "pool", "stats"]).replace('-inf', '0')
 
     for p in json.loads(poolstats):
@@ -62,11 +73,16 @@ def poolstats():
         except:
             w = 0
         try: 
-            o = p['client_io_rate']['op_per_sec']
+            if major > 11:
+                o = p['client_io_rate']['read_op_per_sec'] + p['client_io_rate']['write_op_per_sec']
+            else:
+                o = p['client_io_rate']['op_per_sec']
         except:
             o = 0
     
         print("%s:%i:%i:%i" % (p['pool_name'], o, w, r))
+
+major, minor = cephversion()
 
 print "<<<app-ceph>>>"
 print "<poolstats>"
@@ -75,4 +91,3 @@ print "<osdperformance>"
 osdperf()
 print "<df>"
 cephdf()
-
