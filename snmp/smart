@@ -298,6 +298,12 @@ foreach my $line ( @disks ){
 			my $raw=$lineA[9];
 			my $id=$lineA[0];
 
+			# Crucial SSD
+			# 202, Percent_Lifetime_Remain, same as 231, SSD Life Left
+			if ( $id == 202 ) {
+					$IDs{231}=$raw;
+			}
+
 			# single int raw values
 			if (
 				( $id == 5 ) ||
