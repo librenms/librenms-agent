@@ -260,13 +260,11 @@ foreach my $line ( @disks ){
 		$disk=$line;
 		$name=$line;
 	}
-	my $disk_sn=$disk;
 	my $output;
-	if ( $disk =~ /\// ){
-		$output=`$smartctl -A $disk`;
-	}else{
-		$output=`$smartctl -A /dev/$disk`;
+	if ( $disk !~ /\// ){
+		$disk = '/dev/'.$disk;
 	}
+	$output=`$smartctl -A $disk`;
 	my %IDs=( '5'=>'null',
 			  '10'=>'null',
 			  '173'=>'null',
@@ -381,7 +379,7 @@ foreach my $line ( @disks ){
 	}
 
 	#get the selftest logs
-	$output=`$smartctl -l selftest /dev/$disk`;
+	$output=`$smartctl -l selftest $disk`;
 	@outputA=split( /\n/, $output );
 	my $completed=scalar grep(/Completed without error/, @outputA);
 	my $interrupted=scalar grep(/Interrupted/, @outputA);
@@ -395,7 +393,7 @@ foreach my $line ( @disks ){
 	# get the drive serial number, if needed
 	my $disk_id=$name;
 	if ( $useSN ){
-		while (`$smartctl -i /dev/$disk` =~ /Serial Number:(.*)/g) {
+		while (`$smartctl -i $disk` =~ /Serial Number:(.*)/g) {
 			$disk_id = $1;
 			$disk_id =~ s/^\s+|\s+$//g;
 		}
