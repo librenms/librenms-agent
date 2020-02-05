@@ -47,10 +47,12 @@ if [ -d /dev/md ] ; then
             let "RAID_SYNC_SPEED=$($CAT $RAID/md/sync_speed)*1024"
         fi
 
-        if [ "$($CAT $RAID/md/sync_completed)" = "none" ] ; then
-            RAID_SYNC_COMPLETED=100
-        else
+        if [ "$($CAT $RAID/md/sync_completed)" != "none" ] ; then
             let "RAID_SYNC_COMPLETED=100*$($CAT $RAID/md/sync_completed)"
+        elif [ $RAID_DEGRADED -eq 1 ] ; then
+            RAID_SYNC_COMPLETED=0
+        else
+            RAID_SYNC_COMPLETED=100
         fi
 
         # divide with 2 to size like in /proc/mdstat
