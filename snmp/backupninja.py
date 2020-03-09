@@ -3,14 +3,24 @@ import io
 import re
 import gzip
 import os
+import json
 
 LOGFILES = [
     "/var/log/backupninja.log",
     "/var/log/backupninja.log.1.gz",
 ]
 
+# Last status
+last_actions = 0
+last_fatal = 0
+last_error = 0
+last_warning = 0
+
 def main():
-    print_backupninja_state()
+    get_backupninja_state()
+    output = {'actions': last_actions, 'fatal': last_fatal, 'error': last_error, 'warning': last_warning}
+    print(json.dumps(output))
+
 
 def readlog(logfile):
     if logfile.endswith('.gz'):
@@ -18,14 +28,11 @@ def readlog(logfile):
     else:
         return io.open(logfile,'r')
 
-def print_backupninja_state():
-    last_actions = 0
-    last_fatal = 0
-    last_error = 0
-    last_warning = 0
 
+def get_backupninja_state():
+    global last_actions, last_fatal, last_error, last_warning
+    
     for logfile in LOGFILES:
-
         if not os.path.isfile(logfile):
             continue
 
@@ -33,11 +40,10 @@ def print_backupninja_state():
             for line in reversed(list(f)):
                 match = re.search('^(.*) [a-zA-Z]*: FINISHED: ([0-9]+) actions run. ([0-9]+) fatal. ([0-9]+) error. ([0-9]+) warning.$', line)
                 if match:
-                    last_actions = match.group(2)
-                    last_fatal = match.group(3)
-                    last_error = match.group(4)
-                    last_warning = match.group(5)
-                    print "%s %s %s %s" % (last_actions, last_fatal, last_error, last_warning)
+                    last_actions = int(match.group(2))
+                    last_fatal = int(match.group(3))
+                    last_error = int(match.group(4))
+                    last_warning = int(match.group(5))
                     break
 
 
