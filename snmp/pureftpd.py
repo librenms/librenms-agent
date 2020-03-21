@@ -57,7 +57,7 @@ for line in output.split('\n'):
         data[acct][state] = {'bitrate': 0,
                              'connections': 0
                              }
-    bandwidth_bit = int(bandwidth) * 1024
+    bandwidth_bit = int(bandwidth) * 1024 * 8
     data[acct][state]['bitrate'] += bandwidth_bit
     data[acct][state]['connections'] += 1
 
