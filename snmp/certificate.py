@@ -24,12 +24,14 @@ def get_certificate_data(domain, port=443):
     # 3 second timeout because Lambda has runtime limitations
     conn.settimeout(3.0)
 
+    ssl_info = None
     try:
         conn.connect((domain, port))
         error_msg = None
-    except ConnectionRefusedError as e:
+        ssl_info = conn.getpeercert()
+    except (ConnectionRefusedError, ssl.SSLCertVerificationError) as e:
         error_msg = e
-    ssl_info = conn.getpeercert()
+
     return ssl_info, error_msg
 
 
