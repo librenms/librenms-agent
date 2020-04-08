@@ -28,7 +28,6 @@ def get_certificate_data(domain, port=443):
     ssl_info = {}
     try:
         conn.connect((domain, port))
-        error_msg = None
         ssl_info = conn.getpeercert()
     except ConnectionRefusedError as e:
         error_msg = e
