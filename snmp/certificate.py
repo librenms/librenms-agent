@@ -24,13 +24,21 @@ def get_certificate_data(domain, port=443):
     # 3 second timeout because Lambda has runtime limitations
     conn.settimeout(3.0)
 
-    ssl_info = None
+    error_msg = None
+    ssl_info = {}
     try:
         conn.connect((domain, port))
         error_msg = None
         ssl_info = conn.getpeercert()
-    except (ConnectionRefusedError, ssl.SSLCertVerificationError) as e:
+    except ConnectionRefusedError as e:
         error_msg = e
+    # Manage expired certificates
+    except ssl.SSLCertVerificationError as e:
+        # Arbitrary start date
+        ssl_info['notBefore'] = "Jan 1 00:00:00 2020 GMT"
+        # End date is now (we don't have the real one but the certificate is expired)
+        one_minute_further = datetime.datetime.now() + datetime.timedelta(minutes=1)
+        ssl_info['notAfter'] = one_minute_further.strftime('%b %d %H:%M:%S %Y GMT')
 
     return ssl_info, error_msg
 
