@@ -25,7 +25,7 @@ CMD_APT='-qq -s upgrade'
 BIN_PACMAN='/usr/bin/env pacman'
 CMD_PACMAN='-Sup'
 BIN_PKG='/usr/sbin/pkg'
-CMD_PKG='-q -F'
+CMD_PKG=' audit -q -F'
 
 ################################################################
 # Don't change anything unless you know what are you doing     #
