@@ -96,7 +96,7 @@ sub main::VERSION_MESSAGE {
 
 sub main::HELP_MESSAGE {
 	print "\n".
-		"-p <protos>   A comma seperated list of TCP protocols to check for in netstat.\n".
+		"-p <protos>   A comma seperated list of TCP protocols (names or numbers) to check for in netstat.\n".
 		"-P   Print the output in a human readable manner.\n";
 }
 
@@ -196,11 +196,11 @@ my %valid_states=(
 	'UNKNOWN'=>1,
 	);
 
-#gets the options
+# gets the options
 my %opts=();
 getopts('p:P', \%opts);
 
-#what will be returned
+# what will be returned
 my %to_return;
 $to_return{error}='0';
 $to_return{errorString}='';
@@ -213,33 +213,41 @@ if (! defined( $opts{p} ) ){
 	exit 1;
 }
 
-#the list of protocols to check for
-my @protos_array=split(/\,/, $opts{p});
+# the list of arguments to check for
+my @argument_array=split(/\,/, $opts{p});
+# the discovered protocols
+my @protos_array=();
 
-#holds the various protocol hashes
+# holds the various protocol hashes
 my %protos;
 my %proto_lookup;
 
-#make sure each one specificied is defined and build the hash that will be returned
+# the final data to present
+my %data_collection;
+
+# make sure each one specificied is defined and build the hash that will be returned
 my $protos_array_int=0;
-while ( defined( $protos_array[$protos_array_int] ) ){
-	$protos{ $protos_array[$protos_array_int] }=newProto;
+while ( defined( $argument_array[$protos_array_int] ) ){
 
-	#check if it exists
-	my $port=getservbyname( $protos_array[$protos_array_int] , 'tcp' );
+	# collect the argument
+	my $arg	 = $argument_array[$protos_array_int];
 
-	# if it is not defined, then we error
-	if ( !defined( $port )  ){
-		$to_return{errorString}='"'.$protos_array[$protos_array_int].'" is not a known service either add it or double check your spelling';
-		$to_return{error}=4;
-		return_json(\%to_return, $opts{P});
-		exit 4;
+	# Check if it is a port number ..
+	if ( $arg !~ /^-?\d+$/) {
+		# no it is a service name
+		$arg = getservbyname( $arg , 'tcp' );
 	}
 
-	$proto_lookup{ $port } = $protos_array [$protos_array_int ];
+	# get a new protos online, by portno
+	$protos{ $arg } = newProto;
 
+	# add it to the "protos_array" && "proto_lookup"
+	push(@protos_array,$arg);
+	$proto_lookup{ $arg } = $arg;
 	$protos_array_int++;
 }
+
+
 
 my $netstat='netstat -n';
 
@@ -269,15 +277,16 @@ while ( defined( $res->[2]{'active_conns'}[$active_conns_int] ) ){
 		){
 		$protos_array_int=0;
 		my $service;
+
 		while(
 			( defined( $protos_array[ $protos_array_int ] ) ) &&
 			( !defined( $service ) ) #stop once we find it
 			){
+
 			#check if this matches either ports
-			if (
-				( defined($proto_lookup{ $conn->{'local_port'} }) ) ||
-				( defined($proto_lookup{ $conn->{'foreign_port'} }) )
-				){
+			if ( $conn->{'local_port'} eq int ( $protos_array[ $protos_array_int ] ) ) {
+				$service=$protos_array[ $protos_array_int ];
+			} elsif ( $conn->{'foreign_port'} eq int ( $protos_array[ $protos_array_int ] ) ) {
 				$service=$protos_array[ $protos_array_int ];
 			}
 
@@ -291,6 +300,7 @@ while ( defined( $res->[2]{'active_conns'}[$active_conns_int] ) ){
 			my $state=$conn->{'state'};
 			#translate the state names
 			if ( $os eq 'linux' ){
+
 				if ( $state eq 'SYN_RECV' ){
 					$state='SYN_RECEIVED';
 				}elsif( $state eq 'FIN_WAIT1' ){
@@ -324,7 +334,7 @@ while ( defined( $res->[2]{'active_conns'}[$active_conns_int] ) ){
 			}
 
 			if (
-				( $conn->{'local_port'} eq $service ) &&
+				( $conn->{'local_port'} eq $service ) && 
 				( $state ne 'LISTEN' ) &&
 				( ! $processed )
 				){
@@ -339,7 +349,28 @@ while ( defined( $res->[2]{'active_conns'}[$active_conns_int] ) ){
 	$active_conns_int++;
 }
 
+# try to lookup a name for the portnumber used in the data
+my($portno,$dataset);
+while ( ($portno,$dataset) = each(%protos) ) {
+
+	my $servicename = $portno;
+
+	if ( $portno =~ /^-?\d+$/) {
+		my $servicename_test = getservbyport($portno,"tcp");
+
+		if ( ( not defined $servicename_test ) || ( $servicename_test eq '' ) ){
+			$servicename = $portno;
+		} else {
+			$servicename = $servicename_test;
+		}
+	}    
+
+	# add to "data_collection"
+	$data_collection{$servicename} = $dataset;
+}
+
+
 #return the finished product
-$to_return{data}=\%protos;
+$to_return{data}=\%data_collection;
 return_json(\%to_return, $opts{P});
 exit 0;
