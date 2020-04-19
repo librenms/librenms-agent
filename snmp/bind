@@ -39,7 +39,7 @@ The variables are as below.
 
     rndc = The path to rndc. Default: /usr/bin/env rndc
     call_rndc = A 0/1 boolean on weather to call rndc stats. Suggest to set to 0 if using netdata. Default: 1
-    stats_file = The path to the named stats file. Default: /var/run/named/stats
+    stats_file = The path to the named stats file. Default: /var/cache/bind/stats
     agent = A 0/1 boolean for if this is being used as a LibreNMS agent or not. Default: 0
     zero_stats = A 0/1 boolean for if the stats file should be zeroed first. Default: 0 (1 if guessed)
 
@@ -53,7 +53,7 @@ it should be.
 ##
 my $call_rndc=1;
 my $rndc='/usr/bin/env rndc';
-my $stats_file='/var/run/named/stats';
+my $stats_file='/var/cache/bind/stats';
 my $zero_stats=0;
 my $agent=0;
 my $missing=0;
