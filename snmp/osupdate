@@ -24,6 +24,8 @@ BIN_APT='/usr/bin/env apt-get'
 CMD_APT='-qq -s upgrade'
 BIN_PACMAN='/usr/bin/env pacman'
 CMD_PACMAN='-Sup'
+BIN_PKG='/usr/sbin/pkg'
+CMD_PKG=' audit -q -F'
 
 ################################################################
 # Don't change anything unless you know what are you doing     #
@@ -63,6 +65,14 @@ elif command -v yum &>/dev/null ; then
 elif command -v apt-get &>/dev/null ; then
     # Debian / Devuan / Ubuntu
     UPDATES=`$BIN_APT $CMD_APT | $BIN_GREP $CMD_GREP 'Inst'`
+    if [ $UPDATES -ge 1 ]; then
+        echo $UPDATES;
+    else
+        echo "0";
+    fi
+elif command -v pkg &>/dev/null ; then
+    # FreeBSD
+    UPDATES=`$BIN_PKG $CMD_PKG | $BIN_WC $CMD_WC`
     if [ $UPDATES -ge 1 ]; then
         echo $UPDATES;
     else
