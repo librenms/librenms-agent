@@ -4,9 +4,10 @@ import re
 import MySQLdb
 import base64
 import json
+import os.path
 warnings.filterwarnings(action="ignore", message='the sets module is deprecated')
-
-conn = MySQLdb.connect(host='', user='', passwd='', db='')
+temp_file = '/tmp/mysql-stats.old'
+conn = MySQLdb.connect(host='', user='', passwd='', db='mysql')
 
 cursor = conn.cursor()
 
@@ -19,7 +20,7 @@ datavariables = {
         'Files and Tables': ['table_open_cache','Open_files','Open_tables','Opened_tables'],
         'InnoDB Buffer Pool': ['ib_bpool_size','ib_bpool_dbpages', 'ib_bpool_free','ib_bpool_modpages'],
         'InnoDB Buffer Pool Activity': ['ib_bpool_read','ib_bpool_created', 'ib_bpool_written'],
-        'InnoDB Insert Buffer': ['ib_ibuf_inserts','ib_ibuf_merged_rec', 'ib_ibuf_merges'],
+        'InnoDB Insert Buffer': ['ib_merged_ops_insert', 'ib_merged_ops_delete', 'ib_discarded_ops_insert', 'ib_discarded_ops_delete', 'ib_search_cache', 'ib_search_non_cache'],
         'InnoDB IO': ['ib_io_read','ib_io_write','ib_io_log', 'ib_io_fsync'],
         'InnoDB IO Pending': ['ib_iop_log','ib_iop_sync', 'ib_iop_flush_log', 'ib_iop_flush_bpool', 'ib_iop_ibuf_aio','ib_iop_aioread','ib_iop_aiowrite'],
         'InnoDB Log': ['innodb_log_buffer_size','ib_log_flush','ib_log_written'],
@@ -54,14 +55,30 @@ cursor = conn.cursor()
 cursor.execute("SHOW ENGINE INNODB STATUS")
 rows = cursor.fetchall()
 
+
 for row in rows:
+    ib_insert_buffer_merged_ops = re.search(r"merged\soperations\:.n\sinsert\s(\d+).\sdelete\smark\s(\d+).\sdelete\s(\d+)", str(row))
+    ib_insert_buffer_discarded_ops = re.search(r"discarded\soperations\:.n\sinsert\s(\d+).\sdelete\smark\s(\d+).\sdelete\s(\d+)", str(row))
+    ib_insert_buffer_search_ops = re.search(r"(\d+.\d+)\shash\ssearches/s.\s(\d+.\d+)\snon-hash\ssearches/s", str(row))
+
+    if str(ib_insert_buffer_merged_ops.group(0)):
+        data['ib_merged_ops_insert'] = ib_insert_buffer_merged_ops.group(1)
+        data['ib_merged_ops_delete'] = ib_insert_buffer_merged_ops.group(3)
+
+    if str(ib_insert_buffer_discarded_ops.group(0)):
+        data['ib_discarded_ops_insert'] = ib_insert_buffer_discarded_ops.group(1)
+        data['ib_discarded_ops_delete'] = ib_insert_buffer_discarded_ops.group(3)
+
+    if str(ib_insert_buffer_search_ops.group(0)):
+        data['ib_search_cache'] = ib_insert_buffer_search_ops.group(1)
+        data['ib_search_non_cache'] = ib_insert_buffer_search_ops.group(2)
+
     for line in row[2].split("\n"):
         ib_bpool_size = re.match(r"Buffer\spool\ssize\s+(\d+)", line)
         ib_bpool_free = re.match(r"Free\sbuffers\s+(\d+)", line)
         ib_bpool_dbpages = re.match(r"Database\spages\s+(\d+)", line)
         ib_bpool_modpages = re.match(r"Modified\sdb\spages\s+(\d+)", line)
         ib_b_reg = re.match(r"Pages\sread\s(\d+),\screated\s(\d+),\swritten (\d+)", line)
-        ib_insert_buffer = re.match(r"(\d+)\sinserts,\s(\d+)\smerged\srecs,\s(\d+)", line)
         ib_io = re.match(r"(\d+)\sOS\sfile\sreads,\s(\d+)\sOS\sfile\swrites,\s(\d+)\sOS\sfsyncs", line)
         ib_io_log = re.match(r"(\d+)\slog\si\/o's\sdone.*", line)
         ib_io_p1 = re.match(r"Pending\snormal\saio\sreads:\s(\d+),\saio\swrites:\s(\d+),", line)
@@ -72,66 +89,79 @@ for row in rows:
         ib_semaphore = re.match(r"\s?Mutex\sspin\swaits\s(\d+),\srounds\s(\d+),\sOS waits\s(\d+)", line)
         ib_tnx = re.match(r"\s?Trx\sid\scounter\s([[a-fA-F\d]+)(?: (\d+))?", line)
 
-    if ib_bpool_size:
-        data['ib_bpool_size'] = ib_bpool_size.group(1)
-    elif ib_bpool_free:
-        data['ib_bpool_free'] = ib_bpool_free.group(1)
-    elif ib_bpool_dbpages:
-        data['ib_bpool_dbpages'] = ib_bpool_dbpages.group(1)
-    elif ib_bpool_modpages:
-        data['ib_bpool_modpages'] = ib_bpool_modpages.group(1)
-    elif ib_insert_buffer:
-        data['ib_ibuf_inserts'] = ib_insert_buffer.group(1)
-        data['ib_ibuf_merged_rec'] = ib_insert_buffer.group(2)
-        data['ib_ibuf_merges'] = ib_insert_buffer.group(3)
-    elif ib_io:
-        data['ib_io_read'] = ib_io.group(1)
-        data['ib_io_write'] = ib_io.group(2)
-        data['ib_io_fsync'] = ib_io.group(3)
-    elif ib_io_log:
-        data['ib_io_log'] = ib_io_log.group(1)
-    elif ib_io_p1:
-        data['ib_iop_aioread'] = ib_io_p1.group(1)
-        data['ib_iop_aiowrite'] = ib_io_p1.group(2)
-    elif ib_io_p2:
-        data['ib_iop_ibuf_aio'] = ib_io_p2.group(1)
-        data['ib_iop_log'] = ib_io_p2.group(2)
-        data['ib_iop_sync'] = ib_io_p2.group(3)
-    elif ib_io_p3:
-        data['ib_iop_flush_log'] = ib_io_p3.group(1)
-        data['ib_iop_flush_bpool'] = ib_io_p3.group(2)
-    elif ib_log_p1:
-        data['ib_log_written'] = ib_log_p1.group(1)
-        if ib_log_p1.group(2):
-            data['ib_log_written'] = int(data['ib_log_written']) + int(ib_log_p1.group(2))
-    elif ib_log_p2:
-        data['ib_log_flush'] = ib_log_p2.group(1)
-        if ib_log_p2.group(2):
-            data['ib_log_flush'] = int(data['ib_log_flush']) + int(ib_log_p2.group(2))
-    elif ib_semaphore:
-        data['ib_spin_waits'] = ib_semaphore.group(1)
-        data['ib_spin_rounds'] = ib_semaphore.group(2)
-        data['ib_os_waits'] = ib_semaphore.group(3)
-    elif ib_tnx:
-        data['ib_tnx'] = ib_tnx.group(1)
-        if ib_tnx.group(2):
-            data['ib_tnx'] = int(data['ib_tnx']) + int(ib_tnx.group(2))
-    elif ib_b_reg:
-        data['ib_bpool_read'] = ib_b_reg.group(1)
-        data['ib_bpool_created'] = ib_b_reg.group(2)
-        data['ib_bpool_written'] = ib_b_reg.group(3)
+        if ib_bpool_size:
+            data['ib_bpool_size'] = ib_bpool_size.group(1)
+        elif ib_bpool_free:
+            data['ib_bpool_free'] = ib_bpool_free.group(1)
+        elif ib_bpool_dbpages:
+            data['ib_bpool_dbpages'] = ib_bpool_dbpages.group(1)
+        elif ib_bpool_modpages:
+            data['ib_bpool_modpages'] = ib_bpool_modpages.group(1)
+        elif ib_io:
+            data['ib_io_read'] = ib_io.group(1)
+            data['ib_io_write'] = ib_io.group(2)
+            data['ib_io_fsync'] = ib_io.group(3)
+        elif ib_io_log:
+            data['ib_io_log'] = ib_io_log.group(1)
+        elif ib_io_p1:
+            data['ib_iop_aioread'] = ib_io_p1.group(1)
+            data['ib_iop_aiowrite'] = ib_io_p1.group(2)
+        elif ib_io_p2:
+            data['ib_iop_ibuf_aio'] = ib_io_p2.group(1)
+            data['ib_iop_log'] = ib_io_p2.group(2)
+            data['ib_iop_sync'] = ib_io_p2.group(3)
+        elif ib_io_p3:
+            data['ib_iop_flush_log'] = ib_io_p3.group(1)
+            data['ib_iop_flush_bpool'] = ib_io_p3.group(2)
+        elif ib_log_p1:
+            data['ib_log_written'] = ib_log_p1.group(1)
+            if ib_log_p1.group(2):
+                data['ib_log_written'] = int(data['ib_log_written']) + int(ib_log_p1.group(2))
+        elif ib_log_p2:
+            data['ib_log_flush'] = ib_log_p2.group(1)
+            if ib_log_p2.group(2):
+                data['ib_log_flush'] = int(data['ib_log_flush']) + int(ib_log_p2.group(2))
+        elif ib_semaphore:
+            data['ib_spin_waits'] = ib_semaphore.group(1)
+            data['ib_spin_rounds'] = ib_semaphore.group(2)
+            data['ib_os_waits'] = ib_semaphore.group(3)
+        elif ib_tnx:
+            data['ib_tnx'] = ib_tnx.group(1)
+            if ib_tnx.group(2):
+                data['ib_tnx'] = int(data['ib_tnx']) + int(ib_tnx.group(2))
+        elif ib_b_reg:
+            data['ib_bpool_read'] = ib_b_reg.group(1)
+            data['ib_bpool_created'] = ib_b_reg.group(2)
+            data['ib_bpool_written'] = ib_b_reg.group(3)
 
 points_data = []
 points_label = []
-
 for category in datavariables:
     for variable in datavariables[category]:
         if variable in data:
             points_label.append(variable.lower())
-            points_data.append(data[variable])
+            points_data.append(int(float(data[variable])))
 
 entries = dict(zip(points_label, points_data))
-export = {"data": entries, "error": "0", "errorString": "", "version": "1"}
+
+if os.path.isfile(temp_file):
+    with open(temp_file, 'r') as file:
+        old_data = json.loads(file.read().replace("\'","\""))
+
+    new_points_data = []
+    new_points_label = []
+
+    for point in old_data:
+        new_points_label.append(point)
+        new_points_data.append(int(entries[point]) - int(old_data[point]))
+
+    new_entries = dict(zip(new_points_label, new_points_data))
+else:
+    new_entries = json.loads(str(entries).replace("\'","\""))
+
+with open(temp_file, 'w') as file:
+    file.write(str(entries))
+
+export = {"data": new_entries, "error": "0", "errorString": "", "version": "1"}
 data = re.sub(' ', '', json.dumps(export))
 print(data)
-
