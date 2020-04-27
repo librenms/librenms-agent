@@ -1,25 +1,4 @@
 #!/usr/bin/env python3
-#
-# Copyright (C) 2020  Cercel Valentin-Adrian
-#
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
-#
-# mysql-stats
-# requirements: python3-mysqldb
-#
-
 import warnings
 import re
 import MySQLdb
@@ -27,7 +6,10 @@ import base64
 import json
 import os.path
 warnings.filterwarnings(action="ignore", message='the sets module is deprecated')
+
 temp_file = '/tmp/mysql-stats.old'
+
+
 conn = MySQLdb.connect(host='', user='', passwd='', db='mysql')
 
 cursor = conn.cursor()
@@ -102,7 +84,7 @@ for row in rows:
         ib_b_reg = re.match(r"Pages\sread\s(\d+),\screated\s(\d+),\swritten (\d+)", line)
         ib_io = re.match(r"(\d+)\sOS\sfile\sreads,\s(\d+)\sOS\sfile\swrites,\s(\d+)\sOS\sfsyncs", line)
         ib_io_log = re.match(r"(\d+)\slog\si\/o's\sdone.*", line)
-        ib_io_p1 = re.match(r"Pending\snormal\saio\sreads:\s(\d+),\saio\swrites:\s(\d+),", line)
+        ib_io_p1 = re.match(r"Pending\snormal\saio\sreads:\s(\d+).+,\saio\swrites:\s(\d+).+,", line)
         ib_io_p2 = re.match(r"\s?ibuf\saio\sreads:\s(\d+),\slog\si\/o's:\s(\d+),\ssync\si\/o's:\s(\d+)", line)
         ib_io_p3 = re.match(r"\s?Pending\sflushes\s\(fsync\)\slog:\s(\d+);\sbuffer\spool:\s(\d+)\s?", line)
         ib_log_p1 = re.match(r"\s?Log\ssequence\snumber\s([[a-fA-F\d]+)(?: (\d+))?", line)
