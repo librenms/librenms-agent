@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 # Copyright (C) 2009  Glen Pitt-Pladdy
 #
 # This program is free software; you can redistribute it and/or
@@ -37,10 +37,10 @@ else:
 	data = urlread ( 'http://localhost/server-status?auto',
 					user_agent = 'SNMP Apache Stats' )
 	# write file
-	f = open ( CACHEFILE+'.TMP.'+`os.getpid()`, 'w' )
+	f = open ( CACHEFILE+'.TMP.'+repr(os.getpid()), 'w' )
 	f.write ( data )
 	f.close()
-	os.rename ( CACHEFILE+'.TMP.'+`os.getpid()`, CACHEFILE )
+	os.rename ( CACHEFILE+'.TMP.'+repr(os.getpid()), CACHEFILE )
 
 
 # dice up the data
@@ -78,12 +78,12 @@ dataorder = [
 ]
 for param in dataorder:
 	try:
-		print params[param]
+		print(params[param])
 #                print param
 	except:	# not all Apache's have all stats
-		print 'U'
+		print('U')
 
 # print the scoreboard
 for state in scoreboardkey:
-	print states[state]
+	print(states[state])
 #	print state
