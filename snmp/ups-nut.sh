@@ -23,3 +23,13 @@ do
 		echo "Unknown"
 	fi
 done
+
+for value in "ups\.status: [A-Z\s]{0,}OL" "ups\.status:[A-Z\s]{0,}OB" "ups\.status:[A-Z\s]{0,}LB" "ups\.status:[A-Z\s]{0,}HB" "ups\.status:[A-Z\s]{0,}RB" "ups\.status:[A-Z\s]{0,}CHRG" "ups\.status:[A-Z\s]{0,}DISCHRG" "ups\.status:[A-Z\s]{0,}BYPASS" "ups\.status:[A-Z\s]{0,}CAL" "ups\.status:[A-Z\s]{0,}OFF" "ups\.status:[A-Z\s]{0,}OVER" "ups\.status:[A-Z\s]{0,}TRIM" "ups\.status:[A-Z\s]{0,}BOOST" "ups\.status:[A-Z\s]{0,}FSD"
+do
+	OUT=$(echo $TMP | grep -Eo "$value" | awk '{print $2}' | LANG=C sort | head -n 1)
+	if [ -n "$OUT" ]; then
+		echo "1"
+	else
+		echo "0"
+	fi
+done
