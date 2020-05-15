@@ -34,15 +34,6 @@ try:
         k = k.decode("utf-8")
         v = v.decode("utf-8")
 
-        # convert string to int/float, if possible
-#        try:
-#            if '.' in v:
-#                v = float(v)
-#            else:
-#                v = int(v)
-#        except ValueError:
-#            pass
-
         redis_data[category][k] = v
 
 except:
@@ -54,5 +45,4 @@ output = {'version': version,
           'errorString': error_string,
           'data': redis_data}
 
-#print (json.dumps(output, indent=4, sort_keys=True))
 print (json.dumps(output))
