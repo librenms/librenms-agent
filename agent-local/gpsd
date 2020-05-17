@@ -4,8 +4,8 @@
 $server = 'localhost';
 $port = 2947;
 
-set_time_limit(4);
-ini_set('max_execution_time', 4);
+set_time_limit(6);
+ini_set('max_execution_time', 6);
 
 
 $sock = @fsockopen($server, $port, $errno, $errstr, 2);
