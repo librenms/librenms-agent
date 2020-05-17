@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 
 # This script produces LibreNMS apache-stats output.  The only dependency is curl.
 
