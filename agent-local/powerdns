@@ -1,16 +1,17 @@
-#!/usr/bin/env python
-
+#!/usr/bin/env python3
 from subprocess import Popen, PIPE
 
-vars = [ 'corrupt-packets', 'deferred-cache-inserts', 'deferred-cache-lookup',
-'latency', 'packetcache-hit', 'packetcache-miss', 'packetcache-size',
-'qsize-q', 'query-cache-hit', 'query-cache-miss', 'recursing-answers',
-'recursing-questions', 'servfail-packets', 'tcp-answers', 'tcp-queries',
-'timedout-packets', 'udp-answers', 'udp-queries', 'udp4-answers',
-'udp4-queries', 'udp6-answers', 'udp6-queries' ]
+kvars = [ 
+    'corrupt-packets', 'deferred-cache-inserts', 'deferred-cache-lookup',
+    'latency', 'packetcache-hit', 'packetcache-miss', 'packetcache-size',
+    'qsize-q', 'query-cache-hit', 'query-cache-miss', 'recursing-answers',
+    'recursing-questions', 'servfail-packets', 'tcp-answers', 'tcp-queries',
+    'timedout-packets', 'udp-answers', 'udp-queries', 'udp4-answers',
+    'udp4-queries', 'udp6-answers', 'udp6-queries'
+]
 
 rvars = {}
-cmd = ['/usr/bin/pdns_control', 'show', '*']
+cmd = ['pdns_control', 'show', '*']
 
 for l in Popen(cmd, stdout=PIPE).communicate()[0].decode().rstrip().split(','):
     v = l.split('=')
@@ -19,5 +20,6 @@ for l in Popen(cmd, stdout=PIPE).communicate()[0].decode().rstrip().split(','):
 
 print("<<<app-powerdns>>>")
 
-for k in vars:
+for k in kvars:
     print(rvars[k])
+
