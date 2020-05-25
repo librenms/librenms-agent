@@ -2,6 +2,13 @@
 import json
 import subprocess
 
+def proc_err(cmd, proc):
+    # output process error and first line of error code
+    return "{}{}".format(
+        subprocess.CalledProcessError(proc.returncode, cmd, proc.stderr),
+        " ({})".format(proc.stderr.splitlines()[0]) if proc.stderr.splitlines() else ""
+    )
+
 def main(args):
     LINUX = '/proc/spl/kstat/zfs/arcstats'
     BSD1 = 'sysctl'
@@ -123,9 +130,24 @@ def main(args):
     PREFETCH_METADATA_MISSES_PERCENT = PREFETCH_METADATA_MISSES / ARC_MISSES * 100 if ARC_MISSES != 0 else 0
 
     # pools
-    proc = subprocess.run(['/sbin/zpool', 'list', '-pH'], stdout=subprocess.PIPE, universal_newlines=True)
-    if proc.returncode != 0:
-        return proc.returncode
+    exact_size = True
+    zpool_cmd = ['/sbin/zpool']
+    zpool_cmd_list = zpool_cmd + ['list', '-p', '-H']
+    std = {'stdout': subprocess.PIPE, 'stderr': subprocess.PIPE, 'universal_newlines': True}
+
+    ## account for variations between ZoL zfs versions
+    proc = subprocess.run(zpool_cmd_list, **std)
+    if (proc.returncode == 2):
+        # -p option is not present in older versions
+        # edit snmpd.conf zfs extend section to the following:
+        #   extend zfs /usr/bin/sudo /etc/snmp/zfs-linux
+        # make sure to edit your sudo users (usually visudo) and add at the bottom:
+        #   snmp ALL=(ALL) NOPASSWD: /etc/snmp/zfs-linux
+        del zpool_cmd_list[zpool_cmd_list.index('-p')]  # try removing -p to fix the issue
+        proc = subprocess.run(zpool_cmd_list, **std)
+        exact_size = False
+    if (proc.returncode != 0):
+        return proc_err(zpool_cmd_list, proc)
 
     pools = []
     FIELDS = ['name', 'size', 'alloc', 'free', 'ckpoint', 'expandsz', 'frag', 'cap', 'dedup', 'health', 'altroot']
@@ -142,6 +164,18 @@ def main(args):
         info['cap'] = info['cap'].rstrip('%')
         if 'ckpoint' in info:
             info['ckpoint'] = 0 if info['ckpoint'] == '-' else info['ckpoint']
+
+        # zfs-06.5.11 fix
+        if not exact_size:
+            zpool_cmd_get = zpool_cmd + ['get', '-pH', 'size,alloc,free', info['name']]
+            proc2 = subprocess.run(zpool_cmd_get, **std)
+            if (proc2.returncode != 0):
+                return proc_err(zpool_cmd_get, proc2)
+
+            info2 = dict([tuple(s.split('\t')[1:3]) for s in proc2.stdout.splitlines()])
+            info['size'] = info2['size']
+            info['alloc'] = info2['allocated']
+            info['free'] = info2['free']
 
         pools.append(info)
 
