@@ -35,7 +35,7 @@ while getopts "Vha:H:p:" opt; do
 done
 
 if ! [ "$Hflag" ] && ! [ "$hflag" ]; then
-  printf "error: host not specified\n"
+  printf "Error: Host not specified\n"
   hflag=1
   EXITCODE=1
 fi
