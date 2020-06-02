@@ -13,7 +13,7 @@ logfile = '/var/log/backupninja.log'
 backupninja_datas = {
     'last_actions': 0,
     'last_fatal': 0,
-    'last_error':  0,
+    'last_error': 0,
     'last_warning': 0}
 
 if not os.path.isfile(logfile):
