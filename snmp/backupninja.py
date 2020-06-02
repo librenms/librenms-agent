@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 import io
 import re
 import gzip
@@ -7,18 +7,11 @@ import json
 
 LOGFILES = [
     "/var/log/backupninja.log",
-    "/var/log/backupninja.log.1.gz",
 ]
 
-# Last status
-last_actions = 0
-last_fatal = 0
-last_error = 0
-last_warning = 0
-
 def main():
-    get_backupninja_state()
-    output = {'actions': last_actions, 'fatal': last_fatal, 'error': last_error, 'warning': last_warning}
+    last_actions, last_fatal, last_error, last_warning = get_backupninja_state()
+    output = {'version': '1', 'error': '0', 'error_string': '', 'actions': last_actions, 'fatal': last_fatal, 'error': last_error, 'warning': last_warning}
     print(json.dumps(output))
 
 
@@ -30,7 +23,10 @@ def readlog(logfile):
 
 
 def get_backupninja_state():
-    global last_actions, last_fatal, last_error, last_warning
+    last_actions = 0
+    last_fatal = 0
+    last_error = 0
+    last_warning = 0
     
     for logfile in LOGFILES:
         if not os.path.isfile(logfile):
@@ -45,6 +41,8 @@ def get_backupninja_state():
                     last_error = int(match.group(4))
                     last_warning = int(match.group(5))
                     break
+    
+    return last_actions, last_fatal, last_error, last_warning
 
 
 if __name__ == '__main__':
