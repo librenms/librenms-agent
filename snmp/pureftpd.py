@@ -34,7 +34,7 @@ if not output_data['error'] and configfile:
         output_data['errorString'] = "Configfile Error: '%s'" % e
 
 
-output = os.popen('sudo ' + pureftpwho_cmd + ' ' + pureftpwho_args).read()
+output = os.popen(pureftpwho_cmd + ' ' + pureftpwho_args).read()
 
 data = {}
 
