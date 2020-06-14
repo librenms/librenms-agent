@@ -19,8 +19,6 @@ getStatusMPG4='codec_enabled MPG4'
 getStatusMJPG='codec_enabled MJPG'
 getStatusWMV9='codec_enabled WMV9'
 
-[ $(id -u) -eq 0 ] || picmd="sudo $picmd"
-
 $picmd $getTemp | $pised 's|[^0-9.]||g'
 $picmd $getVoltsCore | $pised 's|[^0-9.]||g'
 $picmd $getVoltsRamC | $pised 's|[^0-9.]||g'
