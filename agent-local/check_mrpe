@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+
+VERSION="0.1 (beta)"
+
+IFS=$'\n\t'
+GLOBIGNORE="*"
+
+BIN_NC="$(command -v nc)"
+BIN_SED="$(command -v sed)"
+
+pval="6556"
+
+EXITCODE=0
+
+while getopts "Vha:H:p:" opt; do
+  case $opt in
+    V) printf "check_mrpe v$VERSION\n"
+       exit $EXITCODE
+       ;;
+    h) hflag=1
+       ;;
+    a) aflag=1
+       aval="$OPTARG"
+       ;;
+    H) Hflag=1
+       Hval="$OPTARG"
+       ;;
+    p) pflag=1
+       pval="$OPTARG"
+       ;;
+    \?) hflag=1
+        EXITCODE=1
+        ;;
+  esac
+done
+
+if ! [ "$Hflag" ] && ! [ "$hflag" ]; then
+  printf "Error: Host not specified\n"
+  hflag=1
+  EXITCODE=1
+fi
+
+if [ "$hflag" ]; then
+  printf "check_mrpe:\n"
+  printf "Usage:\n"
+  printf " check_mrpe [-H host] [-p port] [-a app]\n"
+  exit $EXITCODE
+fi
+
+if [ "$aflag" ];
+then
+  SED_CMD="s/\((.*) $aval [0-9] \)\(.*\)/\2/p"
+else
+  SED_CMD="s/(.*) \(.*\) [0-9] \(.*\)/\1 \2/p"
+fi
+
+for i in `$BIN_NC --recv-only $Hval $pval 2>&1 | $BIN_SED '/^<<<mrpe>>>/,/^<<</{//!b};d'` ; do
+  echo $i | $BIN_SED -n "$SED_CMD"
+done
+
