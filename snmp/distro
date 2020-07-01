@@ -62,6 +62,7 @@ elif [ "${OS}" = "Linux" ] ; then
     fi
     if [ -f /usr/bin/pveversion ]; then
       DIST="${DIST}/PVE `/usr/bin/pveversion | cut -d '/' -f 2`"
+      IGNORE_OS_RELEASE=1
     fi
     
   elif [ -f /etc/gentoo-release ] ; then
