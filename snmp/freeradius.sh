@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+CONFIGFILE=/etc/snmp/freeradius.conf
+
 # Set 0 for SNMP extend; set to 1 for Check_MK agent
 AGENT=0
 
@@ -7,6 +9,10 @@ AGENT=0
 RADIUS_SERVER='localhost'
 RADIUS_PORT='18121'
 RADIUS_KEY='adminsecret'
+
+if [ -f $CONFIGFILE ]; do
+    . $CONFIGFILE
+done
 
 # Default radclient access request, shouldn't need to be changed
 RADIUS_STATUS_CMD='Message-Authenticator = 0x00, FreeRADIUS-Statistics-Type = 31, Response-Packet-Type = Access-Accept'
