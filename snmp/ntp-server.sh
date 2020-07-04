@@ -10,14 +10,24 @@
 # If you are unsure, which to set, run this script and make sure that
 # the JSON output variables match that in "ntpq -c rv".
 #
-BIN_NTPD='/usr/bin/env ntpd'
-BIN_NTPQ='/usr/bin/env ntpq'
-BIN_NTPDC='/usr/bin/env ntpdc'
-BIN_GREP='/usr/bin/env grep'
-BIN_TR='/usr/bin/env tr'
-BIN_CUT='/usr/bin/env cut'
-BIN_SED="/usr/bin/env sed"
-BIN_AWK='/usr/bin/env awk'
+
+CONFIGFILE=/etc/snmp/ntp-server.conf
+
+BIN_ENV='/usr/bin/env'
+
+if [ -f $CONFIGFILE ] ; then
+    . $CONFIGFILE
+fi
+
+BIN_NTPD="$BIN_ENV ntpd"
+BIN_NTPQ="$BIN_ENV ntpq"
+BIN_NTPDC="$BIN_ENV ntpdc"
+BIN_GREP="$BIN_ENV grep"
+BIN_TR="$BIN_ENV tr"
+BIN_CUT="$BIN_ENV cut"
+BIN_SED="$BIN_ENV sed"
+BIN_AWK="$BIN_ENV awk"
+
 NTPQV="p11"
 ################################################################
 # Don't change anything unless you know what are you doing     #
