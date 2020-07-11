@@ -2,10 +2,16 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+CONFIGFILE='/etc/snmp/pi-hole.conf'
+
 API_AUTH_KEY=""
 API_URL="localhost/admin/api.php"
 URL_READ_ONLY="?summaryRaw"
 URL_QUERY_TYPE="?getQueryTypes&auth="
+
+if [ -f $CONFIGFILE ]; then
+    . $CONFIGFILE
+fi
 
 
 #/ Description: BASH script to get Pi-hole stats
