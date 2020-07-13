@@ -36,7 +36,7 @@ if [ -d /dev/md ] ; then
         fi
         RAID_DEV_LIST=$($LS $RAID/slaves/)
         RAID_LEVEL=$($CAT $RAID/md/level)
-        RAID_DISC_COUNT=$($CAT $RAID/md/raid_disks)
+        RAID_DISC_COUNT=$($CAT $RAID/md/raid_disks| cut -d' ' -f1)
         RAID_STATE=$($CAT $RAID/md/array_state)
         RAID_ACTION=$($CAT $RAID/md/sync_action)
         RAID_DEGRADED=$($CAT $RAID/md/degraded)
