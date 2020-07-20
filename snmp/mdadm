@@ -14,10 +14,11 @@ VERSION=1
 ERROR_CODE=0
 ERROR_STRING=""
 
-OUTPUT_DATA='['\
+OUTPUT_DATA='['
 
-if [ -d /dev/md ] ; then
-    for ARRAY_BLOCKDEVICE in $(ls -1 /dev/md/*) ; do
+# use 'ls' command to check if md blocks exist
+if $LS /dev/md?* 1> /dev/null 2>&1 ; then
+    for ARRAY_BLOCKDEVICE in $($LS -1 /dev/md?*) ; do
         RAID="/sys/block/"$($BASENAME $($REALPATH $ARRAY_BLOCKDEVICE))
 
         # ignore arrays with no slaves
@@ -29,7 +30,7 @@ if [ -d /dev/md ] ; then
             continue
         fi
 
-        if [[ $($BASENAME $ARRAY_BLOCKDEVICE) = [[:digit:]] ]]; then
+        if [[ $($BASENAME $ARRAY_BLOCKDEVICE) = [[:digit:]] ]] ; then
             RAID_NAME=$($BASENAME $RAID)
         else
             RAID_NAME=$($BASENAME $ARRAY_BLOCKDEVICE)
@@ -101,11 +102,13 @@ if [ -d /dev/md ] ; then
 '","sync_completed":"'$RAID_SYNC_COMPLETED\
 '"},'
 
-    OUTPUT_DATA=$OUTPUT_DATA$ARRAY_DATA
+        OUTPUT_DATA=$OUTPUT_DATA$ARRAY_DATA
     done
-fi
 
-OUTPUT_DATA=${OUTPUT_DATA: : -1}']'
+    OUTPUT_DATA=${OUTPUT_DATA: : -1}']'
+else
+    OUTPUT_DATA=${OUTPUT_DATA}']'
+fi
 
 OUTPUT='{"data":'$OUTPUT_DATA\
 ',"error":"'$ERROR_CODE\
