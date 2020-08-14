@@ -78,7 +78,7 @@ dataorder = [
 for param in dataorder:
     try:
         print(params[param])
-    except:  # not all Apache's have all stats
+    except KeyError:  # not all Apache's have all stats
         print('U')
 
 # print the scoreboard
