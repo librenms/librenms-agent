@@ -19,6 +19,7 @@
 #
 import os
 import time
+import urllib.request
 
 cachetime = 30
 cachefile = '/var/cache/librenms/apache-snmp'
@@ -31,10 +32,8 @@ if os.path.isfile(cachefile) and (time.time() - os.stat(cachefile)[8]) < cacheti
     data = f.read()
     f.close()
 else:
-    # Grab the status URL (fresh data), needs package python-urlgrabber
-    from urlgrabber import urlread
-    # "data" is UTF string, need to decode.
-    data = urlread('http://localhost/server-status?auto', user_agent='SNMP Apache Stats').decode()
+    # Grab the status URL (fresh data), needs package urllib3
+    data = urllib.request.urlopen("http://localhost/server-status?auto").read().decode('UTF-8')
     # Write file
     f = open(cachefile+'.TMP.'+str(os.getpid()), 'w')
     f.write(data)
