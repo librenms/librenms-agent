@@ -2,8 +2,27 @@
 
 import subprocess
 import json
+import sys
+import getopt
+
+auth_param = ""
+
+try:
+    opts, args = getopt.getopt(sys.argv[1:],"ha:",["auth="])
+except getopt.GetoptError:
+    print('redis.py -a AUTH')
+    sys.exit(2)
+for opt, arg in opts:
+    if opt == '-h':
+        print('redis.py -a AUTH')
+        sys.exit()
+    elif opt in ("-a", "--auth"):
+        auth_param = "-a %s" % arg
 
 shell_cmd = "redis-cli info"
+if auth_param:
+    shell_cmd = "redis-cli %s info" % (auth_param)
+
 all_data = subprocess.Popen(shell_cmd, shell=True, stdout=subprocess.PIPE).stdout.read().split(b'\n')
 
 version = 1
