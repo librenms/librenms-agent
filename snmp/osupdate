@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 ################################################################
 # copy this script to /etc/snmp/ and make it executable:       #
 # chmod +x /etc/snmp/osupdate                                  #
