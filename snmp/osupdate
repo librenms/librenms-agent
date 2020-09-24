@@ -26,6 +26,8 @@ BIN_PACMAN='/usr/bin/env pacman'
 CMD_PACMAN='-Sup'
 BIN_PKG='/usr/sbin/pkg'
 CMD_PKG=' audit -q -F'
+BIN_APK='/sbin/apk'
+CMD_APK=' version'
 
 ################################################################
 # Don't change anything unless you know what are you doing     #
@@ -75,6 +77,14 @@ elif command -v pkg &>/dev/null ; then
     UPDATES=`$BIN_PKG $CMD_PKG | $BIN_WC $CMD_WC`
     if [ $UPDATES -ge 1 ]; then
         echo $UPDATES;
+    else
+        echo "0";
+    fi
+elif command -v apk &>/dev/null ; then
+    # Alpine
+    UPDATES=`$BIN_APK $CMD_APK | $BIN_WC $CMD_WC`
+    if [ $UPDATES -ge 2 ]; then
+        echo $(($UPDATES-1));
     else
         echo "0";
     fi
