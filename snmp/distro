@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 # Detects which OS and if it is Linux then it will detect which Linux Distribution.
 
 OS=`uname -s`
@@ -19,7 +19,7 @@ elif [ "${OS}" = "Linux" ] ; then
   if [ -f /etc/fedora-release ]; then
     DIST=$(cat /etc/fedora-release | awk '{print $1}')
     REV=`cat /etc/fedora-release | sed s/.*release\ // | sed s/\ .*//`
-        
+
   elif [ -f /etc/redhat-release ] ; then
     DIST=$(cat /etc/redhat-release | awk '{print $1}')
     if [ "${DIST}" = "CentOS" ]; then
@@ -113,7 +113,7 @@ elif [ "${OS}" = "Linux" ] ; then
 
   # try standardized os version methods
   if [ -f /etc/os-release -a "${IGNORE_OS_RELEASE}" != 1 ] ; then
-    source /etc/os-release
+    . /etc/os-release
     STD_DIST="$NAME"
     STD_REV="$VERSION_ID"
   elif [ -f /etc/lsb-release -a "${IGNORE_LSB}" != 1 ] ; then
