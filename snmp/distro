@@ -139,9 +139,11 @@ elif [ "${OS}" = "Darwin" ] ; then
   fi
 
 elif [ "${OS}" = "FreeBSD" ] ; then
-  DIST=$(cat /etc/version | cut -d'-' -f 1)
-  if [ "${DIST}" = "FreeNAS" ]; then
-    OSSTR=`cat /etc/version | cut -d' ' -f 1`
+  if [ -f /etc/version ] ; then
+    DIST=$(cat /etc/version | cut -d'-' -f 1)
+    if [ "${DIST}" = "FreeNAS" ]; then
+      OSSTR=`cat /etc/version | cut -d' ' -f 1`
+    fi
   else
     OSSTR=`/usr/bin/uname -mior`
   fi
