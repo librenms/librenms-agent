@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-VERSION="0.1 (beta)"
+VERSION="0.2 (beta)"
 
 IFS=$'\n\t'
 GLOBIGNORE="*"
@@ -10,12 +10,12 @@ BIN_SED="$(command -v sed)"
 
 pval="6556"
 
-EXITCODE=0
+EXITCODE=3
 
 while getopts "Vha:H:p:" opt; do
   case $opt in
     V) printf "check_mrpe v$VERSION\n"
-       exit $EXITCODE
+       exit 0
        ;;
     h) hflag=1
        ;;
@@ -29,7 +29,7 @@ while getopts "Vha:H:p:" opt; do
        pval="$OPTARG"
        ;;
     \?) hflag=1
-        EXITCODE=1
+        EXITCODE=0
         ;;
   esac
 done
@@ -50,10 +50,34 @@ fi
 if [ "$aflag" ];
 then
   SED_CMD="s/\((.*) $aval [0-9] \)\(.*\)/\2/p"
+  SED_CMD_STATUS="s/(.*) $aval \([0-9]\) \(.*\)/\1/p"
 else
   SED_CMD="s/(.*) \(.*\) [0-9] \(.*\)/\1 \2/p"
 fi
 
 for i in `$BIN_NC -w 1 $Hval $pval 2>&1 | $BIN_SED '/^<<<mrpe>>>/,/^<<</{//!b};d'` ; do
   echo $i | $BIN_SED -n "$SED_CMD"
+  if [ "$aflag" ];
+  then
+    STATUSCODE=$(echo $i | $BIN_SED -n "$SED_CMD_STATUS")
+    if [ "$STATUSCODE" ];
+    then
+      case $STATUSCODE in
+        0)
+          EXITCODE=0
+          ;;
+        1)
+          EXITCODE=1
+          ;;
+        2)
+          EXITCODE=2
+          ;;
+        *)
+          EXITCODE=3
+          ;;
+      esac
+    fi
+  fi
 done
+
+exit $EXITCODE

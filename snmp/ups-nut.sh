@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 ################################################################
 # Instructions:                                                #
 # 1. copy this script to /etc/snmp/ and make it executable:    #
