@@ -10,9 +10,9 @@ RADIUS_SERVER='localhost'
 RADIUS_PORT='18121'
 RADIUS_KEY='adminsecret'
 
-if [ -f $CONFIGFILE ]; do
+if [ -f $CONFIGFILE ]; then
     . $CONFIGFILE
-done
+fi
 
 # Default radclient access request, shouldn't need to be changed
 RADIUS_STATUS_CMD='Message-Authenticator = 0x00, FreeRADIUS-Statistics-Type = 31, Response-Packet-Type = Access-Accept'
