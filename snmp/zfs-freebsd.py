@@ -22,7 +22,11 @@ def main(args):
 
 	def chomp(line):
 		bits = [b.strip() for b in line.split(':')]
-		return bits[0], int(bits[1])
+		try:
+			return bits[0], int(bits[1])
+		except ValueError:
+			return bits[0], bits[1]
+
 	stats = dict(chomp(l) for l in p.stdout.splitlines())
 	if 'kstat.zfs.misc.arcstats.recycle_miss' not in stats:
 		stats['kstat.zfs.misc.arcstats.recycle_miss'] = 0
