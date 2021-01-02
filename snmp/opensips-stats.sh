@@ -1,5 +1,6 @@
 #!/bin/bash
 # Author: Sharad Kumar <skumar@securevoip.io>
+# This script is for OpenSIPS 2.X + version
 
 total_memory=$(opensipsctl fifo get_statistics total_size | awk '{print "Total Memory=" $2}')
 used_memory=$(opensipsctl fifo get_statistics real_used_size | awk '{print "Used Memory=" $2}')
