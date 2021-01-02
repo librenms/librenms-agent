@@ -54,6 +54,7 @@ elif [ "${OS}" = "Linux" ] ; then
   elif [ -f /etc/debian_version ] ; then
     DIST="Debian `cat /etc/debian_version`"
     REV=""
+    IGNORE_OS_RELEASE=1
     if [ -f /usr/bin/lsb_release ] ; then
       ID=`lsb_release -i | awk -F ':' '{print $2}' | sed 's/	//g'`
     fi
@@ -62,16 +63,13 @@ elif [ "${OS}" = "Linux" ] ; then
     fi
     if [ -f /usr/bin/pveversion ]; then
       DIST="${DIST}/PVE `/usr/bin/pveversion | cut -d '/' -f 2`"
-      IGNORE_OS_RELEASE=1
     fi
     if [ -f /usr/bin/pmgversion ]; then
       # pmgversion requires root permissions to run, please add NOPASSWD setting to visudo.
       DIST="${DIST}/PMG `sudo /usr/bin/pmgversion | cut -d '/' -f 2`"
-      IGNORE_OS_RELEASE=1
     fi
     if [ -f /etc/dogtag ]; then
       DIST=`cat /etc/dogtag`
-      IGNORE_OS_RELEASE=1
     fi
     
   elif [ -f /etc/gentoo-release ] ; then
