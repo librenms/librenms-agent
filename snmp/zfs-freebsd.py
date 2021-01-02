@@ -5,6 +5,9 @@
 import json
 import subprocess
 
+SYSCTL = '/sbin/sysctl'
+ZPOOL = '/usr/local/sbin/zpool'
+
 def percent(numerator, denominator, default=0):
 	try:
 		return numerator / denominator * 100
@@ -12,15 +15,19 @@ def percent(numerator, denominator, default=0):
 		return default
 
 def main(args):
-	p = subprocess.run(['/sbin/sysctl', '-q', 'kstat.zfs', 'vfs.zfs'], stdout=subprocess.PIPE, universal_newlines=True)
-	
+	p = subprocess.run([SYSCTL, '-q', 'kstat.zfs', 'vfs.zfs'], stdout=subprocess.PIPE, universal_newlines=True)
+
 	if p.returncode != 0:
 		return p.returncode
 
 	def chomp(line):
 		bits = [b.strip() for b in line.split(':')]
-		return bits[0], int(bits[1])
-	stats = dict(chomp(l) for l in p.stdout.splitlines())
+		try:
+			return bits[0], int(bits[1])
+		except ValueError:
+			return bits[0], bits[1]
+
+	stats = dict(chomp(l) for l in p.stdout.splitlines() if l)
 	if 'kstat.zfs.misc.arcstats.recycle_miss' not in stats:
 		stats['kstat.zfs.misc.arcstats.recycle_miss'] = 0
 
@@ -92,7 +99,7 @@ def main(args):
 	output['pre_meta_misses_per'] = percent(output['pre_meta_misses'], output['arc_misses'])
 
 	# pools
-	p = subprocess.run(['/sbin/zpool', 'list', '-pH'], stdout=subprocess.PIPE, universal_newlines=True)
+	p = subprocess.run([ZPOOL, 'list', '-pH'], stdout=subprocess.PIPE, universal_newlines=True)
 	if p.returncode != 0:
 		return p.returncode
 	output['pools'] = []
