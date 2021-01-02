@@ -55,7 +55,7 @@ else
   SED_CMD="s/(.*) \(.*\) [0-9] \(.*\)/\1 \2/p"
 fi
 
-for i in `$BIN_NC --recv-only $Hval $pval 2>&1 | $BIN_SED '/^<<<mrpe>>>/,/^<<</{//!b};d'` ; do
+for i in `$BIN_NC -w 1 $Hval $pval 2>&1 | $BIN_SED '/^<<<mrpe>>>/,/^<<</{//!b};d'` ; do
   echo $i | $BIN_SED -n "$SED_CMD"
   if [ "$aflag" ];
   then
@@ -79,4 +79,5 @@ for i in `$BIN_NC --recv-only $Hval $pval 2>&1 | $BIN_SED '/^<<<mrpe>>>/,/^<<</{
     fi
   fi
 done
+
 exit $EXITCODE
