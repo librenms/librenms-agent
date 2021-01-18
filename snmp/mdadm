@@ -22,7 +22,7 @@ if $LS /dev/md?* 1> /dev/null 2>&1 ; then
         RAID="/sys/block/"$($BASENAME $($REALPATH $ARRAY_BLOCKDEVICE))
 
         # ignore arrays with no slaves
-        if [ -z "$($LS -1 $RAID/slaves)" ] ; then
+        if [ -z "$($LS -1 $RAID/slaves 2> /dev/null)" ] ; then
             continue
         fi
         # ignore "non existing" arrays
