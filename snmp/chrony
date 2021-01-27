@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+import json
+import shlex
+import subprocess
+
+def proc_err(cmd, proc):
+    # output process error and first line of error code
+    return "{}{}".format(
+        subprocess.CalledProcessError(proc.returncode, cmd, proc.stderr),
+        " ({})".format(proc.stderr.splitlines()[0]) if proc.stderr.splitlines() else ""
+    )
+
+def main(args):
+    CSV_HEADERS = {
+        'tracking': [
+            'reference_name',
+            'reference_type',
+            'stratum',
+            'reference_time',
+            'system_time',
+            'last_offset',
+            'rms_offset',
+            'frequency',
+            'residual_frequency',
+            'skew',
+            'root_delay',
+            'root_dispersion',
+            'update_interval',
+            'leap_status',
+        ],
+        'sources': [
+            'source_mode',
+            'source_state',
+            'source_name',
+            'stratum',
+            'polling_rate',
+            'reachability',
+            'lastrx',
+            'adjusted_offset',
+            'measured_offset',
+            'estimated_error'
+        ],
+        'sourcestats': [
+            'source_name',
+            'number_samplepoints',
+            'number_runs',
+            'span',
+            'frequency',
+            'frequency_skew',
+            'offset',
+            'stddev',
+        ]
+    }
+    DATA = {
+        'tracking': {},
+        'sources': []
+    }
+
+    # get and set tracking data
+    rc, tracking = subprocess.getstatusoutput('chronyc -c tracking')
+    if rc != 0:
+        print ("Error getting tracking:", tracking)
+        exit(1)
+    tracking = tracking.split(',')
+    for i in range(0, len(CSV_HEADERS['tracking'])):
+        DATA['tracking'][CSV_HEADERS['tracking'][i]] = tracking[i]
+
+    # get sources + sourcestats data
+    rc, sources = subprocess.getstatusoutput('chronyc -c sources')
+    if rc != 0:
+        print ("Error getting sources:", tracking)
+        exit(1)
+    sources = sources.split('\n')
+    rc, sourcestats = subprocess.getstatusoutput('chronyc -c sourcestats')
+    if rc != 0:
+        print ("Error getting sourcestats:", tracking)
+        exit(1)
+    sourcestats = sourcestats.split('\n')
+
+    # mix sources and sourcestats
+    for i in range(0, len(sources)):
+        source = sources[i].split(',')
+        stats = sourcestats[i].split(',')
+        data = {}
+
+        for j in range(0, len(CSV_HEADERS['sources'])):
+            data[CSV_HEADERS['sources'][j]] = source[j]
+        for j in range(0, len(CSV_HEADERS['sourcestats'])):
+            data[CSV_HEADERS['sourcestats'][j]] = stats[j]
+
+        DATA['sources'].append(data)
+
+    print(json.dumps(DATA))
+
+    return 0
+
+if __name__ == '__main__':
+    import sys
+    sys.exit(main(sys.argv[1:]))
