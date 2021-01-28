@@ -3,12 +3,22 @@ import json
 import shlex
 import subprocess
 
+VERSION = 1
+
 def proc_err(cmd, proc):
     # output process error and first line of error code
     return "{}{}".format(
         subprocess.CalledProcessError(proc.returncode, cmd, proc.stderr),
         " ({})".format(proc.stderr.splitlines()[0]) if proc.stderr.splitlines() else ""
     )
+
+def print_data(data, error, error_msg):
+    print(json.dumps({
+        'data': data,
+        'error': error,
+        'errorString': error_msg,
+        'version': VERSION
+    }))
 
 def main(args):
     CSV_HEADERS = {
@@ -55,12 +65,14 @@ def main(args):
         'tracking': {},
         'sources': []
     }
+    ERROR = False
+    ERROR_MSG = ''
 
     # get and set tracking data
     rc, tracking = subprocess.getstatusoutput('chronyc -c tracking')
     if rc != 0:
-        print ("Error getting tracking:", tracking)
-        exit(1)
+        print_data(DATA, rc, tracking)
+        return 1
     tracking = tracking.split(',')
     for i in range(0, len(CSV_HEADERS['tracking'])):
         DATA['tracking'][CSV_HEADERS['tracking'][i]] = tracking[i]
@@ -68,13 +80,13 @@ def main(args):
     # get sources + sourcestats data
     rc, sources = subprocess.getstatusoutput('chronyc -c sources')
     if rc != 0:
-        print ("Error getting sources:", tracking)
-        exit(1)
+        print_data(DATA, rc, sources)
+        return 1
     sources = sources.split('\n')
     rc, sourcestats = subprocess.getstatusoutput('chronyc -c sourcestats')
     if rc != 0:
-        print ("Error getting sourcestats:", tracking)
-        exit(1)
+        print_data(DATA, rc, sourcestats)
+        return 1
     sourcestats = sourcestats.split('\n')
 
     # mix sources and sourcestats
@@ -90,7 +102,7 @@ def main(args):
 
         DATA['sources'].append(data)
 
-    print(json.dumps(DATA))
+    print_data(DATA, ERROR, ERROR_MSG)
 
     return 0
 
