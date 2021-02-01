@@ -45,7 +45,7 @@ def main(args):
             'stratum',
             'polling_rate',
             'reachability',
-            'lastrx',
+            'last_rx',
             'adjusted_offset',
             'measured_offset',
             'estimated_error'
