@@ -61,14 +61,11 @@
 # 20210131 - v1.1 - implemented hpasmcli method
 # 20210204 - v1.2 - added top-level reading, librenms option
 # 20210205 - v1.3 - added cents per kWh
-#
+# 20210205 - v1.4 - improvement to UI
 
-version = 1.3
-error = 0
-errorString = ""
-data = {}
-result = {}
-#costPerkWh = 0.15
+version = 1.4
+
+### Libraries
 
 import os
 import sys
@@ -78,7 +75,8 @@ import re
 import shutil
 import subprocess
 
-# Option defaults
+### Option defaults
+
 method = ""         # must be one of methods array
 verbose = False
 warnings = False
@@ -86,15 +84,19 @@ librenms = True     # Return results in a JSON format suitable for Librenms
                     # Set to false to return JSON data only
 pretty = False      # Pretty printing
 
-# Globals
+### Globals
+
+error = 0
+errorString = ""
+data = {}
+result = {}
 usage = "USAGE: " + os.path.basename(__file__) + " [-h|--help] |" \
-    + " [-l|--list-methods] |" \
-    + " [-m|--method <method>] [-n|--no-librenms] [-p|--pretty]" \
-    + " [-v|--verbose] [-w|--warnings]"
-
+    + " [-m|--method <method>] [-N|--no-librenms] [-p|--pretty]" \
+    + " [-v|--verbose] [-w|--warnings] | -l|--list-methods | -h|--help"    
 methods = ["sensors", "hpasmcli"]
+#costPerkWh = 0.15  # <<<< UNCOMMENT
 
-# General functions
+### General functions
 
 def errorMsg(message):
     sys.stderr.write("ERROR: " + message + "\n")
@@ -117,7 +119,7 @@ def listMethods():
     verbose = True
     verboseMsg("Available methods are: " + str(methods).strip('[]'))
 
-# Data functions
+### Data functions
 
 def getData(method):
     if method == "sensors":
@@ -274,7 +276,7 @@ def getHPASMData():
 # Argument Parsing
 try:
     opts, args = getopt.gnu_getopt(
-        sys.argv[1:], 'm:hlnpvw', ['method', 'help', 'list-methods', 'no-librenms', 'pretty', 'verbose', 'warnings']
+        sys.argv[1:], 'm:hlNpvw', ['method', 'help', 'list-methods', 'no-librenms', 'pretty', 'verbose', 'warnings']
     )
     if len(args) != 0:
         usageError("Unknown argument")
@@ -297,7 +299,7 @@ for opt, val in opts:
         else:
             method = val
 
-    elif opt in ["-n", "--no-librenms"]:
+    elif opt in ["-N", "--no-librenms"]:
         librenms = False
 
     elif opt in ["-p", "--pretty"]:
