@@ -10,18 +10,18 @@
 #
 # DESCRIPTION
 #
-# The script attemps to determine the current power consumption of the host via
+# The script attempts to determine the current power consumption of the host via
 # one or more methods. The scripts should make it easier to add your own methods
-# if no included one is suitable for your host machine. 
+# if no included one is suitable for your host machine.
 #
-# The script should be called by the snmpd daemon on the host machine. This is 
-# achieved via the 'extend' functionality in snmpd. For example, in 
+# The script should be called by the snmpd daemon on the host machine. This is
+# achieved via the 'extend' functionality in snmpd. For example, in
 # /etc/snmp/snmpd.conf:
 #       extend      powermon   /usr/local/bin/powermon-snmp.py
 #
 # CUSTOMISING RESULTS
 #
-# The results can be accessed via the nsExtend MIBs from another host, e.g. 
+# The results can be accessed via the nsExtend MIBs from another host, e.g.
 #   snmpwalk -v 2c -c <community_string> <host> \
 #       <nsExtendConfigTable|nsExtendOutputFull|nsExtendOutput1Table>
 #
@@ -32,42 +32,46 @@
 # terms of Watts. This can be derived from a reading from one of the sub-
 # components, currently the ACPI 'meter' or 'psus'. But you must tell the script
 # which is the top-level or final reading you want to use in the results. This
-# allows you sum results from dual PSUs or apply your own power factor for 
-# example.
+# allows you to sum results from dual PSUs or apply your own power factor for
+# example.   To achieve this see the definition of 'data["reading"]' at the end
+# of the script, and modify as required. Two examples are provided.
 #
-# To achieve this see the definition of 'data["reading"]' at the end of the
-# script, and modify as required. Two examples are provided.
+# If you want to track your electricity cost you should also update the cost
+# per kWh value below. When you cost changes you can update the value. The
+# supply rate will be returned in the results
 #
 # COMPATIBILITY
-# 
+#
 # - Linux, not tested on other OS
 # - Tested on python 3.6, 3.8
 #
 # INSTALLATION
 #
 # - Sensors method: pip install PySensors
-# - hpasmcli method: install hp-health package for your distribution 
+# - hpasmcli method: install hp-health package for your distribution
 # - Copy this script somewhere, e.g. /usr/local/bin
+# - Uncomment costPerkWh and change the value
+# - Test then customise top-level reading
 # - Add the 'extend' config to snmpd.conf
 # - https://docs.librenms.org/Extensions/Applications/#powermon
-# - test then customise top-level reading
 #
 # CHANGELOG
 #
 # 20210130 - v1.0 - initial, implemented PySensors method
 # 20210131 - v1.1 - implemented hpasmcli method
 # 20210204 - v1.2 - added top-level reading, librenms option
+# 20210205 - v1.3 - added cents per kWh
 #
 
-version = 1.2
+version = 1.3
 error = 0
 errorString = ""
 data = {}
 result = {}
+costPerkWh = 0.224931
 
 import os
 import sys
-#import time
 import getopt
 import json
 import re
@@ -75,7 +79,7 @@ import shutil
 import subprocess
 
 # Option defaults
-method = "" # must be one of methods array
+method = ""         # must be one of methods array
 verbose = False
 warnings = False
 librenms = True     # Return results in a JSON format suitable for Librenms
@@ -94,7 +98,7 @@ methods = ["sensors", "hpasmcli"]
 
 def errorMsg(message):
     sys.stderr.write("ERROR: " + message + "\n")
- 
+
 def usageError(message="Invalid argument"):
     errorMsg(message)
     sys.stderr.write(usage + "\n")
@@ -122,7 +126,7 @@ def getData(method):
     elif method == "hpasmcli":
         data = getHPASMData()
     else:
-        usageError("You must specify a method.") 
+        usageError("You must specify a method.")
 
     return data
 
@@ -210,8 +214,6 @@ def getHPASMData():
         sys.exit(1)
 
     rawdata = str(output.stdout).replace('\t', ' ').replace('\n ', '\n').split('\n')
-    #print(rawdata)
-    # ['', 'Power Meter #1', 'Power Reading  : 336', '', 'Power supply #1', 'Present  : Yes', 'Redundant: No', 'Condition: Ok', 'Hotplug  : Supported', 'Power    : 315 Watts', 'Power supply #2', 'Present  : Yes', 'Redundant: No', 'Condition: FAILED', 'Hotplug  : Supported', '', '']
 
     hdata = {}
     hdata["meter"] = {}
@@ -310,13 +312,23 @@ for opt, val in opts:
     else:
         continue
 
+# Electricity Cost
+try:
+    costPerkWh
+
+except NameError:
+    errorMsg("cost per kWh is undefined (uncomment in script)")
+    sys.exit(1)
+
 # Get data
 data = getData(method)
+data["supply"] = {}
+data["supply"]["rate"] = costPerkWh
 
-# Update data with top-level reading 
-#   CUSTOMISE THIS FOR YOUR HOST! 
+# Top-level reading
+#   CUSTOMISE THIS FOR YOUR HOST
 #   i.e. by running with -p -n -m and see what you get
-try: 
+try:
     # Example 1 - take reading from ACPI meter id 1
     data["reading"] = data["meter"]["1"]["reading"]
 
@@ -334,6 +346,7 @@ if librenms:
     result['error']=error
     result['errorString']=errorString
     result['data']=data
+
 else:
     result=data
 
@@ -341,6 +354,6 @@ else:
 if pretty:
     print(json.dumps(result, indent=2))
 
-else:    
+else:
     print(json.dumps(result))
 
