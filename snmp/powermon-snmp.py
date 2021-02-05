@@ -68,7 +68,7 @@ error = 0
 errorString = ""
 data = {}
 result = {}
-costPerkWh = 0.224931
+#costPerkWh = 0.15
 
 import os
 import sys
@@ -291,7 +291,7 @@ for opt, val in opts:
         listMethods()
         sys.exit(0)
 
-    elif opt in ["-m", "--methods"]:
+    elif opt in ["-m", "--method"]:
         if val not in methods:
             usageError("Invalid method: '" + val + "'")
         else:
@@ -327,7 +327,8 @@ data["supply"]["rate"] = costPerkWh
 
 # Top-level reading
 #   CUSTOMISE THIS FOR YOUR HOST
-#   i.e. by running with -p -n -m and see what you get
+#   i.e. by running with -p -n -m and see what you get and then updating where
+#   in the JSON data the top-level reading is sourced from
 try:
     # Example 1 - take reading from ACPI meter id 1
     data["reading"] = data["meter"]["1"]["reading"]
@@ -338,7 +339,7 @@ try:
     #    + float(data["psu"]["2"]["reading"]) / pf )
 
 except:
-    data["reading"] = "INVALID"
+    data["reading"] = 0.0
 
 # Build result
 if librenms:
