@@ -46,13 +46,11 @@
 # 2021019 - v1.1 - initial
 # 2021022 - v1.2 - returns full api data 
 # 2021023 - v1.3 - improved error handling
-#
+# 2021205 - v1.4 - improved UI
 
-version = 1.3
-error = 0
-errorString = ""
-data = {}
-result = {}
+version = 1.4
+
+### Libraries
 
 import os
 import sys
@@ -63,18 +61,31 @@ import json
 import validators
 import re
 
-# Option defaults
-url = "" # usually "<host>:<port>/1/summary"
+### Globals
+
+error = 0
+errorString = ""
+data = {}
+result = {}
+usage = "USAGE: " + os.path.basename(__file__) \
+    + " -u|--url <url-to-xmrig-api>" \
+    + " [-c|--cache-time <seconds>] [-C|--cache-file <path>]" \
+    + " [-n|--no-caching] [-N|--no-librenms] [-p|--pretty]" \
+    + " [-v|--verbose] [-w|--warnings] | -h|--help"
+
+### Option defaults
+
+url = ""                # usually "<host>:<port>/1/summary"
 caching = True
 cachetime = 10
 cachefile = None
 cachefiles = [ "/var/cache/xmrig/summary.json" ]
+librenms = True
+pretty = False
 verbose = False
 warnings = False
 
-# Globals
-usage = "USAGE: " + os.path.basename(__file__) + " [-u|--url <url-to-xmrig-api>] [-c|--cache-time <seconds>]" \
-    + " [-C|--cache-file <path>] [-n|--no-caching] [-v|--verbose] [-w|--warnings]"
+### General functions
 
 def errorMsg(message):
     sys.stderr.write("ERROR: " + message + "\n")
@@ -84,13 +95,15 @@ def usageError(message="Invalid argument"):
     sys.stderr.write(usage + "\n")
     sys.exit(1)
 
-def usageWarning(message):
+def warningMsg(message):
     if verbose or warnings:
         sys.stderr.write("WARN:  " + message + "\n")
 
 def verboseMsg(message):
     if verbose:
         sys.stderr.write("INFO:  " + message + "\n")
+
+### Data functions
 
 def getAPIData(url):
     verboseMsg("Getting data from worker")
@@ -111,10 +124,11 @@ def writeCache(rawdata):
     f.write(rawdata)
     f.close()
 
-# Argument Parsing
+### Argument Parsing
+
 try:
     opts, args = getopt.gnu_getopt(
-        sys.argv[1:], 'cCu:nvw', ['cache-time', 'cache-file', 'url', 'no-caching', 'verbose', 'warnings']
+        sys.argv[1:], 'cCu:hnNpvw', ['cache-time', 'cache-file', 'url', 'help', 'no-caching', 'no-librenms', 'pretty', 'verbose', 'warnings']
     )
     if len(args) != 0:
         usageError("Unknown argument")
@@ -123,7 +137,11 @@ except getopt.GetoptError as e:
     usageError(str(e))
 
 for opt, val in opts:
-    if opt in ["-c", "--cache-time"]:
+    if opt in ["-h", "--help"]:
+        print(usage)
+        sys.exit(0)
+
+    elif opt in ["-c", "--cache-time"]:
         if val.isdigit():
             cachetime = val
         else: 
@@ -132,14 +150,20 @@ for opt, val in opts:
     elif opt in ["-C", "--cache-file"]:
         cachefiles.insert(0, val)
 
+    elif opt in ["-n", "--no-caching"]:
+        caching = False
+
+    elif opt in ["-N", "--no-librenms"]:
+        librenms = False
+
+    elif opt in ["-p", "--pretty"]:
+        pretty = True
+
     elif opt in ["-u", "--url"]:
         if not validators.url(val):
             usageError("Invalid URL: '" + val + "'")
         else:
             url = val
-
-    elif opt in ["-n", "--no-caching"]:
-        caching = False
 
     elif opt in ["-v", "--verbose"]:
         verbose = True
@@ -176,7 +200,7 @@ if caching:
             break
 
     if cachefile is None:
-        errorMsg("No writable cache found, caching will be disabled")
+        errorMsg("No writable cache found, caching will be disabled.")
         caching = False
         
 # Get Data
@@ -224,13 +248,25 @@ else:
     
 # Write cache
 if caching and error == 0:
-    writeCache(json.dumps(data, indent=2))
+    try:
+        writeCache(json.dumps(data, indent=2))
+    except:
+        warningMsg("Failed to write cache")
 
 # Build result
-result['version']=version
-result['error']=error
-result['errorString']=errorString
-result['data']=data
+if librenms:
+    result['version']=version
+    result['error']=error
+    result['errorString']=errorString
+    result['data']=data
 
-print(json.dumps(result))
+else:
+    result = data
+
+# Print result
+if pretty:
+    print(json.dumps(result, indent=2))
+
+else:
+    print(json.dumps(result))
 
