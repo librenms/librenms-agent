@@ -49,12 +49,6 @@ debug() {
 		echo '[ok] curl bin'
 	fi
 
-	if ! [ -x "$(command -v calc)" ]; then
-		echo '[error] calc binary not available, please install it'
-	else
-		echo '[ok] calc bin'
-	fi
-
 	if [ -z "$API_URL" ]; then
 		echo '[error] API_URL is not set'
 	else
@@ -105,9 +99,9 @@ exportdata() {
 		# Max IP addresses in scope
 		# Convert IPs to decimal and subtract
 		IFS="." read -r -a array <<< $DHCP_START
-		DHCPSTARTDECIMAL=($(calc "(${array[0]}*256^3) + (${array[1]}*256^2) + (${array[2]}*256) + ${array[3]}"))
+		DHCPSTARTDECIMAL=$(( (${array[0]}*256**3) + (${array[1]}*256**2) + (${array[2]}*256) + ${array[3]} ))
 		IFS="." read -r -a array <<< $DHCP_END
-		DHCPENDDECIMAL=($(calc "(${array[0]}*256^3) + (${array[1]}*256^2) + (${array[2]}*256) + ${array[3]}"))
+		DHCPENDDECIMAL=$(( (${array[0]}*256**3) + (${array[1]}*256**2) + (${array[2]}*256) + ${array[3]} ))
 		expr $DHCPENDDECIMAL - $DHCPSTARTDECIMAL
 		# Current lease count
 		cat $DHCPLEASEFILE | wc -l
