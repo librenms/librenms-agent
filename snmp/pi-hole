@@ -8,11 +8,17 @@ API_AUTH_KEY=""
 API_URL="localhost/admin/api.php"
 URL_READ_ONLY="?summaryRaw"
 URL_QUERY_TYPE="?getQueryTypes&auth="
+PICONFIGFILE='/etc/pihole/setupVars.conf'
+DHCPLEASEFILE='/etc/pihole/dhcp.leases'
 
 if [ -f $CONFIGFILE ]; then
     . $CONFIGFILE
 fi
 
+# read in pi-hole variables for DHCP range
+if [ -f $PICONFIGFILE ]; then
+    . $PICONFIGFILE
+fi
 
 #/ Description: BASH script to get Pi-hole stats
 #/ Examples: ./pi-hole-stats.sh
@@ -66,6 +72,16 @@ debug() {
 	else
 		echo '[ok] URL_QUERY_TYPE not set'
 	fi
+	if [ -f $PICONFIGFILE ]; then
+		echo '[ok] Pi-Hole config file exists, DHCP stats will be captured if scope active'
+	else 
+		echo '[error] Pi-Hole config file does not exist, DHCP stats will not be captured if used'
+	fi
+	if [ -f $DHCPLEASEFILE ]; then
+		echo '[ok] DHCP lease file exists, DHCP stats will be captured if scope active'
+	else
+		echo '[error] DHCP lease file does not exist, DHCP stats will not be captured if used'
+	fi
 }
 
 exportdata() {
@@ -76,6 +92,23 @@ exportdata() {
 	# A / AAAA / PTR / SRV
 	GET_QUERY_TYPE=$(curl -s $API_URL$URL_QUERY_TYPE$API_AUTH_KEY | jq '.[]["A (IPv4)", "AAAA (IPv6)", "PTR", "SRV"]')
 	echo $GET_QUERY_TYPE | tr " " "\n"
+
+	# Find number of DHCP address in scope and current lease count
+	# case-insensitive compare, just in case :)
+	if [ "${DHCP_ACTIVE,,}" = "true" ]; then
+		# Max IP addresses in scope
+		# Convert IPs to decimal and subtract
+		IFS="." read -r -a array <<< $DHCP_START
+		DHCPSTARTDECIMAL=$(( (${array[0]}*256**3) + (${array[1]}*256**2) + (${array[2]}*256) + ${array[3]} ))
+		IFS="." read -r -a array <<< $DHCP_END
+		DHCPENDDECIMAL=$(( (${array[0]}*256**3) + (${array[1]}*256**2) + (${array[2]}*256) + ${array[3]} ))
+		expr $DHCPENDDECIMAL - $DHCPSTARTDECIMAL
+		# Current lease count
+		cat $DHCPLEASEFILE | wc -l
+	else
+		echo 0
+		echo 0
+	fi
 }
 
 if [ -z $* ]; then
