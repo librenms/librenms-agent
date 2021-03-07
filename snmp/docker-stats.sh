@@ -28,7 +28,7 @@ if [ $ERROR -ne 0 ];then
   ERROR_STRING=${STATS}
   unset STATS
 fi
-jq -nM \
+jq -nMc \
   --slurpfile stats <(echo "${STATS:-}") \
   --arg version "${VERSION:-1}" \
   --arg error "${ERROR:-0}" \
