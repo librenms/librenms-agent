@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from subprocess import Popen, PIPE
+from subprocess import PIPE, Popen
 
 kvars = [ 
     'corrupt-packets', 'deferred-cache-inserts', 'deferred-cache-lookup',

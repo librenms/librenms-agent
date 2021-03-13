@@ -21,9 +21,9 @@
 # requirements: mailcow-dockerized and pflogsumm
 #
 
-import subprocess
-import re
 import json
+import re
+import subprocess
 
 # LibreNMS poller interval
 librenms_poller_interval = 300

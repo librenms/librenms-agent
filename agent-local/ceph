@@ -14,8 +14,9 @@
 #
 # See http://www.gnu.org/licenses/gpl.txt for the full license
 
-from subprocess import check_output
 import json
+from subprocess import check_output
+
 
 def cephversion():
     cephv     = check_output(["/usr/bin/ceph", "version"]).decode("utf-8").replace('ceph version ', '')

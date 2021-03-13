@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-from urllib.request import urlopen
 import re
+from urllib.request import urlopen
 
 data = urlopen('http://localhost/nginx-status').read()
 

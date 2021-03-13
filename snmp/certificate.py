@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 
-import socket
-import ssl
 import datetime
 import json
-
+import socket
+import ssl
 
 CONFIGFILE='/etc/snmp/certificate.json'
 # {"domains": [

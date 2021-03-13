@@ -67,13 +67,13 @@ version = 1.4
 
 ### Libraries
 
-import os
-import sys
 import getopt
 import json
+import os
 import re
 import shutil
 import subprocess
+import sys
 
 ### Option defaults
 

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
 import json
-import yaml
 from os.path import isfile
 from time import time
 
+import yaml
 
 output = {}
 output['error'] = 0

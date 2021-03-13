@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
-import subprocess
 import json
+import subprocess
 
 shell_cmd = "redis-cli info"
 all_data = subprocess.Popen(shell_cmd, shell=True, stdout=subprocess.PIPE).stdout.read().split(b'\n')

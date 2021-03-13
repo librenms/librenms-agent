@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 import io
-import re
-import os
 import json
+import os
+import re
 
 version = 1
 error = 0

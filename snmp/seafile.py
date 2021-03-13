@@ -14,8 +14,9 @@
 # Clients -> plattform (count)
 # Clients -> version (count)
 
-import requests
 import json
+
+import requests
 
 # Configfile content example:
 # {"url": "https://seafile.mydomain.org",

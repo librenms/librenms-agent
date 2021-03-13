@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
-import subprocess
 import json
+import subprocess
 from os.path import isfile
 
 CONFIGFILE = '/etc/snmp/dhcp.json'
