@@ -3,12 +3,12 @@ import json
 import subprocess
 from subprocess import PIPE, Popen
 
-input = Popen(['rec_control', 'get-all'], stdout=PIPE).communicate()[0]
+input = Popen(["rec_control", "get-all"], stdout=PIPE).communicate()[0]
 data = []
 
 for line in input.splitlines():
     item = line.split()
-    data.append({'name': item[0].decode(), 'value': int(item[1].decode())})
+    data.append({"name": item[0].decode(), "value": int(item[1].decode())})
 
-print('<<<powerdns-recursor>>>')
+print("<<<powerdns-recursor>>>")
 print(json.dumps(data))

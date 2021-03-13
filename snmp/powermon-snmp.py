@@ -77,12 +77,12 @@ import sys
 
 ### Option defaults
 
-method = ""         # must be one of methods array
+method = ""  # must be one of methods array
 verbose = False
 warnings = False
-librenms = True     # Return results in a JSON format suitable for Librenms
-                    # Set to false to return JSON data only
-pretty = False      # Pretty printing
+librenms = True  # Return results in a JSON format suitable for Librenms
+# Set to false to return JSON data only
+pretty = False  # Pretty printing
 
 ### Globals
 
@@ -90,40 +90,51 @@ error = 0
 errorString = ""
 data = {}
 result = {}
-usage = "USAGE: " + os.path.basename(__file__) + " [-h|--help] |" \
-    + " [-m|--method <method>] [-N|--no-librenms] [-p|--pretty]" \
-    + " [-v|--verbose] [-w|--warnings] | -l|--list-methods | -h|--help"    
+usage = (
+    "USAGE: "
+    + os.path.basename(__file__)
+    + " [-h|--help] |"
+    + " [-m|--method <method>] [-N|--no-librenms] [-p|--pretty]"
+    + " [-v|--verbose] [-w|--warnings] | -l|--list-methods | -h|--help"
+)
 methods = ["sensors", "hpasmcli"]
-#costPerkWh = 0.15  # <<<< UNCOMMENT
+# costPerkWh = 0.15  # <<<< UNCOMMENT
 
 ### General functions
 
+
 def errorMsg(message):
     sys.stderr.write("ERROR: " + message + "\n")
+
 
 def usageError(message="Invalid argument"):
     errorMsg(message)
     sys.stderr.write(usage + "\n")
     sys.exit(1)
 
+
 def warningMsg(message):
     if verbose or warnings:
         sys.stderr.write("WARN:  " + message + "\n")
+
 
 def verboseMsg(message):
     if verbose:
         sys.stderr.write("INFO:  " + message + "\n")
 
+
 def listMethods():
     global verbose
     verbose = True
-    verboseMsg("Available methods are: " + str(methods).strip('[]'))
+    verboseMsg("Available methods are: " + str(methods).strip("[]"))
+
 
 ### Data functions
 
+
 def getData(method):
     if method == "sensors":
-       data = getSensorData()
+        data = getSensorData()
 
     elif method == "hpasmcli":
         data = getHPASMData()
@@ -132,6 +143,7 @@ def getData(method):
 
     return data
 
+
 def getSensorData():
     global error, errorString
     error = 2
@@ -139,6 +151,7 @@ def getSensorData():
 
     try:
         import sensors
+
         sensors.init()
 
     except ModuleNotFoundError as e:
@@ -173,7 +186,7 @@ def getSensorData():
                 error = 0
                 errorString = ""
 
-                junk, meter_id = chip_name.split('acpi-', 1)
+                junk, meter_id = chip_name.split("acpi-", 1)
                 sdata["meter"][meter_id] = {}
 
                 for feature in chip:
@@ -192,91 +205,105 @@ def getSensorData():
                         sdata[chip_name][feature_label] = feature.get_value()
 
     except:
-            es = sys.exc_info()
-            error = 1
-            errorString = "Unable to get data: General exception: " + str(es)
+        es = sys.exc_info()
+        error = 1
+        errorString = "Unable to get data: General exception: " + str(es)
 
     finally:
         sensors.cleanup()
         return sdata
 
+
 def getHPASMData():
     global error, errorString
 
-    exe = shutil.which('hpasmcli')
-    #if not os.access(candidate, os.W_OK):
-    cmd = [exe, '-s', 'show powermeter; show powersupply']
+    exe = shutil.which("hpasmcli")
+    # if not os.access(candidate, os.W_OK):
+    cmd = [exe, "-s", "show powermeter; show powersupply"]
     warningMsg("hpasmcli only runs as root")
 
     try:
-        output = subprocess.run(cmd, capture_output=True, check=True, text=True, timeout=2)
+        output = subprocess.run(
+            cmd, capture_output=True, check=True, text=True, timeout=2
+        )
 
     except subprocess.CalledProcessError as e:
-        errorMsg(str(e) + ": " + str(e.stdout).strip('\n'))
+        errorMsg(str(e) + ": " + str(e.stdout).strip("\n"))
         sys.exit(1)
 
-    rawdata = str(output.stdout).replace('\t', ' ').replace('\n ', '\n').split('\n')
+    rawdata = str(output.stdout).replace("\t", " ").replace("\n ", "\n").split("\n")
 
     hdata = {}
     hdata["meter"] = {}
     hdata["psu"] = {}
 
-    re_meter            = "^Power Meter #([0-9]+)"
-    re_meter_reading    = "^Power Reading  :"
-    re_psu           = "^Power supply #[0-9]+"
-    re_psu_present   = "^Present  :"
+    re_meter = "^Power Meter #([0-9]+)"
+    re_meter_reading = "^Power Reading  :"
+    re_psu = "^Power supply #[0-9]+"
+    re_psu_present = "^Present  :"
     re_psu_redundant = "^Redundant:"
     re_psu_condition = "^Condition:"
-    re_psu_hotplug   = "^Hotplug  :"
-    re_psu_reading   = "^Power    :"
+    re_psu_hotplug = "^Hotplug  :"
+    re_psu_reading = "^Power    :"
 
     for line in rawdata:
         if re.match(re_meter, line):
             verboseMsg("found power meter: " + line)
-            junk, meter_id = line.split('#', 1)
+            junk, meter_id = line.split("#", 1)
             hdata["meter"][meter_id] = {}
 
         elif re.match(re_meter_reading, line):
             verboseMsg("found power meter reading: " + line)
-            junk, meter_reading = line.split(':', 1)
+            junk, meter_reading = line.split(":", 1)
             hdata["meter"][meter_id]["reading"] = meter_reading.strip()
 
         elif re.match(re_psu, line):
             verboseMsg("found power supply: " + line)
-            junk, psu_id = line.split('#', 1)
+            junk, psu_id = line.split("#", 1)
             hdata["psu"][psu_id] = {}
 
         elif re.match(re_psu_present, line):
             verboseMsg("found power supply present: " + line)
-            junk, psu_present = line.split(':', 1)
+            junk, psu_present = line.split(":", 1)
             hdata["psu"][psu_id]["present"] = psu_present.strip()
 
         elif re.match(re_psu_redundant, line):
             verboseMsg("found power supply redundant: " + line)
-            junk, psu_redundant = line.split(':', 1)
+            junk, psu_redundant = line.split(":", 1)
             hdata["psu"][psu_id]["redundant"] = psu_redundant.strip()
 
         elif re.match(re_psu_condition, line):
             verboseMsg("found power supply condition: " + line)
-            junk, psu_condition = line.split(':', 1)
+            junk, psu_condition = line.split(":", 1)
             hdata["psu"][psu_id]["condition"] = psu_condition.strip()
 
         elif re.match(re_psu_hotplug, line):
             verboseMsg("found power supply hotplug: " + line)
-            junk, psu_hotplug = line.split(':', 1)
+            junk, psu_hotplug = line.split(":", 1)
             hdata["psu"][psu_id]["hotplug"] = psu_hotplug.strip()
 
         elif re.match(re_psu_reading, line):
             verboseMsg("found power supply reading: " + line)
-            junk, psu_reading = line.split(':', 1)
-            hdata["psu"][psu_id]["reading"] = psu_reading.replace('Watts', '').strip()
+            junk, psu_reading = line.split(":", 1)
+            hdata["psu"][psu_id]["reading"] = psu_reading.replace("Watts", "").strip()
 
     return hdata
+
 
 # Argument Parsing
 try:
     opts, args = getopt.gnu_getopt(
-        sys.argv[1:], 'm:hlNpvw', ['method', 'help', 'list-methods', 'no-librenms', 'pretty', 'verbose', 'warnings']
+        sys.argv[1:],
+        "m:hlNpvw",
+        [
+            "method",
+            "help",
+            "list-methods",
+            "no-librenms",
+            "pretty",
+            "verbose",
+            "warnings",
+        ],
     )
     if len(args) != 0:
         usageError("Unknown argument")
@@ -336,8 +363,8 @@ try:
     data["reading"] = data["meter"]["1"]["reading"]
 
     # Example 2 - sum the two power supplies and apply a power factor
-    #pf = 0.95
-    #data["reading"] = str( float(data["psu"]["1"]["reading"]) \
+    # pf = 0.95
+    # data["reading"] = str( float(data["psu"]["1"]["reading"]) \
     #    + float(data["psu"]["2"]["reading"]) / pf )
 
 except:
@@ -345,13 +372,13 @@ except:
 
 # Build result
 if librenms:
-    result['version']=version
-    result['error']=error
-    result['errorString']=errorString
-    result['data']=data
+    result["version"] = version
+    result["error"] = error
+    result["errorString"] = errorString
+    result["data"] = data
 
 else:
-    result=data
+    result = data
 
 # Print result
 if pretty:
@@ -359,4 +386,3 @@ if pretty:
 
 else:
     print(json.dumps(result))
-
