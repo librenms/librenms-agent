@@ -33,7 +33,7 @@ def main(args):
         except ValueError:
             return bits[0], bits[1]
 
-    stats = dict(chomp(l) for l in p.stdout.splitlines() if l)
+    stats = dict(chomp(line) for line in p.stdout.splitlines() if line)
     if "kstat.zfs.misc.arcstats.recycle_miss" not in stats:
         stats["kstat.zfs.misc.arcstats.recycle_miss"] = 0
 

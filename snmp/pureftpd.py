@@ -29,7 +29,7 @@ if not output_data["error"] and configfile:
     try:
         if "pureftpwho_cmd" in configfile.keys():
             pureftpwho_cmd = configfile["pureftpwho_cmd"]
-    except KeyError:
+    except KeyError as e:
         output_data["error"] = 1
         output_data["errorString"] = "Configfile Error: '%s'" % e
 

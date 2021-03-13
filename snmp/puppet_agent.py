@@ -79,7 +79,7 @@ if not output["error"] and configfile:
         if "agent" in configfile.keys():
             custom_summary_file = configfile["agent"]["summary_file"]
             summary_files.insert(0, custom_summary_file)
-    except KeyError:
+    except KeyError as e:
         output["error"] = 1
         output["errorString"] = "Configfile Error: '%s'" % e
 
