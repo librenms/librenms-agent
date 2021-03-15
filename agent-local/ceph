@@ -38,15 +38,15 @@ def cephdf():
     s = json.loads(cephdf)
     try:
         ts = s["stats"]["total_bytes"]
-    except:
+    except KeyError:
         ts = s["stats"]["total_space"]
     try:
         tu = s["stats"]["total_used_bytes"]
-    except:
+    except KeyError:
         tu = s["stats"]["total_used"]
     try:
         ta = s["stats"]["total_avail_bytes"]
-    except:
+    except KeyError:
         ta = s["stats"]["total_avail"]
 
     print("c:%i:%i:%i" % (ts, tu, ta))
@@ -99,11 +99,11 @@ def poolstats():
     for p in json.loads(poolstats):
         try:
             r = p["client_io_rate"]["read_bytes_sec"]
-        except:
+        except KeyError:
             r = 0
         try:
             w = p["client_io_rate"]["write_bytes_sec"]
-        except:
+        except KeyError:
             w = 0
         try:
             if major > 11:
@@ -113,7 +113,7 @@ def poolstats():
                 )
             else:
                 o = p["client_io_rate"]["op_per_sec"]
-        except:
+        except KeyError:
             o = 0
 
         print("%s:%i:%i:%i" % (p["pool_name"], o, w, r))
