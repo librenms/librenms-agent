@@ -9,10 +9,10 @@ load_average=$(ps -C opensips -o %cpu | awk '{sum += $1} END {print "Load Averag
 total_files=$(lsof -c opensips | wc -l)
 
 
-echo $total_memory
-echo $used_memory
-echo $free_memory
-echo $load_average
-echo "Open files="$total_files
+echo "$total_memory"
+echo "$used_memory"
+echo "$free_memory"
+echo "$load_average"
+echo "Open files=""$total_files"
 
 exit

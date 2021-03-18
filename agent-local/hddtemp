@@ -17,25 +17,25 @@
 
 # Try to use lsblk if available. Otherwise, use find.
 if type lsblk >/dev/null 2>&1; then
-  disks=`lsblk -dnp|cut -d' ' -f1 | tr '\n' ' '`
+  disks=$(lsblk -dnp|cut -d' ' -f1 | tr '\n' ' ')
 else
-  disks=`find /dev -name '[sh]d[a-z]' -or -name '[sh]d[a-z][a-z]' | tr '\n' ' '`
+  disks=$(find /dev -name '[sh]d[a-z]' -or -name '[sh]d[a-z][a-z]' | tr '\n' ' ')
 fi
 
-hddtemp=`which hddtemp 2>/dev/null`
+hddtemp=$(which hddtemp 2>/dev/null)
 
 if [ "${hddtemp}" != "" ]; then
 	if [ -x "${hddtemp}" ]; then
 		if type parallel > /dev/null 2>&1; then
 			# When available, use GNU parallel for a significant performance boost. hddtemp runs serially(!)
-			output=`parallel ${hddtemp} -w -q ::: ${disks} 2>/dev/null`
+			output=$(parallel "${hddtemp}" -w -q ::: "${disks}" 2>/dev/null)
 		else
-			output=`${hddtemp} -w -q ${disks} 2>/dev/null`
+			output=$(${hddtemp} -w -q "${disks}" 2>/dev/null)
 		fi
-		content=`echo "$output" | awk '{ if ($0 !~ /not available/) { print $0 } }' | awk -F": " 'BEGIN{ ORS="" }{ print "|"$1"|"$2"|"$3"|";} ' | sed 's/[° ]C|/|C|/g' | sed 's/[° ]F|/|F|/g' | tr -cd '\12\14\40-\176'`
+		content=$(echo "$output" | awk '{ if ($0 !~ /not available/) { print $0 } }' | awk -F": " 'BEGIN{ ORS="" }{ print "|"$1"|"$2"|"$3"|";} ' | sed 's/[° ]C|/|C|/g' | sed 's/[° ]F|/|F|/g' | tr -cd '\12\14\40-\176')
 		if [ "${content}" != "" ]; then
 			echo '<<<hddtemp>>>'
-			echo ${content}
+			echo "${content}"
 			echo
 		else
 			echo "no hddtemp compatible disks found" >&2

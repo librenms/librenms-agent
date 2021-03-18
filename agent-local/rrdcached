@@ -1,13 +1,13 @@
 #!/usr/bin/env python
+import os
 import socket
 import sys
-import os
 
 # Unix socket
-server_address = '/var/run/rrdcached.sock'
+server_address = "/var/run/rrdcached.sock"
 
 # TCP socket
-#server_address = 'localhost:42217'
+# server_address = 'localhost:42217'
 
 sock = None
 try:
@@ -15,31 +15,31 @@ try:
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     else:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        if ':' in server_address:
-            split = server_address.rsplit(':', 1)
-            server_address = (split[0],int(split[1]))
+        if ":" in server_address:
+            split = server_address.rsplit(":", 1)
+            server_address = (split[0], int(split[1]))
         else:
             server_address = (server_address, 42217)
 
     sock.connect(server_address)
 except socket.error as e:
-    sys.stderr.write(str(e) + ': ' + str(server_address) + '\n')
+    sys.stderr.write(str(e) + ": " + str(server_address) + "\n")
     sys.exit(1)
 
-buffer = ''
+buffer = ""
 max = -1
 try:
     sock.settimeout(5)
-    sock.sendall('STATS\n'.encode())
-    while max == -1 or len(buffer.split('\n')) < max:
+    sock.sendall("STATS\n".encode())
+    while max == -1 or len(buffer.split("\n")) < max:
         buffer += sock.recv(1024).decode()
         if max == -1:
             # the first line contains the number of following lines
-            max = int(buffer.split(' ')[0]) + 1
+            max = int(buffer.split(" ")[0]) + 1
 except socket.error as e:
-    sys.stderr.write(str(e) + '\n')
+    sys.stderr.write(str(e) + "\n")
     sys.exit(1)
 
 sock.close()
-print('<<<rrdcached>>>')
-print(buffer.rstrip('\n'))
+print("<<<rrdcached>>>")
+print(buffer.rstrip("\n"))

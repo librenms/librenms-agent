@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-from urllib.request import urlopen
 import re
+from urllib.request import urlopen
 
-data = urlopen('http://127.0.0.1/nginx-status').read()
+data = urlopen("http://127.0.0.1/nginx-status").read()
 
 params = {}
 
@@ -24,7 +24,9 @@ print("<<<nginx>>>\n")
 
 for param in dataorder:
     if param == "Active":
-        Active = int(params["Reading"]) + int(params["Writing"]) + int(params["Waiting"])
+        Active = (
+            int(params["Reading"]) + int(params["Writing"]) + int(params["Waiting"])
+        )
         print(Active)
     else:
         print(params[param])

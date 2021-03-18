@@ -17,10 +17,10 @@ sed='/usr/bin/env sed'
 #    0     1    43     3     2     0     0  2700   862     0     0   462     4     -     -     0    26     3
 $nvidiasmi dmon -c 1 -s pucvmet | $grep -v ^# | $sed 's/^ *//' | $sed 's/  */,/g' | $sed 's/-/0/g'
 
-lines=`$nvidiasmi dmon -c 1 -s pucvmet | $grep -v ^# | $sed 's/^ *//' | $sed 's/  */,/g' | $sed 's/-/0/g' | wc -l`
+lines=$($nvidiasmi dmon -c 1 -s pucvmet | $grep -v ^# | $sed 's/^ *//' | $sed 's/  */,/g' | $sed 's/-/0/g' | wc -l)
 
 # if we are less than 5 then all GPUs were printed
-if [ $lines -lt 5 ]; then
+if [ "$lines" -lt 5 ]; then
 	exit 0;
 fi	
 
@@ -35,5 +35,5 @@ do
 		loop=0
 	fi
 	
-	gpu=`expr $gpu + 1`
+	gpu=$(expr $gpu + 1)
 done

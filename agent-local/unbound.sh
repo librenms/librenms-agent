@@ -1,5 +1,5 @@
 #!/bin/bash
-unboundctl=`which unbound-control`
+unboundctl=$(which unbound-control)
 if [ "$?" != "0" ]; then
 #Unbound control executable doesn't exist
 exit
