@@ -13,13 +13,12 @@
 # Don't change anything unless you know what are you doing     #
 ################################################################
 BIN_NTPQ='/usr/bin/env ntpq'
-BIN_NTPD='/usr/bin/env ntpd'
 BIN_GREP='/usr/bin/env grep'
 BIN_AWK='/usr/bin/env awk'
-BIN_HEAD='/usr/bin/env head'
 
 CONFIG=$0".conf"
 if [ -f "$CONFIG" ]; then
+    # shellcheck disable=SC1090
     . "$CONFIG"
 fi
 

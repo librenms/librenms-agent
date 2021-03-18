@@ -3,7 +3,7 @@
 # Alternatively you can put them in $0.conf, meaning if you've named
 # this script ntp-client.sh then it must go in ntp-client.sh.conf .
 #
-# NTPQV output version of "ntpq -c rv" 
+# NTPQV output version of "ntpq -c rv"
 # p1 DD-WRT and some other outdated linux distros
 # p11 FreeBSD 11 and any linux distro that is up to date
 #
@@ -16,7 +16,8 @@ CONFIGFILE=/etc/snmp/ntp-server.conf
 BIN_ENV='/usr/bin/env'
 
 if [ -f $CONFIGFILE ] ; then
-    . $CONFIGFILE
+	# shellcheck disable=SC1090
+	. $CONFIGFILE
 fi
 
 BIN_NTPD="$BIN_ENV ntpd"
@@ -34,7 +35,8 @@ NTPQV="p11"
 ################################################################
 CONFIG=$0".conf"
 if [ -f "$CONFIG" ]; then
-    . "$CONFIG"
+	# shellcheck disable=SC1090
+	. "$CONFIG"
 fi
 VERSION=1
 
@@ -75,7 +77,7 @@ IGNOREDPACKETS=$(echo "$CMD2" | $BIN_AWK -F ' ' '{print $7}')
 RECEIVEDPACKETS=$(echo "$CMD2" | $BIN_AWK -F ' ' '{print $8}')
 PACKETSSENT=$(echo "$CMD2" | $BIN_AWK -F ' ' '{print $9}')
 PACKETSENDFAILURES=$(echo "$CMD2" | $BIN_AWK -F ' ' '{print $10}')
-INPUTWAKEUPS=$(echo "$CMD2" | $BIN_AWK -F ' ' '{print $11}')
+#INPUTWAKEUPS=$(echo "$CMD2" | $BIN_AWK -F ' ' '{print $11}')
 USEFULINPUTWAKEUPS=$(echo "$CMD2" | $BIN_AWK -F ' ' '{print $12}')
 
 echo '{"data":{"offset":"'"$OFFSET"\

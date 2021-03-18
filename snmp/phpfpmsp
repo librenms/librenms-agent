@@ -52,13 +52,13 @@ opts=""
 # Contributed by @safeie with PR #276
 # Modified to work as a SNMP extend by Zane C. Bowers-Hadley
 
-declare -A phpfpm_urls=()
-declare -A phpfpm_curl_opts=()
+#declare -A phpfpm_urls=()
+#declare -A phpfpm_curl_opts=()
 
 # _update_every is a special variable - it holds the number of seconds
 # between the calls of the _update() function
-phpfpm_update_every=
-phpfpm_priority=60000
+#phpfpm_update_every=
+#phpfpm_priority=60000
 
 declare -a phpfpm_response=()
 phpfpm_pool=""
@@ -78,8 +78,8 @@ phpfpm_slow_requests=0
 
 #	local opts="${1}" url="${2}"
 
-  phpfpm_response=($(curl -Ss "${opts}" "${url}"))
-  [ $? -ne 0 -o "${#phpfpm_response[@]}" -eq 0 ] && exit 1
+  phpfpm_response=("$(curl -Ss "${opts}" "${url}")")
+  [ $? -ne 0 ] || [ "${#phpfpm_response[@]}" -eq 0 ] && exit 1
 
   if [[ "${phpfpm_response[0]}" != "pool:" \
     || "${phpfpm_response[2]}" != "process" \

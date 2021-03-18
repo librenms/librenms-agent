@@ -1,5 +1,5 @@
 #!/bin/sh
- 
+
 # wlClients.sh
 # Counts connected (associated) Wi-Fi devices
 # Arguments: targed interface. Assumes all interfaces if no argument
@@ -12,16 +12,13 @@ if [ $# -gt 1 ]; then
 fi
 
 # Get path to this script
-scriptdir=$(dirname $(readlink -f -- "$0"))
+scriptdir=$(dirname "$(readlink -f -- "$0")")
 
-# Get hostname, interface list. Set target, which is name returned for interface
-hostname=$(/bin/uname -n)
+# Get interface list. Set target, which is name returned for interface
 if [ "$1" ]; then
 	interfaces=$1
-	target=$1
 else
 	interfaces=$(cat "$scriptdir"/wlInterfaces.txt | cut -f 1 -d",")
-	target=wlan
 fi
 
 # Count associated devices

@@ -7,6 +7,7 @@
 # @author     SvennD <svennd@svennd.be>
 
 # required
+# shellcheck disable=SC1091
 source /etc/profile.d/sge-binaries.sh;
 
 QSTAT="/opt/gridengine/bin/linux-x64/qstat"

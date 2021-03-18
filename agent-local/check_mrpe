@@ -14,7 +14,7 @@ EXITCODE=3
 
 while getopts "Vha:H:p:" opt; do
   case $opt in
-    V) printf "check_mrpe v$VERSION\n"
+    V) printf 'check_mrpe v%s\n' "$VERSION"
        exit 0
        ;;
     h) hflag=1
@@ -25,8 +25,7 @@ while getopts "Vha:H:p:" opt; do
     H) Hflag=1
        Hval="$OPTARG"
        ;;
-    p) pflag=1
-       pval="$OPTARG"
+    p) pval="$OPTARG"
        ;;
     \?) hflag=1
         EXITCODE=0

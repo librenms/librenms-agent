@@ -21,7 +21,7 @@ LOG_NEW='/var/cache/librenms/nfsstats_new'
 $BIN_NFSSTAT -$CFG_NFSVER -n -l | $BIN_TR -s " " | $BIN_CUT -d ' ' -f 5 | $BIN_GREP -v '^$' > $LOG_NEW 2>&1
 
 $BIN_PASTE $LOG_NEW $LOG_OLD | while read a b ; do
-  echo $(($a - $b))  
+  echo $(($a - $b))
 done
 
 $BIN_RM $LOG_OLD 2>&1

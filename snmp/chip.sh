@@ -1,5 +1,5 @@
 #!/bin/bash
-# Based on https://github.com/Photonicsguy/CHIP 
+# Based on https://github.com/Photonicsguy/CHIP
 # Enable ADC registers
 i2cset -y -f 0 0x34 0x82 0xff
 
@@ -67,7 +67,7 @@ if [ $STATUS_BATCON  ==  1 ]; then
         BAT_PERCENT=$(printf "%d" "$REG")
 else
         VBAT=0
-        BATT_CUR=0
+        #BATT_CUR=0
         BAT_PERCENT=0
 fi
 
@@ -82,6 +82,6 @@ echo $ACIN_C
 echo $VBUS
 echo $VBUS_C
 echo $VBAT
-echo $(echo "$BAT_C-$BAT_D"|bc)
+echo "$(echo "$BAT_C-$BAT_D"|bc)"
 echo $BAT_PERCENT
 echo $STATUS_CHARGING

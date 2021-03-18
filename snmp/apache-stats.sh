@@ -12,7 +12,7 @@ PATH=/sbin:/bin:/usr/sbin:/usr/bin
 
 function debugecho() {
     if [ ${#Debug} -gt 0 ]; then
-        echo debug: $@
+        echo debug: "$@"
     fi
 }
 
@@ -23,6 +23,7 @@ function debugecho() {
 Tmp_File=/tmp/apache_status
 
 # Debug=on; use environment, i.e. Debug=on apache-stats.sh
+# shellcheck disable=SC2153
 if [ "${DEBUG}" != "" ]; then
     Debug=${DEBUG}
 else

@@ -39,6 +39,7 @@
 
     function get_data($host, $port)
     {
+        $rawdata = null;
         $fp = @fsockopen($host, $port, $errno, $errstr, 5);
         if (!$fp) {
             $connect = 0;
