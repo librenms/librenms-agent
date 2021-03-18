@@ -12,11 +12,13 @@ PICONFIGFILE='/etc/pihole/setupVars.conf'
 DHCPLEASEFILE='/etc/pihole/dhcp.leases'
 
 if [ -f $CONFIGFILE ]; then
+    # shellcheck disable=SC1090
     . $CONFIGFILE
 fi
 
 # read in pi-hole variables for DHCP range
 if [ -f $PICONFIGFILE ]; then
+    # shellcheck disable=SC1090
     . $PICONFIGFILE
 fi
 
@@ -74,7 +76,7 @@ debug() {
 	fi
 	if [ -f $PICONFIGFILE ]; then
 		echo '[ok] Pi-Hole config file exists, DHCP stats will be captured if scope active'
-	else 
+	else
 		echo '[error] Pi-Hole config file does not exist, DHCP stats will not be captured if used'
 	fi
 	if [ -f $DHCPLEASEFILE ]; then

@@ -7,7 +7,8 @@ REALPATH=/usr/bin/realpath
 
 CONFIGFILE=/etc/snmp/mdadm.conf
 if [ -f $CONFIGFILE ] ; then
-     . $CONFIGFILE
+    # shellcheck disable=SC1090
+    . $CONFIGFILE
 fi
 
 VERSION=1
@@ -19,7 +20,7 @@ OUTPUT_DATA='['
 # use 'ls' command to check if md blocks exist
 if $LS /dev/md?* 1> /dev/null 2>&1 ; then
     for ARRAY_BLOCKDEVICE in $($LS -1 /dev/md?*) ; do
-        RAID="/sys/block/"$($BASENAME $($REALPATH "$ARRAY_BLOCKDEVICE"))
+        RAID="/sys/block/"$($BASENAME "$($REALPATH "$ARRAY_BLOCKDEVICE")")
 
         # ignore arrays with no slaves
         if [ -z "$($LS -1 "$RAID"/slaves 2> /dev/null)" ] ; then

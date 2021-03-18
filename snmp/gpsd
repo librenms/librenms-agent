@@ -18,12 +18,13 @@ BIN_PYTHON='/usr/bin/env python'
 # Check for config file
 CONFIG=$0".conf"
 if [ -f "$CONFIG" ]; then
+    # shellcheck disable=SC1090
     . "$CONFIG"
 fi
 
 # Create Temp File
 TMPFILE=$(mktemp)
-trap "rm -f $TMPFILE" 0 2 3 15
+trap 'rm -f $TMPFILE' 0 2 3 15
 
 # Write GPSPIPE Data to Temp File
 $BIN_GPIPE -w -n 20 > "$TMPFILE"
