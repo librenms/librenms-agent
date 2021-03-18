@@ -98,7 +98,7 @@ usage = (
     + " [-v|--verbose] [-w|--warnings] | -l|--list-methods | -h|--help"
 )
 methods = ["sensors", "hpasmcli"]
-# costPerkWh = 0.15  # <<<< UNCOMMENT
+# costPerkWh = 0.15  # <<<< CHANGE
 
 ### General functions
 
@@ -352,7 +352,7 @@ except NameError:
 # Get data
 data = getData(method)
 data["supply"] = {}
-data["supply"]["rate"] = costPerkWh
+data["supply"]["rate"] = costPerkWh  # pylint: disable=E0602
 
 # Top-level reading
 #   CUSTOMISE THIS FOR YOUR HOST
