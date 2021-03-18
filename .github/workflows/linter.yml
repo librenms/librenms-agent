@@ -20,7 +20,7 @@ jobs:
       - name: Lint Code Base
         uses: github/super-linter@v3.15.3
         env:
-          FILTER_REGEX_INCLUDE: .*(agent-local|snmp)/.*
+          FILTER_REGEX_EXCLUDE: check_mk_agent.*
           SUPPRESS_POSSUM: true
 
           VALIDATE_BASH_EXEC: false
