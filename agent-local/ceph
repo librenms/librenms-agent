@@ -14,80 +14,117 @@
 #
 # See http://www.gnu.org/licenses/gpl.txt for the full license
 
-from subprocess import check_output
 import json
+from subprocess import check_output
+
 
 def cephversion():
-    cephv     = check_output(["/usr/bin/ceph", "version"]).decode("utf-8").replace('ceph version ', '')
-    major, minor = cephv.split('.')[0:2]
+    cephv = (
+        check_output(["/usr/bin/ceph", "version"])
+        .decode("utf-8")
+        .replace("ceph version ", "")
+    )
+    major, minor = cephv.split(".")[0:2]
     return [int(major), int(minor)]
 
+
 def cephdf():
-    cephdf    = check_output(["/usr/bin/ceph", "-f", "json", "df"]).decode("utf-8").replace('-inf', '0')
+    cephdf = (
+        check_output(["/usr/bin/ceph", "-f", "json", "df"])
+        .decode("utf-8")
+        .replace("-inf", "0")
+    )
 
     s = json.loads(cephdf)
     try:
-        ts = s['stats']['total_bytes']
-    except:
-        ts = s['stats']['total_space']
+        ts = s["stats"]["total_bytes"]
+    except KeyError:
+        ts = s["stats"]["total_space"]
     try:
-        tu = s['stats']['total_used_bytes']
-    except:
-        tu = s['stats']['total_used']
+        tu = s["stats"]["total_used_bytes"]
+    except KeyError:
+        tu = s["stats"]["total_used"]
     try:
-        ta = s['stats']['total_avail_bytes']
-    except:
-        ta = s['stats']['total_avail']
+        ta = s["stats"]["total_avail_bytes"]
+    except KeyError:
+        ta = s["stats"]["total_avail"]
 
     print("c:%i:%i:%i" % (ts, tu, ta))
 
-    for p in s['pools']:
-        b = p['stats']['bytes_used']
-        a = p['stats']['max_avail']
-        o = p['stats']['objects']
-        print("%s:%i:%i:%i" % (p['name'], a, b, o))
+    for p in s["pools"]:
+        b = p["stats"]["bytes_used"]
+        a = p["stats"]["max_avail"]
+        o = p["stats"]["objects"]
+        print("%s:%i:%i:%i" % (p["name"], a, b, o))
 
 
 def osdperf():
     global major
-    osdperf   = check_output(["/usr/bin/ceph", "-f", "json", "osd", "perf"]).decode("utf-8").replace('-inf', '0')
+    osdperf = (
+        check_output(["/usr/bin/ceph", "-f", "json", "osd", "perf"])
+        .decode("utf-8")
+        .replace("-inf", "0")
+    )
 
     if major > 13:
-        for o in json.loads(osdperf)['osdstats']['osd_perf_infos']:
-            print("osd.%s:%i:%i" % (o['id'], o['perf_stats']['apply_latency_ms'], o['perf_stats']['commit_latency_ms']))
+        for o in json.loads(osdperf)["osdstats"]["osd_perf_infos"]:
+            print(
+                "osd.%s:%i:%i"
+                % (
+                    o["id"],
+                    o["perf_stats"]["apply_latency_ms"],
+                    o["perf_stats"]["commit_latency_ms"],
+                )
+            )
     else:
-        for o in json.loads(osdperf)['osd_perf_infos']:
-            print("osd.%s:%i:%i" % (o['id'], o['perf_stats']['apply_latency_ms'], o['perf_stats']['commit_latency_ms']))
+        for o in json.loads(osdperf)["osd_perf_infos"]:
+            print(
+                "osd.%s:%i:%i"
+                % (
+                    o["id"],
+                    o["perf_stats"]["apply_latency_ms"],
+                    o["perf_stats"]["commit_latency_ms"],
+                )
+            )
+
 
 def poolstats():
     global major
-    poolstats = check_output(["/usr/bin/ceph", "-f", "json", "osd", "pool", "stats"]).decode("utf-8").replace('-inf', '0')
+    poolstats = (
+        check_output(["/usr/bin/ceph", "-f", "json", "osd", "pool", "stats"])
+        .decode("utf-8")
+        .replace("-inf", "0")
+    )
 
     for p in json.loads(poolstats):
         try:
-            r = p['client_io_rate']['read_bytes_sec']
-        except:
+            r = p["client_io_rate"]["read_bytes_sec"]
+        except KeyError:
             r = 0
         try:
-            w = p['client_io_rate']['write_bytes_sec']
-        except:
+            w = p["client_io_rate"]["write_bytes_sec"]
+        except KeyError:
             w = 0
         try:
             if major > 11:
-                o = p['client_io_rate']['read_op_per_sec'] + p['client_io_rate']['write_op_per_sec']
+                o = (
+                    p["client_io_rate"]["read_op_per_sec"]
+                    + p["client_io_rate"]["write_op_per_sec"]
+                )
             else:
-                o = p['client_io_rate']['op_per_sec']
-        except:
+                o = p["client_io_rate"]["op_per_sec"]
+        except KeyError:
             o = 0
 
-        print("%s:%i:%i:%i" % (p['pool_name'], o, w, r))
+        print("%s:%i:%i:%i" % (p["pool_name"], o, w, r))
+
 
 major, minor = cephversion()
 
-print ("<<<app-ceph>>>")
-print ("<poolstats>")
+print("<<<app-ceph>>>")
+print("<poolstats>")
 poolstats()
-print ("<osdperformance>")
+print("<osdperformance>")
 osdperf()
-print ("<df>")
+print("<df>")
 cephdf()

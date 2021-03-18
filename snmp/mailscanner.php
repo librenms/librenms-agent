@@ -17,60 +17,60 @@
     ///
     ///////////////////////////////////////////////////////////////////////////////////////
 
-
     // START SETTINGS ///
 
-	$mailstats	= "/opt/librenms/scripts/watchmaillog/watchmaillog_counters";
+    $mailstats = '/opt/librenms/scripts/watchmaillog/watchmaillog_counters';
 
     // END SETTINGS ///
-
 
     ///
     // DO NOT EDIT BENETH THIS LINE
     ///
     ///////////////////////////////////////////////////////////////////////////////////////
 
-	function doSNMPv2($vars) {
-	    $stats	= array();
-	    if (file_exists($vars)) {
-		$data		= file($vars);
-		foreach ($data as $item=>$value) {
-		    if (!empty($value)) {
-			$temp = explode(':', trim($value));
-			if (isset($temp[1])) {
-			    $stats[$temp[0]] = $temp[1];
-			}
-		    }
-		}
-	    }
-            $var = array();
-	    $var['mess_recv']		= (isset($stats['mess_recv']) ? $stats['mess_recv'] : "U");
-	    $var['mess_rejected']	= (isset($stats['mess_rejected']) ? $stats['mess_rejected'] : "U");
-	    $var['mess_relay']		= (isset($stats['mess_relay']) ? $stats['mess_relay'] : "U");
-	    $var['mess_sent']		= (isset($stats['mess_sent']) ? $stats['mess_sent'] : "U");
-	    $var['mess_waiting']	= (isset($stats['mess_waiting']) ? $stats['mess_waiting'] : "U");
-	    $var['spam']		= (isset($stats['spam']) ? $stats['spam'] : "U");
-	    $var['virus']		= (isset($stats['virus']) ? $stats['virus'] : "U");
-	    foreach ($var as $item=>$count) {
-		echo $count."\n";
-	    }
-	}
-	
-	function clearStats($mailstats) {
-	    if (file_exists($mailstats)) {
-		$fp	= fopen($mailstats, 'w');
-		fwrite($fp, "mess_recv:0\n");
-		fwrite($fp, "mess_rejected:0\n");
-		fwrite($fp, "mess_relay:0\n");
-		fwrite($fp, "mess_sent:0\n");
-		fwrite($fp, "mess_waiting:0\n");
-		fwrite($fp, "spam:0\n");
-		fwrite($fp, "virus:0\n");
-		fclose($fp);
-	    }
-	}
+    function doSNMPv2($vars)
+    {
+        $stats = [];
+        if (file_exists($vars)) {
+            $data = file($vars);
+            foreach ($data as $item=>$value) {
+                if (!empty($value)) {
+                    $temp = explode(':', trim($value));
+                    if (isset($temp[1])) {
+                        $stats[$temp[0]] = $temp[1];
+                    }
+                }
+            }
+        }
+        $var = [];
+        $var['mess_recv'] = (isset($stats['mess_recv']) ? $stats['mess_recv'] : 'U');
+        $var['mess_rejected'] = (isset($stats['mess_rejected']) ? $stats['mess_rejected'] : 'U');
+        $var['mess_relay'] = (isset($stats['mess_relay']) ? $stats['mess_relay'] : 'U');
+        $var['mess_sent'] = (isset($stats['mess_sent']) ? $stats['mess_sent'] : 'U');
+        $var['mess_waiting'] = (isset($stats['mess_waiting']) ? $stats['mess_waiting'] : 'U');
+        $var['spam'] = (isset($stats['spam']) ? $stats['spam'] : 'U');
+        $var['virus'] = (isset($stats['virus']) ? $stats['virus'] : 'U');
+        foreach ($var as $item=>$count) {
+            echo $count."\n";
+        }
+    }
 
-	doSNMPv2($mailstats);
-	//clearStats($mailstats);
+    function clearStats($mailstats)
+    {
+        if (file_exists($mailstats)) {
+            $fp = fopen($mailstats, 'w');
+            fwrite($fp, "mess_recv:0\n");
+            fwrite($fp, "mess_rejected:0\n");
+            fwrite($fp, "mess_relay:0\n");
+            fwrite($fp, "mess_sent:0\n");
+            fwrite($fp, "mess_waiting:0\n");
+            fwrite($fp, "spam:0\n");
+            fwrite($fp, "virus:0\n");
+            fclose($fp);
+        }
+    }
+
+    doSNMPv2($mailstats);
+    //clearStats($mailstats);
 
 ?>

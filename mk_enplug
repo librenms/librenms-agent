@@ -56,7 +56,7 @@ if [ ! -z "$s" ]; then
         exit 1
     fi
 
-    if [ `script_enabled $s` != "yes" ]; then
-        enable_script $s
+    if [ `script_enabled "$s"` != "yes" ]; then
+        enable_script "$s"
     fi
 fi

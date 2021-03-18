@@ -78,7 +78,7 @@ phpfpm_slow_requests=0
 
 #	local opts="${1}" url="${2}"
 
-  phpfpm_response=($(curl -Ss ${opts} "${url}"))
+  phpfpm_response=($(curl -Ss "${opts}" "${url}"))
   [ $? -ne 0 -o "${#phpfpm_response[@]}" -eq 0 ] && exit 1
 
   if [[ "${phpfpm_response[0]}" != "pool:" \
@@ -131,16 +131,16 @@ phpfpm_slow_requests=0
     exit 1
   fi
 
-echo $phpfpm_pool
-echo $phpfpm_start_time
-echo $phpfpm_start_since
-echo $phpfpm_accepted_conn
-echo $phpfpm_listen_queue
-echo $phpfpm_max_listen_queue
-echo $phpfpm_listen_queue_len
-echo $phpfpm_idle_processes
-echo $phpfpm_active_processes
-echo $phpfpm_total_processes
-echo $phpfpm_max_active_processes
-echo $phpfpm_max_children_reached
+echo "$phpfpm_pool"
+echo "$phpfpm_start_time"
+echo "$phpfpm_start_since"
+echo "$phpfpm_accepted_conn"
+echo "$phpfpm_listen_queue"
+echo "$phpfpm_max_listen_queue"
+echo "$phpfpm_listen_queue_len"
+echo "$phpfpm_idle_processes"
+echo "$phpfpm_active_processes"
+echo "$phpfpm_total_processes"
+echo "$phpfpm_max_active_processes"
+echo "$phpfpm_max_children_reached"
 echo $phpfpm_slow_requests

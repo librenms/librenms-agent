@@ -6,7 +6,7 @@ API_AUTH_USER="admin"
 API_AUTH_PASS=""
 API_URL=""
 API_STATS="jsonstat?command=stats"
-TMP_FILE=`/usr/bin/mktemp`
+TMP_FILE=$(/usr/bin/mktemp)
 
 #/ Description: BASH script to get PowerDNS dnsdist stats
 #/ Examples: ./powerdns-dnsdist
@@ -65,100 +65,100 @@ debug() {
 
 exportdata() {
         # get current data
-        curl -s -u$API_AUTH_USER:$API_AUTH_PASS $API_URL$API_STATS | jq '.' > $TMP_FILE
+        curl -s -u$API_AUTH_USER:"$API_AUTH_PASS" "$API_URL""$API_STATS" | jq '.' > "$TMP_FILE"
 
 	# generate export values
-	JSON_VALUES=$(cat $TMP_FILE)
+	JSON_VALUES=$(cat "$TMP_FILE")
 
-	STAT_CACHE_HIT=$(echo $JSON_VALUES | jq '."cache-hits"')
-	echo $STAT_CACHE_HIT
+	STAT_CACHE_HIT=$(echo "$JSON_VALUES" | jq '."cache-hits"')
+	echo "$STAT_CACHE_HIT"
 
-	STAT_CACHE_MISS=$(echo $JSON_VALUES | jq '."cache-misses"')
-	echo $STAT_CACHE_MISS
+	STAT_CACHE_MISS=$(echo "$JSON_VALUES" | jq '."cache-misses"')
+	echo "$STAT_CACHE_MISS"
 
-	STAT_DOWNSTREAM_ERR=$(echo $JSON_VALUES | jq '."downstream-send-errors"')
-	echo $STAT_DOWNSTREAM_ERR
+	STAT_DOWNSTREAM_ERR=$(echo "$JSON_VALUES" | jq '."downstream-send-errors"')
+	echo "$STAT_DOWNSTREAM_ERR"
 
-	STAT_DOWNSTREAM_TIMEOUT=$(echo $JSON_VALUES | jq '."downstream-timeouts"')
-	echo $STAT_DOWNSTREAM_TIMEOUT
+	STAT_DOWNSTREAM_TIMEOUT=$(echo "$JSON_VALUES" | jq '."downstream-timeouts"')
+	echo "$STAT_DOWNSTREAM_TIMEOUT"
 
-	STAT_DYNAMIC_BLOCK_SIZE=$(echo $JSON_VALUES | jq '."dyn-block-nmg-size"')
-	echo $STAT_DYNAMIC_BLOCK_SIZE
+	STAT_DYNAMIC_BLOCK_SIZE=$(echo "$JSON_VALUES" | jq '."dyn-block-nmg-size"')
+	echo "$STAT_DYNAMIC_BLOCK_SIZE"
 
-	STAT_DYNAMIC_BLOCK=$(echo $JSON_VALUES | jq '."dyn-blocked"')
-	echo $STAT_DYNAMIC_BLOCK
+	STAT_DYNAMIC_BLOCK=$(echo "$JSON_VALUES" | jq '."dyn-blocked"')
+	echo "$STAT_DYNAMIC_BLOCK"
 
-	STAT_QUERIES_COUNT=$(echo $JSON_VALUES | jq '.queries')
-	echo $STAT_QUERIES_COUNT
+	STAT_QUERIES_COUNT=$(echo "$JSON_VALUES" | jq '.queries')
+	echo "$STAT_QUERIES_COUNT"
 
-	STAT_QUERIES_RECURSIVE=$(echo $JSON_VALUES | jq '.rdqueries')
-	echo $STAT_QUERIES_RECURSIVE
+	STAT_QUERIES_RECURSIVE=$(echo "$JSON_VALUES" | jq '.rdqueries')
+	echo "$STAT_QUERIES_RECURSIVE"
 
-	STAT_QUERIES_EMPTY=$(echo $JSON_VALUES | jq '."empty-queries"')
-	echo $STAT_QUERIES_EMPTY
+	STAT_QUERIES_EMPTY=$(echo "$JSON_VALUES" | jq '."empty-queries"')
+	echo "$STAT_QUERIES_EMPTY"
 
-	STAT_QUERIES_DROP_NO_POLICY=$(echo $JSON_VALUES | jq '."no-policy"')
-	echo $STAT_QUERIES_DROP_NO_POLICY
+	STAT_QUERIES_DROP_NO_POLICY=$(echo "$JSON_VALUES" | jq '."no-policy"')
+	echo "$STAT_QUERIES_DROP_NO_POLICY"
 
-	STAT_QUERIES_DROP_NC=$(echo $JSON_VALUES | jq '."noncompliant-queries"')
-	echo $STAT_QUERIES_DROP_NC
+	STAT_QUERIES_DROP_NC=$(echo "$JSON_VALUES" | jq '."noncompliant-queries"')
+	echo "$STAT_QUERIES_DROP_NC"
 
-	STAT_QUERIES_DROP_NC_ANSWER=$(echo $JSON_VALUES | jq '."noncompliant-responses"')
-	echo $STAT_QUERIES_DROP_NC_ANSWER
+	STAT_QUERIES_DROP_NC_ANSWER=$(echo "$JSON_VALUES" | jq '."noncompliant-responses"')
+	echo "$STAT_QUERIES_DROP_NC_ANSWER"
 
-	STAT_QUERIES_SELF_ANSWER=$(echo $JSON_VALUES | jq '."self-answered"')
-	echo $STAT_QUERIES_SELF_ANSWER
+	STAT_QUERIES_SELF_ANSWER=$(echo "$JSON_VALUES" | jq '."self-answered"')
+	echo "$STAT_QUERIES_SELF_ANSWER"
 
-	STAT_QUERIES_SERVFAIL=$(echo $JSON_VALUES | jq '."servfail-responses"')
-	echo $STAT_QUERIES_SERVFAIL
+	STAT_QUERIES_SERVFAIL=$(echo "$JSON_VALUES" | jq '."servfail-responses"')
+	echo "$STAT_QUERIES_SERVFAIL"
 
-	STAT_QUERIES_FAILURE=$(echo $JSON_VALUES | jq '."trunc-failures"')
-	echo $STAT_QUERIES_FAILURE
+	STAT_QUERIES_FAILURE=$(echo "$JSON_VALUES" | jq '."trunc-failures"')
+	echo "$STAT_QUERIES_FAILURE"
 
-        STAT_QUERIES_ACL_DROPS=$(echo $JSON_VALUES | jq '."acl-drops"')
-	echo $STAT_QUERIES_ACL_DROPS
+        STAT_QUERIES_ACL_DROPS=$(echo "$JSON_VALUES" | jq '."acl-drops"')
+	echo "$STAT_QUERIES_ACL_DROPS"
 
-	STAT_RULE_DROP=$(echo $JSON_VALUES | jq '."rule-drop"')
-	echo $STAT_RULE_DROP
+	STAT_RULE_DROP=$(echo "$JSON_VALUES" | jq '."rule-drop"')
+	echo "$STAT_RULE_DROP"
 
-	STAT_RULE_NXDOMAIN=$(echo $JSON_VALUES | jq '."rule-nxdomain"')
-	echo $STAT_RULE_NXDOMAIN
+	STAT_RULE_NXDOMAIN=$(echo "$JSON_VALUES" | jq '."rule-nxdomain"')
+	echo "$STAT_RULE_NXDOMAIN"
 
-	STAT_RULE_REFUSED=$(echo $JSON_VALUES | jq '."rule-refused"')
-	echo $STAT_RULE_REFUSED
+	STAT_RULE_REFUSED=$(echo "$JSON_VALUES" | jq '."rule-refused"')
+	echo "$STAT_RULE_REFUSED"
 
-	STAT_LATENCY_AVG_100=$(echo $JSON_VALUES | jq '."latency-avg100"')
-	echo $STAT_LATENCY_AVG_100
+	STAT_LATENCY_AVG_100=$(echo "$JSON_VALUES" | jq '."latency-avg100"')
+	echo "$STAT_LATENCY_AVG_100"
 
-	STAT_LATENCY_AVG_1000=$(echo $JSON_VALUES | jq '."latency-avg1000"')
-	echo $STAT_LATENCY_AVG_1000
+	STAT_LATENCY_AVG_1000=$(echo "$JSON_VALUES" | jq '."latency-avg1000"')
+	echo "$STAT_LATENCY_AVG_1000"
 
-	STAT_LATENCY_AVG_10000=$(echo $JSON_VALUES | jq '."latency-avg10000"')
-	echo $STAT_LATENCY_AVG_10000
+	STAT_LATENCY_AVG_10000=$(echo "$JSON_VALUES" | jq '."latency-avg10000"')
+	echo "$STAT_LATENCY_AVG_10000"
 
-	STAT_LATENCY_AVG_1000000=$(echo $JSON_VALUES | jq '."latency-avg1000000"')
-	echo $STAT_LATENCY_AVG_1000000
+	STAT_LATENCY_AVG_1000000=$(echo "$JSON_VALUES" | jq '."latency-avg1000000"')
+	echo "$STAT_LATENCY_AVG_1000000"
 
-	STAT_LATENCY_SLOW=$(echo $JSON_VALUES | jq '."latency-slow"')
-	echo $STAT_LATENCY_SLOW
+	STAT_LATENCY_SLOW=$(echo "$JSON_VALUES" | jq '."latency-slow"')
+	echo "$STAT_LATENCY_SLOW"
 
-	STAT_LATENCY_0_1=$(echo $JSON_VALUES | jq '."latency0-1"')
-	echo $STAT_LATENCY_0_1
+	STAT_LATENCY_0_1=$(echo "$JSON_VALUES" | jq '."latency0-1"')
+	echo "$STAT_LATENCY_0_1"
 
-	STAT_LATENCY_1_10=$(echo $JSON_VALUES | jq '."latency1-10"')
-	echo $STAT_LATENCY_1_10
+	STAT_LATENCY_1_10=$(echo "$JSON_VALUES" | jq '."latency1-10"')
+	echo "$STAT_LATENCY_1_10"
 
-	STAT_LATENCY_10_50=$(echo $JSON_VALUES | jq '."latency10-50"')
-	echo $STAT_LATENCY_10_50
+	STAT_LATENCY_10_50=$(echo "$JSON_VALUES" | jq '."latency10-50"')
+	echo "$STAT_LATENCY_10_50"
 
-	STAT_LATENCY_50_100=$(echo $JSON_VALUES | jq '."latency50-100"')
-	echo $STAT_LATENCY_50_100
+	STAT_LATENCY_50_100=$(echo "$JSON_VALUES" | jq '."latency50-100"')
+	echo "$STAT_LATENCY_50_100"
 
-	STAT_LATENCY_100_1000=$(echo $JSON_VALUES | jq '."latency100-1000"')
-	echo $STAT_LATENCY_100_1000
+	STAT_LATENCY_100_1000=$(echo "$JSON_VALUES" | jq '."latency100-1000"')
+	echo "$STAT_LATENCY_100_1000"
 }
 
-if [ -z $* ]; then
+if [ -z "$*" ]; then
         exportdata
 fi
 expr "$*" : ".*--help" > /dev/null && usage

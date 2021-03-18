@@ -2,64 +2,70 @@
 import json
 import subprocess
 
+
 def proc_err(cmd, proc):
     # output process error and first line of error code
     return "{}{}".format(
         subprocess.CalledProcessError(proc.returncode, cmd, proc.stderr),
-        " ({})".format(proc.stderr.splitlines()[0]) if proc.stderr.splitlines() else ""
+        " ({})".format(proc.stderr.splitlines()[0]) if proc.stderr.splitlines() else "",
     )
 
+
 def main(args):
-    LINUX = '/proc/spl/kstat/zfs/arcstats'
-    BSD1 = 'sysctl'
-    BSD2 = 'kstat.zfs.misc.arcstats'
-    ILLUMOS = 'kstat -n arcstats'
+    LINUX = "/proc/spl/kstat/zfs/arcstats"
+    BSD1 = "sysctl"
+    BSD2 = "kstat.zfs.misc.arcstats"
+    ILLUMOS = "kstat -n arcstats"
     COLUMN = 1
     SPLIT = None
     res = {}
 
     try:
-        LINES = open(LINUX, 'r').readlines()
+        LINES = open(LINUX, "r").readlines()
         COLUMN = 2
 
     except IOError as e1:
         try:
-            proc = subprocess.run([BSD1, BSD2], stdout=subprocess.PIPE, universal_newlines=True)     
+            proc = subprocess.run(
+                [BSD1, BSD2], stdout=subprocess.PIPE, universal_newlines=True
+            )
             LINES = proc.stdout.splitlines()
-            LINES = [x[len(BSD2)+1:] for x in LINES]
-            SPLIT = ':'
+            LINES = [x[len(BSD2) + 1 :] for x in LINES]
+            SPLIT = ":"
         except FileNotFoundError as e2:
             try:
-                proc = subprocess.run(ILLUMOS.split(), stdout=subprocess.PIPE, universal_newlines=True)
+                proc = subprocess.run(
+                    ILLUMOS.split(), stdout=subprocess.PIPE, universal_newlines=True
+                )
                 LINES = proc.stdout.splitlines()
             except FileNotFoundError as e3:
-                print('Linux  :', e1)
-                print('BSD    :', e2)
-                print('Illumos:', e3)
+                print("Linux  :", e1)
+                print("BSD    :", e2)
+                print("Illumos:", e3)
                 return 1
-        
+
     LINES = [x.strip() for x in LINES]
-    
+
     STATS = {}
     for line in LINES[2:]:
         splitline = line.split(SPLIT)
         try:
-            STATS[splitline[0]] = int(splitline[COLUMN]) 
+            STATS[splitline[0]] = int(splitline[COLUMN])
         # Skip non int value like Illumos crtime, empty line at the end
         except:
             continue
-    
+
     # ARC misc
-    DELETED = STATS['deleted']
-    EVICT_SKIP = STATS['evict_skip']
-    MUTEX_SKIP = STATS['mutex_miss']
-    RECYCLE_MISS = STATS['recycle_miss'] if 'recycle_miss' in STATS else 0
+    DELETED = STATS["deleted"]
+    EVICT_SKIP = STATS["evict_skip"]
+    MUTEX_SKIP = STATS["mutex_miss"]
+    RECYCLE_MISS = STATS["recycle_miss"] if "recycle_miss" in STATS else 0
 
     # ARC size
-    ARC_SIZE = STATS['size']
-    TARGET_SIZE_MAX = STATS['c_max']
-    TARGET_SIZE_MIN = STATS['c_min']
-    TARGET_SIZE = STATS['c']
+    ARC_SIZE = STATS["size"]
+    TARGET_SIZE_MAX = STATS["c_max"]
+    TARGET_SIZE_MIN = STATS["c_min"]
+    TARGET_SIZE = STATS["c"]
 
     TARGET_SIZE_PERCENT = TARGET_SIZE / TARGET_SIZE_MAX * 100
     ARC_SIZE_PERCENT = ARC_SIZE / TARGET_SIZE_MAX * 100
@@ -70,7 +76,7 @@ def main(args):
     MFU_SIZE = 0
     RECENTLY_USED_PERCENT = 0
     FREQUENTLY_USED_PERCENT = 0
-    P = STATS['p']
+    P = STATS["p"]
 
     if ARC_SIZE >= TARGET_SIZE:
         MFU_SIZE = ARC_SIZE - P
@@ -81,22 +87,21 @@ def main(args):
         RECENTLY_USED_PERCENT = P / TARGET_SIZE * 100
         FREQUENTLY_USED_PERCENT = MFU_SIZE / TARGET_SIZE * 100
 
-
     # ARC misc. efficient stats
-    ARC_HITS = STATS['hits']
-    ARC_MISSES = STATS['misses']
-    DEMAND_DATA_HITS = STATS['demand_data_hits']
-    DEMAND_DATA_MISSES = STATS['demand_data_misses']
-    DEMAND_METADATA_HITS = STATS['demand_metadata_hits']
-    DEMAND_METADATA_MISSES = STATS['demand_metadata_misses']
-    MFU_GHOST_HITS = STATS['mfu_ghost_hits']
-    MFU_HITS = STATS['mfu_hits']
-    MRU_GHOST_HITS = STATS['mru_ghost_hits']
-    MRU_HITS = STATS['mru_hits']
-    PREFETCH_DATA_HITS = STATS['prefetch_data_hits']
-    PREFETCH_DATA_MISSES = STATS['prefetch_data_misses']
-    PREFETCH_METADATA_HITS = STATS['prefetch_metadata_hits']
-    PREFETCH_METADATA_MISSES = STATS['prefetch_metadata_misses']
+    ARC_HITS = STATS["hits"]
+    ARC_MISSES = STATS["misses"]
+    DEMAND_DATA_HITS = STATS["demand_data_hits"]
+    DEMAND_DATA_MISSES = STATS["demand_data_misses"]
+    DEMAND_METADATA_HITS = STATS["demand_metadata_hits"]
+    DEMAND_METADATA_MISSES = STATS["demand_metadata_misses"]
+    MFU_GHOST_HITS = STATS["mfu_ghost_hits"]
+    MFU_HITS = STATS["mfu_hits"]
+    MRU_GHOST_HITS = STATS["mru_ghost_hits"]
+    MRU_HITS = STATS["mru_hits"]
+    PREFETCH_DATA_HITS = STATS["prefetch_data_hits"]
+    PREFETCH_DATA_MISSES = STATS["prefetch_data_misses"]
+    PREFETCH_METADATA_HITS = STATS["prefetch_metadata_hits"]
+    PREFETCH_METADATA_MISSES = STATS["prefetch_metadata_misses"]
 
     ANON_HITS = ARC_HITS - (MFU_HITS + MRU_HITS + MFU_GHOST_HITS + MRU_GHOST_HITS)
     ARC_ACCESSES_TOTAL = ARC_HITS + ARC_MISSES
@@ -108,9 +113,15 @@ def main(args):
     CACHE_HIT_PERCENT = ARC_HITS / ARC_ACCESSES_TOTAL * 100
     CACHE_MISS_PERCENT = ARC_MISSES / ARC_ACCESSES_TOTAL * 100
     ACTUAL_HIT_PERCENT = REAL_HITS / ARC_ACCESSES_TOTAL * 100
-    DATA_DEMAND_PERCENT = DEMAND_DATA_HITS / DEMAND_DATA_TOTAL * 100 if DEMAND_DATA_TOTAL != 0 else 0
+    DATA_DEMAND_PERCENT = (
+        DEMAND_DATA_HITS / DEMAND_DATA_TOTAL * 100 if DEMAND_DATA_TOTAL != 0 else 0
+    )
 
-    DATA_PREFETCH_PERCENT = PREFETCH_DATA_HITS / PREFETCH_DATA_TOTAL * 100 if PREFETCH_DATA_TOTAL != 0 else 0
+    DATA_PREFETCH_PERCENT = (
+        PREFETCH_DATA_HITS / PREFETCH_DATA_TOTAL * 100
+        if PREFETCH_DATA_TOTAL != 0
+        else 0
+    )
 
     ANON_HITS_PERCENT = ANON_HITS / ARC_HITS * 100 if ANON_HITS != 0 else 0
 
@@ -121,125 +132,157 @@ def main(args):
 
     DEMAND_HITS_PERCENT = DEMAND_DATA_HITS / ARC_HITS * 100 if ARC_HITS != 0 else 0
     PREFETCH_HITS_PERCENT = PREFETCH_DATA_HITS / ARC_HITS * 100 if ARC_HITS != 0 else 0
-    METADATA_HITS_PERCENT = DEMAND_METADATA_HITS / ARC_HITS * 100 if ARC_HITS != 0 else 0
-    PREFETCH_METADATA_HITS_PERCENT = DEMAND_METADATA_HITS / ARC_HITS * 100 if ARC_HITS != 0 else 0
+    METADATA_HITS_PERCENT = (
+        DEMAND_METADATA_HITS / ARC_HITS * 100 if ARC_HITS != 0 else 0
+    )
+    PREFETCH_METADATA_HITS_PERCENT = (
+        DEMAND_METADATA_HITS / ARC_HITS * 100 if ARC_HITS != 0 else 0
+    )
 
-    DEMAND_MISSES_PERCENT = DEMAND_DATA_MISSES / ARC_MISSES * 100 if ARC_MISSES != 0 else 0
-    PREFETCH_MISSES_PERCENT = PREFETCH_DATA_MISSES / ARC_MISSES * 100 if ARC_MISSES != 0 else 0
-    METADATA_MISSES_PERCENT = DEMAND_METADATA_MISSES / ARC_MISSES * 100 if ARC_MISSES != 0 else 0
-    PREFETCH_METADATA_MISSES_PERCENT = PREFETCH_METADATA_MISSES / ARC_MISSES * 100 if ARC_MISSES != 0 else 0
+    DEMAND_MISSES_PERCENT = (
+        DEMAND_DATA_MISSES / ARC_MISSES * 100 if ARC_MISSES != 0 else 0
+    )
+    PREFETCH_MISSES_PERCENT = (
+        PREFETCH_DATA_MISSES / ARC_MISSES * 100 if ARC_MISSES != 0 else 0
+    )
+    METADATA_MISSES_PERCENT = (
+        DEMAND_METADATA_MISSES / ARC_MISSES * 100 if ARC_MISSES != 0 else 0
+    )
+    PREFETCH_METADATA_MISSES_PERCENT = (
+        PREFETCH_METADATA_MISSES / ARC_MISSES * 100 if ARC_MISSES != 0 else 0
+    )
 
     # pools
     exact_size = True
-    zpool_cmd = ['/sbin/zpool']
-    zpool_cmd_list = zpool_cmd + ['list', '-p', '-H']
-    std = {'stdout': subprocess.PIPE, 'stderr': subprocess.PIPE, 'universal_newlines': True}
+    zpool_cmd = ["/sbin/zpool"]
+    zpool_cmd_list = zpool_cmd + ["list", "-p", "-H"]
+    std = {
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "universal_newlines": True,
+    }
 
     ## account for variations between ZoL zfs versions
     proc = subprocess.run(zpool_cmd_list, **std)
-    if (proc.returncode == 2):
+    if proc.returncode == 2:
         # -p option is not present in older versions
         # edit snmpd.conf zfs extend section to the following:
         #   extend zfs /usr/bin/sudo /etc/snmp/zfs-linux
         # make sure to edit your sudo users (usually visudo) and add at the bottom:
         #   snmp ALL=(ALL) NOPASSWD: /etc/snmp/zfs-linux
-        del zpool_cmd_list[zpool_cmd_list.index('-p')]  # try removing -p to fix the issue
+        del zpool_cmd_list[
+            zpool_cmd_list.index("-p")
+        ]  # try removing -p to fix the issue
         proc = subprocess.run(zpool_cmd_list, **std)
         exact_size = False
-    if (proc.returncode != 0):
+    if proc.returncode != 0:
         return proc_err(zpool_cmd_list, proc)
 
     pools = []
-    FIELDS = ['name', 'size', 'alloc', 'free', 'ckpoint', 'expandsz', 'frag', 'cap', 'dedup', 'health', 'altroot']
-    if len(proc.stdout.splitlines()[0].split('\t')) == 10:
-        FIELDS.remove('ckpoint')
-       
-    for line in proc.stdout.splitlines():
-        info = dict(zip(FIELDS, line.split('\t')))
+    FIELDS = [
+        "name",
+        "size",
+        "alloc",
+        "free",
+        "ckpoint",
+        "expandsz",
+        "frag",
+        "cap",
+        "dedup",
+        "health",
+        "altroot",
+    ]
+    if len(proc.stdout.splitlines()[0].split("\t")) == 10:
+        FIELDS.remove("ckpoint")
 
-        info['expandsz'] = 0 if info['expandsz'] == '-' else info['expandsz']
-        info['frag'] = info['frag'].rstrip('%')
-        info['frag'] = 0 if info['frag'] == '-' else info['frag']
-        info['dedup'] = info['dedup'].rstrip('x')
-        info['cap'] = info['cap'].rstrip('%')
-        if 'ckpoint' in info:
-            info['ckpoint'] = 0 if info['ckpoint'] == '-' else info['ckpoint']
+    for line in proc.stdout.splitlines():
+        info = dict(zip(FIELDS, line.split("\t")))
+
+        info["expandsz"] = 0 if info["expandsz"] == "-" else info["expandsz"]
+        info["frag"] = info["frag"].rstrip("%")
+        info["frag"] = 0 if info["frag"] == "-" else info["frag"]
+        info["dedup"] = info["dedup"].rstrip("x")
+        info["cap"] = info["cap"].rstrip("%")
+        if "ckpoint" in info:
+            info["ckpoint"] = 0 if info["ckpoint"] == "-" else info["ckpoint"]
 
         # zfs-06.5.11 fix
         if not exact_size:
-            zpool_cmd_get = zpool_cmd + ['get', '-pH', 'size,alloc,free', info['name']]
+            zpool_cmd_get = zpool_cmd + ["get", "-pH", "size,alloc,free", info["name"]]
             proc2 = subprocess.run(zpool_cmd_get, **std)
-            if (proc2.returncode != 0):
+            if proc2.returncode != 0:
                 return proc_err(zpool_cmd_get, proc2)
 
-            info2 = dict([tuple(s.split('\t')[1:3]) for s in proc2.stdout.splitlines()])
-            info['size'] = info2['size']
-            info['alloc'] = info2['allocated']
-            info['free'] = info2['free']
+            info2 = dict([tuple(s.split("\t")[1:3]) for s in proc2.stdout.splitlines()])
+            info["size"] = info2["size"]
+            info["alloc"] = info2["allocated"]
+            info["free"] = info2["free"]
 
         pools.append(info)
 
     res = {
-        'deleted': DELETED, # ARC misc
-        'evict_skip': EVICT_SKIP,
-        'mutex_skip': MUTEX_SKIP,
-        'recycle_miss': RECYCLE_MISS,
-        'arc_size': ARC_SIZE, # ARC size
-        'target_size_max': TARGET_SIZE_MAX,
-        'target_size_min': TARGET_SIZE_MIN,
-        'target_size': TARGET_SIZE,
-        'target_size_per': TARGET_SIZE_PERCENT,
-        'arc_size_per': ARC_SIZE_PERCENT,
-        'target_size_arat': TARGET_SIZE_ADAPTIVE_RATIO,
-        'min_size_per': MIN_SIZE_PERCENT,
-        'mfu_size': MFU_SIZE, # ARC size breakdown
-        'p': P,
-        'rec_used_per': RECENTLY_USED_PERCENT,
-        'freq_used_per': FREQUENTLY_USED_PERCENT,
-        'arc_hits': ARC_HITS, # ARC efficiency
-        'arc_misses': ARC_MISSES,
-        'demand_data_hits': DEMAND_DATA_HITS,
-        'demand_data_misses': DEMAND_DATA_MISSES,
-        'demand_meta_hits': DEMAND_METADATA_HITS,
-        'demand_meta_misses': DEMAND_METADATA_MISSES,
-        'mfu_ghost_hits': MFU_GHOST_HITS,
-        'mfu_hits': MFU_HITS,
-        'mru_ghost_hits': MRU_GHOST_HITS,
-        'mru_hits': MRU_HITS,
-        'pre_data_hits': PREFETCH_DATA_HITS,
-        'pre_data_misses': PREFETCH_DATA_MISSES,
-        'pre_meta_hits': PREFETCH_METADATA_HITS,
-        'pre_meta_misses': PREFETCH_METADATA_HITS,
-        'anon_hits': ANON_HITS,
-        'arc_accesses_total': ARC_ACCESSES_TOTAL,
-        'demand_data_total': DEMAND_DATA_TOTAL,
-        'pre_data_total': PREFETCH_DATA_TOTAL,
-        'real_hits': REAL_HITS,
-        'cache_hits_per': CACHE_HIT_PERCENT, # ARC efficiency percentages
-        'cache_miss_per': CACHE_MISS_PERCENT,
-        'actual_hit_per': ACTUAL_HIT_PERCENT,
-        'data_demand_per': DATA_DEMAND_PERCENT,
-        'data_pre_per': DATA_PREFETCH_PERCENT,
-        'anon_hits_per': ANON_HITS_PERCENT,
-        'mru_per': MRU_PERCENT,
-        'mfu_per': MFU_PERCENT,
-        'mru_ghost_per': MRU_GHOST_PERCENT,
-        'mfu_ghost_per': MFU_GHOST_PERCENT,
-        'demand_hits_per': DEMAND_HITS_PERCENT,
-        'pre_hits_per': PREFETCH_HITS_PERCENT,
-        'meta_hits_per': METADATA_HITS_PERCENT,
-        'pre_meta_hits_per': PREFETCH_METADATA_HITS_PERCENT,
-        'demand_misses_per': DEMAND_MISSES_PERCENT,
-        'pre_misses_per': PREFETCH_MISSES_PERCENT,
-        'meta_misses_per': METADATA_MISSES_PERCENT,
-        'pre_meta_misses_per': PREFETCH_METADATA_MISSES_PERCENT,
-        'pools': pools
+        "deleted": DELETED,  # ARC misc
+        "evict_skip": EVICT_SKIP,
+        "mutex_skip": MUTEX_SKIP,
+        "recycle_miss": RECYCLE_MISS,
+        "arc_size": ARC_SIZE,  # ARC size
+        "target_size_max": TARGET_SIZE_MAX,
+        "target_size_min": TARGET_SIZE_MIN,
+        "target_size": TARGET_SIZE,
+        "target_size_per": TARGET_SIZE_PERCENT,
+        "arc_size_per": ARC_SIZE_PERCENT,
+        "target_size_arat": TARGET_SIZE_ADAPTIVE_RATIO,
+        "min_size_per": MIN_SIZE_PERCENT,
+        "mfu_size": MFU_SIZE,  # ARC size breakdown
+        "p": P,
+        "rec_used_per": RECENTLY_USED_PERCENT,
+        "freq_used_per": FREQUENTLY_USED_PERCENT,
+        "arc_hits": ARC_HITS,  # ARC efficiency
+        "arc_misses": ARC_MISSES,
+        "demand_data_hits": DEMAND_DATA_HITS,
+        "demand_data_misses": DEMAND_DATA_MISSES,
+        "demand_meta_hits": DEMAND_METADATA_HITS,
+        "demand_meta_misses": DEMAND_METADATA_MISSES,
+        "mfu_ghost_hits": MFU_GHOST_HITS,
+        "mfu_hits": MFU_HITS,
+        "mru_ghost_hits": MRU_GHOST_HITS,
+        "mru_hits": MRU_HITS,
+        "pre_data_hits": PREFETCH_DATA_HITS,
+        "pre_data_misses": PREFETCH_DATA_MISSES,
+        "pre_meta_hits": PREFETCH_METADATA_HITS,
+        "pre_meta_misses": PREFETCH_METADATA_HITS,
+        "anon_hits": ANON_HITS,
+        "arc_accesses_total": ARC_ACCESSES_TOTAL,
+        "demand_data_total": DEMAND_DATA_TOTAL,
+        "pre_data_total": PREFETCH_DATA_TOTAL,
+        "real_hits": REAL_HITS,
+        "cache_hits_per": CACHE_HIT_PERCENT,  # ARC efficiency percentages
+        "cache_miss_per": CACHE_MISS_PERCENT,
+        "actual_hit_per": ACTUAL_HIT_PERCENT,
+        "data_demand_per": DATA_DEMAND_PERCENT,
+        "data_pre_per": DATA_PREFETCH_PERCENT,
+        "anon_hits_per": ANON_HITS_PERCENT,
+        "mru_per": MRU_PERCENT,
+        "mfu_per": MFU_PERCENT,
+        "mru_ghost_per": MRU_GHOST_PERCENT,
+        "mfu_ghost_per": MFU_GHOST_PERCENT,
+        "demand_hits_per": DEMAND_HITS_PERCENT,
+        "pre_hits_per": PREFETCH_HITS_PERCENT,
+        "meta_hits_per": METADATA_HITS_PERCENT,
+        "pre_meta_hits_per": PREFETCH_METADATA_HITS_PERCENT,
+        "demand_misses_per": DEMAND_MISSES_PERCENT,
+        "pre_misses_per": PREFETCH_MISSES_PERCENT,
+        "meta_misses_per": METADATA_MISSES_PERCENT,
+        "pre_meta_misses_per": PREFETCH_METADATA_MISSES_PERCENT,
+        "pools": pools,
     }
 
     print(json.dumps(res))
 
     return 0
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     import sys
+
     sys.exit(main(sys.argv[1:]))

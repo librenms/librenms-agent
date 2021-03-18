@@ -12,8 +12,8 @@ if [ $# -ne 1 ]; then
 fi
 
 # Get hostname, extract frequency
-hostname=`/bin/uname -n`
-frequency=`/usr/sbin/iw dev $1 info | /bin/grep channel | /usr/bin/cut -f 2- -s -d" " | /usr/bin/cut -f 2- -s -d"(" | /usr/bin/cut -f 1 -s -d" "`
+hostname=$(/bin/uname -n)
+frequency=$(/usr/sbin/iw dev "$1" info | /bin/grep channel | /usr/bin/cut -f 2- -s -d" " | /usr/bin/cut -f 2- -s -d"(" | /usr/bin/cut -f 1 -s -d" ")
 
 # Return snmp result
-/bin/echo $frequency
+/bin/echo "$frequency"

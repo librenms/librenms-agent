@@ -13,10 +13,10 @@ then
         exit 0
     fi
 
-    PEAK=`$FSCLI -x "status" | grep 'per Sec' | grep -Po 'last 5min \d+' | cut -d ' ' -f 3`
-    CALLCOUNT=`$FSCLI -x "show calls count" | grep -Po '^\d+'`
-    CHANNELCOUNT=`$FSCLI -x "show channels count" | grep -Po '^\d+'`
-    GATEWAYS=`$FSCLI -x "sofia status gateway"`
+    PEAK=$($FSCLI -x "status" | grep 'per Sec' | grep -Po 'last 5min \d+' | cut -d ' ' -f 3)
+    CALLCOUNT=$($FSCLI -x "show calls count" | grep -Po '^\d+')
+    CHANNELCOUNT=$($FSCLI -x "show channels count" | grep -Po '^\d+')
+    GATEWAYS=$($FSCLI -x "sofia status gateway")
     if [[ $GATEWAYS =~ $inRe ]]; then
         INFAILED=${BASH_REMATCH[1]}
         INTOTAL=${BASH_REMATCH[2]}

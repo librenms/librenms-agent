@@ -195,17 +195,17 @@ for (( c=0; c<${#Scoreboard}; c++ )); do
 done
 
 # scoreboard output order must be this ...
-echo ${Scoreboard_}
-echo ${ScoreboardS}
-echo ${ScoreboardR}
-echo ${ScoreboardW}
-echo ${ScoreboardK}
-echo ${ScoreboardD}
-echo ${ScoreboardC}
-echo ${ScoreboardL}
-echo ${ScoreboardG}
-echo ${ScoreboardI}
-echo ${ScoreboardDot}
+echo "${Scoreboard_}"
+echo "${ScoreboardS}"
+echo "${ScoreboardR}"
+echo "${ScoreboardW}"
+echo "${ScoreboardK}"
+echo "${ScoreboardD}"
+echo "${ScoreboardC}"
+echo "${ScoreboardL}"
+echo "${ScoreboardG}"
+echo "${ScoreboardI}"
+echo "${ScoreboardDot}"
 
 # clean up
 if [ -f ${Tmp_File} ]; then

@@ -12,15 +12,15 @@ if [ $# -gt 1 ]; then
 fi
 
 # Get path to this script
-scriptdir=$(dirname $(readlink -f -- $0))
+scriptdir=$(dirname $(readlink -f -- "$0"))
 
 # Get hostname, interface list. Set target, which is name returned for interface
-hostname=`/bin/uname -n`
-if [ $1 ]; then
+hostname=$(/bin/uname -n)
+if [ "$1" ]; then
 	interfaces=$1
 	target=$1
 else
-	interfaces=`cat $scriptdir/wlInterfaces.txt | cut -f 1 -d","`
+	interfaces=$(cat "$scriptdir"/wlInterfaces.txt | cut -f 1 -d",")
 	target=wlan
 fi
 
@@ -28,7 +28,7 @@ fi
 count=0
 for interface in $interfaces
 do
-	new=`/usr/sbin/iw dev $interface station dump | /bin/grep Station | /usr/bin/cut -f 2 -s -d" " | /usr/bin/wc -l`
+	new=$(/usr/sbin/iw dev "$interface" station dump | /bin/grep Station | /usr/bin/cut -f 2 -s -d" " | /usr/bin/wc -l)
   	count=$(( $count + $new ))
 done
 

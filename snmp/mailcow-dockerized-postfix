@@ -21,9 +21,9 @@
 # requirements: mailcow-dockerized and pflogsumm
 #
 
-import subprocess
-import re
 import json
+import re
+import subprocess
 
 # LibreNMS poller interval
 librenms_poller_interval = 300
@@ -34,37 +34,46 @@ def libre_to_mcd_postfix(libre_seconds):
 
 
 def cli_get_docker_container():
-    return subprocess.check_output("docker ps -qf name=postfix-mailcow", shell=True).decode('utf8').strip()
+    return (
+        subprocess.check_output("docker ps -qf name=postfix-mailcow", shell=True)
+        .decode("utf8")
+        .strip()
+    )
 
 
 def cli_command():
-    cli_part = "docker logs --since " + libre_to_mcd_postfix(librenms_poller_interval) \
-               + "m " + cli_get_docker_container() + "| pflogsumm --smtpd-stats"
+    cli_part = (
+        "docker logs --since "
+        + libre_to_mcd_postfix(librenms_poller_interval)
+        + "m "
+        + cli_get_docker_container()
+        + "| pflogsumm --smtpd-stats"
+    )
     return cli_part
 
 
 def get_output():
-    return subprocess.check_output(cli_command(), shell=True).decode('utf8')
+    return subprocess.check_output(cli_command(), shell=True).decode("utf8")
 
 
 def output_cleaning(input):
-    output = re.split('\n', input)
+    output = re.split("\n", input)
     return list(filter(None, output))
 
 
 def entry_generator(input):
-    entry = re.sub('  +', ':', input.strip().lstrip())
-    return entry.split(':')
+    entry = re.sub("  +", ":", input.strip().lstrip())
+    return entry.split(":")
 
 
 # limit our needed output
-mcd_postfix_data = get_output().split('messages')
-data = mcd_postfix_data[1].split('smtpd')
+mcd_postfix_data = get_output().split("messages")
+data = mcd_postfix_data[1].split("smtpd")
 
 # postfix stats only
 mcd_postfix_info = data[0]
 # smtpd stats only
-mcd_smtpd_info = data[1].split('Per-Hour Traffic Summary')[0]
+mcd_smtpd_info = data[1].split("Per-Hour Traffic Summary")[0]
 
 # postfix stats export
 mcd_postfix = output_cleaning(mcd_postfix_info)
@@ -74,17 +83,16 @@ points_label = []
 for entry in mcd_postfix:
     data_labels = entry_generator(entry)
 
-    if data_labels[0].find('k') == -1:
+    if data_labels[0].find("k") == -1:
         points_data.append(data_labels[0])
     else:
-        data_point = data_labels[0].replace('k', '', 1)
+        data_point = data_labels[0].replace("k", "", 1)
         data_point = int(data_point) * 1024
         points_data.append(data_point)
 
-    points_label.append(re.sub('[^a-zA-Z]+', '', data_labels[1]))
+    points_label.append(re.sub("[^a-zA-Z]+", "", data_labels[1]))
 
 entries = dict(zip(points_label, points_data))
 export = {"data": entries, "error": "0", "errorString": "", "version": "1"}
-data = re.sub(' ', '', json.dumps(export))
+data = re.sub(" ", "", json.dumps(export))
 print(data)
-
