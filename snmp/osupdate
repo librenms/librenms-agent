@@ -58,8 +58,8 @@ elif command -v pacman &>/dev/null ; then
     fi
 elif command -v yum &>/dev/null ; then
     # CentOS / Redhat
-    UPDATES=$($BIN_YUM "$CMD_YUM" | $BIN_WC $CMD_WC)
-    if [ "$UPDATES" -ge 1 ]; then
+    UPDATES=`$BIN_YUM $CMD_YUM | $BIN_WC $CMD_WC`
+    if [ $UPDATES -ge 1 ]; then
         echo $(($UPDATES-1));
     else
         echo "0";
