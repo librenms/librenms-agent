@@ -22,5 +22,6 @@ SDFSCLI_BIN=$(which sdfscli)
 SDFSCLI_CMD=' --volume-info'
 GREP_BIN=$(which grep)
 GREP_CMD=' -o -E '
-DATAPOINTS=$($SDFSCLI_BIN "$SDFSCLI_CMD" | $GREP_BIN "$GREP_CMD" "(([0-9]+)\.?([0-9]+)?)")
+# shellcheck disable=SC2086
+DATAPOINTS=$($SDFSCLI_BIN $SDFSCLI_CMD | $GREP_BIN $GREP_CMD "(([0-9]+)\.?([0-9]+)?)")
 echo "$DATAPOINTS"

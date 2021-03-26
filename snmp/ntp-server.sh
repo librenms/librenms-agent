@@ -45,18 +45,28 @@ STRATUM=$($BIN_NTPQ -c rv | $BIN_GREP -Eow "stratum=[0-9]+" | $BIN_CUT -d "=" -f
 # parse the ntpq info that requires version specific info
 NTPQ_RAW=$($BIN_NTPQ -c rv | $BIN_GREP jitter | $BIN_SED 's/[[:alpha:]=,_]/ /g')
 if [ $NTPQV = "p11" ]; then
-	OFFSET=$(echo "$NTPQ_RAW" | $BIN_AWK -F ' ' '{print $3}')
-	FREQUENCY=$(echo "$NTPQ_RAW" | $BIN_AWK -F ' ' '{print $4}')
-	SYS_JITTER=$(echo "$NTPQ_RAW" | $BIN_AWK -F ' ' '{print $5}')
-	CLK_JITTER=$(echo "$NTPQ_RAW" | $BIN_AWK -F ' ' '{print $6}')
-	CLK_WANDER=$(echo "$NTPQ_RAW" | $BIN_AWK -F ' ' '{print $7}')
+	# shellcheck disable=SC2086
+	OFFSET=$(echo $NTPQ_RAW | $BIN_AWK -F ' ' '{print $3}')
+	# shellcheck disable=SC2086
+	FREQUENCY=$(echo $NTPQ_RAW | $BIN_AWK -F ' ' '{print $4}')
+	# shellcheck disable=SC2086
+	SYS_JITTER=$(echo $NTPQ_RAW | $BIN_AWK -F ' ' '{print $5}')
+	# shellcheck disable=SC2086
+	CLK_JITTER=$(echo $NTPQ_RAW | $BIN_AWK -F ' ' '{print $6}')
+	# shellcheck disable=SC2086
+	CLK_WANDER=$(echo $NTPQ_RAW | $BIN_AWK -F ' ' '{print $7}')
 fi
 if [ $NTPQV = "p1" ]; then
-	OFFSET=$(echo "$NTPQ_RAW" | $BIN_AWK -F ' ' '{print $2}')
-	FREQUENCY=$(echo "$NTPQ_RAW" | $BIN_AWK -F ' ' '{print $3}')
-	SYS_JITTER=$(echo "$NTPQ_RAW" | $BIN_AWK -F ' ' '{print $4}')
-	CLK_JITTER=$(echo "$NTPQ_RAW" | $BIN_AWK -F ' ' '{print $5}')
-	CLK_WANDER=$(echo "$NTPQ_RAW" | $BIN_AWK -F ' ' '{print $6}')
+	# shellcheck disable=SC2086
+	OFFSET=$(echo $NTPQ_RAW | $BIN_AWK -F ' ' '{print $2}')
+	# shellcheck disable=SC2086
+	FREQUENCY=$(echo $NTPQ_RAW | $BIN_AWK -F ' ' '{print $3}')
+	# shellcheck disable=SC2086
+	SYS_JITTER=$(echo $NTPQ_RAW | $BIN_AWK -F ' ' '{print $4}')
+	# shellcheck disable=SC2086
+	CLK_JITTER=$(echo $NTPQ_RAW | $BIN_AWK -F ' ' '{print $5}')
+	# shellcheck disable=SC2086
+	CLK_WANDER=$(echo $NTPQ_RAW | $BIN_AWK -F ' ' '{print $6}')
 fi
 
 VER=$($BIN_NTPD --version)
@@ -67,18 +77,29 @@ else
 fi
 CMD2=$($USECMD | $BIN_TR -d ' ' | $BIN_CUT -d : -f 2 | $BIN_TR '\n' ' ')
 
-TIMESINCERESET=$(echo "$CMD2" | $BIN_AWK -F ' ' '{print $1}')
-RECEIVEDBUFFERS=$(echo "$CMD2" | $BIN_AWK -F ' ' '{print $2}')
-FREERECEIVEBUFFERS=$(echo "$CMD2" | $BIN_AWK -F ' ' '{print $3}')
-USEDRECEIVEBUFFERS=$(echo "$CMD2" | $BIN_AWK -F ' ' '{print $4}')
-LOWWATERREFILLS=$(echo "$CMD2" | $BIN_AWK -F ' ' '{print $5}')
-DROPPEDPACKETS=$(echo "$CMD2" | $BIN_AWK -F ' ' '{print $6}')
-IGNOREDPACKETS=$(echo "$CMD2" | $BIN_AWK -F ' ' '{print $7}')
-RECEIVEDPACKETS=$(echo "$CMD2" | $BIN_AWK -F ' ' '{print $8}')
-PACKETSSENT=$(echo "$CMD2" | $BIN_AWK -F ' ' '{print $9}')
-PACKETSENDFAILURES=$(echo "$CMD2" | $BIN_AWK -F ' ' '{print $10}')
-#INPUTWAKEUPS=$(echo "$CMD2" | $BIN_AWK -F ' ' '{print $11}')
-USEFULINPUTWAKEUPS=$(echo "$CMD2" | $BIN_AWK -F ' ' '{print $12}')
+# shellcheck disable=SC2086
+TIMESINCERESET=$(echo $CMD2 | $BIN_AWK -F ' ' '{print $1}')
+# shellcheck disable=SC2086
+RECEIVEDBUFFERS=$(echo $CMD2 | $BIN_AWK -F ' ' '{print $2}')
+# shellcheck disable=SC2086
+FREERECEIVEBUFFERS=$(echo $CMD2 | $BIN_AWK -F ' ' '{print $3}')
+# shellcheck disable=SC2086
+USEDRECEIVEBUFFERS=$(echo $CMD2 | $BIN_AWK -F ' ' '{print $4}')
+# shellcheck disable=SC2086
+LOWWATERREFILLS=$(echo $CMD2 | $BIN_AWK -F ' ' '{print $5}')
+# shellcheck disable=SC2086
+DROPPEDPACKETS=$(echo $CMD2 | $BIN_AWK -F ' ' '{print $6}')
+# shellcheck disable=SC2086
+IGNOREDPACKETS=$(echo $CMD2 | $BIN_AWK -F ' ' '{print $7}')
+# shellcheck disable=SC2086
+RECEIVEDPACKETS=$(echo $CMD2 | $BIN_AWK -F ' ' '{print $8}')
+# shellcheck disable=SC2086
+PACKETSSENT=$(echo $CMD2 | $BIN_AWK -F ' ' '{print $9}')
+# shellcheck disable=SC2086
+PACKETSENDFAILURES=$(echo $CMD2 | $BIN_AWK -F ' ' '{print $10}')
+#INPUTWAKEUPS=$(echo $CMD2 | $BIN_AWK -F ' ' '{print $11}')
+# shellcheck disable=SC2086
+USEFULINPUTWAKEUPS=$(echo $CMD2 | $BIN_AWK -F ' ' '{print $12}')
 
 echo '{"data":{"offset":"'"$OFFSET"\
 '","frequency":"'"$FREQUENCY"\
