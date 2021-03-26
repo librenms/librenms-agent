@@ -56,7 +56,7 @@ elif [ "${OS}" = "Linux" ] ; then
     REV=""
     IGNORE_OS_RELEASE=1
     if [ -f /usr/bin/lsb_release ] ; then
-      ID=$(lsb_release -i | awk -F ':' '{print $2}' | sed 's/ //g')
+      ID=$(lsb_release -i | awk -F ':' '{print $2}' | sed 's/\s//g')
     fi
     if [ "${ID}" = "Raspbian" ] ; then
       DIST="Raspbian $(cat /etc/debian_version)"
