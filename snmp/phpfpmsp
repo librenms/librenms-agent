@@ -77,7 +77,7 @@ phpfpm_slow_requests=0
 
 
 #	local opts="${1}" url="${2}"
-
+  # shellcheck disable=SC2207
   phpfpm_response=($(curl "${opts}" "${url}"))
   [ $? -ne 0 ] || [ "${#phpfpm_response[@]}" -eq 0 ] && exit 1
 
