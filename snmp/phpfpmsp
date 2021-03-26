@@ -42,7 +42,7 @@
 
 # the URL to fetch, change as needed
 url="http://localhost/status?full"
-opts=""
+opts="-Ss"
 
 # netdata
 # real-time performance and health monitoring, done right!
@@ -77,8 +77,8 @@ phpfpm_slow_requests=0
 
 
 #	local opts="${1}" url="${2}"
-
-  phpfpm_response=("$(curl -Ss "${opts}" "${url}")")
+  # shellcheck disable=SC2207
+  phpfpm_response=($(curl "${opts}" "${url}"))
   [ $? -ne 0 ] || [ "${#phpfpm_response[@]}" -eq 0 ] && exit 1
 
   if [[ "${phpfpm_response[0]}" != "pool:" \
