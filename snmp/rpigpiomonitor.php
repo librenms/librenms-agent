@@ -75,23 +75,31 @@ function validate_sensor_type($type) {
         case "ber":
         case "charge":
         case "chromatic_dispersion":
+        case "cooling":
         case "count":
         case "current":
         case "dbm":
         case "delay":
+        case "eer":
         case "fanspeed":
         case "frequency":
         case "humidity":
         case "load":
+        case "loss":
         case "power":
-        case "power_comsumed":
+        case "power_consumed":
         case "power_factor":
+        case "pressure":
+        case "quality_factor":
         case "runtime":
         case "signal":
         case "snr":
         case "state":
         case "temperature":
+        case "tv_signal":
         case "voltage":
+        case "waterflow":
+        case "percent":
             return true;
         default:
             return false;
