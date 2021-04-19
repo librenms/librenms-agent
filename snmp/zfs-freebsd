@@ -67,23 +67,24 @@ getopts('p', \%opts);
 
 my $sysctls;
 my @to_pull=(
-        'kstat.zfs',
-        'vfs.zfs',
-        );
+	'kstat.zfs',
+	'vfs.zfs',
+	);
 my @sysctls_pull = `/sbin/sysctl -q @to_pull`;
 foreach my $stat (@sysctls_pull) {
-        chomp( $stat );
-        my ( $var, $val ) = split(/:/, $stat, 2);
-        # If $val is empty, skip it. Likely a var with a newline before 
-        # the data so it is trying to "split" the data.
-        if( length $val ) {
+	chomp( $stat );
+	my ( $var, $val ) = split(/:/, $stat, 2);
+	# If $val is empty, skip it. Likely a var with a newline before
+	# the data so it is trying to "split" the data.
+	if( length $val ) {
                 $val =~ s/^ //;
-                $sysctls->{$var}=$val;             
+                $sysctls->{$var}=$val;
+	}
 }
 
 # does not seem to exist for me, but some of these don't seem to be created till needed
 if ( ! defined( $sysctls->{"kstat.zfs.misc.arcstats.recycle_miss"} ) ) {
-        $sysctls->{"kstat.zfs.misc.arcstats.recycle_miss"}=0;
+	$sysctls->{"kstat.zfs.misc.arcstats.recycle_miss"}=0;
 }
 
 ##
@@ -110,7 +111,7 @@ $tojson{target_size_per}=$target_size_percent;
 $tojson{arc_size_per}=$arc_size_percent;
 $tojson{target_size_arat}=$target_size_adaptive_ratio;
 $tojson{min_size_per}=$min_size_percent;
-
+	
 ##
 ## ARC size breakdown
 ##
@@ -118,13 +119,13 @@ my $mfu_size;
 my $recently_used_percent;
 my $frequently_used_percent;
 if ( $sysctls->{"kstat.zfs.misc.arcstats.size"} >= $sysctls->{"kstat.zfs.misc.arcstats.c"} ){
-        $mfu_size = $sysctls->{"kstat.zfs.misc.arcstats.size"} - $sysctls->{"kstat.zfs.misc.arcstats.p"};
-        $recently_used_percent = $sysctls->{"kstat.zfs.misc.arcstats.p"} / $sysctls->{"kstat.zfs.misc.arcstats.size"} * 100;
-        $frequently_used_percent = $mfu_size / $sysctls->{"kstat.zfs.misc.arcstats.size"} * 100;
+	$mfu_size = $sysctls->{"kstat.zfs.misc.arcstats.size"} - $sysctls->{"kstat.zfs.misc.arcstats.p"};
+	$recently_used_percent = $sysctls->{"kstat.zfs.misc.arcstats.p"} / $sysctls->{"kstat.zfs.misc.arcstats.size"} * 100;
+	$frequently_used_percent = $mfu_size / $sysctls->{"kstat.zfs.misc.arcstats.size"} * 100;
 }else{
-        $mfu_size = $sysctls->{"kstat.zfs.misc.arcstats.c"} - $sysctls->{"kstat.zfs.misc.arcstats.p"};
-        $recently_used_percent = $sysctls->{"kstat.zfs.misc.arcstats.p"} / $sysctls->{"kstat.zfs.misc.arcstats.c"} * 100;
-        $frequently_used_percent = $mfu_size / $sysctls->{"kstat.zfs.misc.arcstats.c"} * 100;
+	$mfu_size = $sysctls->{"kstat.zfs.misc.arcstats.c"} - $sysctls->{"kstat.zfs.misc.arcstats.p"};
+	$recently_used_percent = $sysctls->{"kstat.zfs.misc.arcstats.p"} / $sysctls->{"kstat.zfs.misc.arcstats.c"} * 100;
+	$frequently_used_percent = $mfu_size / $sysctls->{"kstat.zfs.misc.arcstats.c"} * 100;
 }
 
 $tojson{mfu_size}=$mfu_size;
@@ -134,7 +135,7 @@ $tojson{freq_used_per}=$frequently_used_percent;
 
 ##
 ## ARC efficiency
-##
+##	
 my $arc_hits = $sysctls->{"kstat.zfs.misc.arcstats.hits"};
 my $arc_misses = $sysctls->{"kstat.zfs.misc.arcstats.misses"};
 my $demand_data_hits = $sysctls->{"kstat.zfs.misc.arcstats.demand_data_hits"};
@@ -162,19 +163,19 @@ my $actual_hit_percent = $real_hits / $arc_accesses_total * 100;
 
 my $data_demand_percent = 0;
 if ( $demand_data_total != 0 ){
-        $data_demand_percent = $demand_data_hits / $demand_data_total * 100;
+	$data_demand_percent = $demand_data_hits / $demand_data_total * 100;
 }
 
 my $data_prefetch_percent=0;
 if ( $prefetch_data_total != 0 ) {
-        $data_prefetch_percent = $prefetch_data_hits / $prefetch_data_total * 100;
+	$data_prefetch_percent = $prefetch_data_hits / $prefetch_data_total * 100;
 }
 
 my $anon_hits_percent;
 if ( $anon_hits != 0 ) {
-        $anon_hits_percent = $anon_hits / $arc_hits * 100;
+	$anon_hits_percent = $anon_hits / $arc_hits * 100;
 }else{
-        $anon_hits_percent=0;
+	$anon_hits_percent=0;
 }
 
 my $mru_percent = $mru_hits / $arc_hits * 100;
@@ -239,19 +240,19 @@ my @pools=split( /\n/, $zpool_output );
 my $pools_int=0;
 my @toShoveIntoJSON;
 while ( defined( $pools[$pools_int] ) ) {
-        my %newPool;
+	my %newPool;
 
-        my $pool=$pools[$pools_int];
-        $pool =~ s/\t/,/g;
-        $pool =~ s/\,\-\,\-\,/\,0\,0\,/g;
-        $pool =~ s/\%//g;
-        $pool =~ s/\,([0-1\.]*)x\,/,$1,/;
+	my $pool=$pools[$pools_int];
+	$pool =~ s/\t/,/g;
+	$pool =~ s/\,\-\,\-\,/\,0\,0\,/g;
+	$pool =~ s/\%//g;
+	$pool =~ s/\,([0-1\.]*)x\,/,$1,/;
 
-        ( $newPool{name}, $newPool{size}, $newPool{alloc}, $newPool{free}, $newPool{ckpoint}, $newPool{expandsz}, $newPool{frag}, $newPool{cap}, $newPool{dedup} )=split(/\,/, $pool);
+	( $newPool{name}, $newPool{size}, $newPool{alloc}, $newPool{free}, $newPool{ckpoint}, $newPool{expandsz}, $newPool{frag}, $newPool{cap}, $newPool{dedup} )=split(/\,/, $pool);
 
-        push(@toShoveIntoJSON, \%newPool);
+	push(@toShoveIntoJSON, \%newPool);
 
-        $pools_int++;
+	$pools_int++;
 }
 $tojson{pools}=\@toShoveIntoJSON;
 
@@ -264,13 +265,13 @@ $head_hash{'errorString'}='';
 my $j=JSON->new;
 
 if ( $opts{p} ){
-        $j->pretty(1);
+	$j->pretty(1);
 }
 
 print $j->encode( \%head_hash );
 
 if (! $opts{p} ){
-        print "\n";
+	print "\n";
 }
 
 exit 0;
