@@ -74,9 +74,12 @@ my @sysctls_pull = `/sbin/sysctl -q @to_pull`;
 foreach my $stat (@sysctls_pull) {
 	chomp( $stat );
 	my ( $var, $val ) = split(/:/, $stat, 2);
-	
-	$val =~ s/^ //;
-	$sysctls->{$var}=$val;		   
+	# If $val is empty, skip it. Likely a var with a newline before
+	# the data so it is trying to "split" the data.
+	if( length $val ) {
+                $val =~ s/^ //;
+                $sysctls->{$var}=$val;
+	}
 }
 
 # does not seem to exist for me, but some of these don't seem to be created till needed
