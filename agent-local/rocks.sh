@@ -7,6 +7,7 @@
 # @author     SvennD <svennd@svennd.be>
 
 # required
+# shellcheck disable=SC1091
 source /etc/profile.d/sge-binaries.sh;
 
 QSTAT="/opt/gridengine/bin/linux-x64/qstat"
@@ -15,8 +16,8 @@ PENDING_JOBS=$($QSTAT -u "*" -s p | wc -l)
 SUSPEND_JOBS=$($QSTAT -u "*" -s s | wc -l)
 ZOMBIE_JOBS=$($QSTAT -u "*" -s z | wc -l)
 
-echo $RUNNING_JOBS;
-echo $PENDING_JOBS;
-echo $SUSPEND_JOBS;
-echo $ZOMBIE_JOBS;
+echo "$RUNNING_JOBS";
+echo "$PENDING_JOBS";
+echo "$SUSPEND_JOBS";
+echo "$ZOMBIE_JOBS";
 

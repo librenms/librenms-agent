@@ -14,7 +14,7 @@ EXITCODE=3
 
 while getopts "Vha:H:p:" opt; do
   case $opt in
-    V) printf "check_mrpe v$VERSION\n"
+    V) printf 'check_mrpe v%s\n' "$VERSION"
        exit 0
        ;;
     h) hflag=1
@@ -25,8 +25,7 @@ while getopts "Vha:H:p:" opt; do
     H) Hflag=1
        Hval="$OPTARG"
        ;;
-    p) pflag=1
-       pval="$OPTARG"
+    p) pval="$OPTARG"
        ;;
     \?) hflag=1
         EXITCODE=0
@@ -55,11 +54,11 @@ else
   SED_CMD="s/(.*) \(.*\) [0-9] \(.*\)/\1 \2/p"
 fi
 
-for i in `$BIN_NC -w 1 $Hval $pval 2>&1 | $BIN_SED '/^<<<mrpe>>>/,/^<<</{//!b};d'` ; do
-  echo $i | $BIN_SED -n "$SED_CMD"
+for i in $($BIN_NC -w 1 "$Hval" "$pval" 2>&1 | $BIN_SED '/^<<<mrpe>>>/,/^<<</{//!b};d') ; do
+  echo "$i" | $BIN_SED -n "$SED_CMD"
   if [ "$aflag" ];
   then
-    STATUSCODE=$(echo $i | $BIN_SED -n "$SED_CMD_STATUS")
+    STATUSCODE=$(echo "$i" | $BIN_SED -n "$SED_CMD_STATUS")
     if [ "$STATUSCODE" ];
     then
       case $STATUSCODE in

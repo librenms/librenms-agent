@@ -1,5 +1,5 @@
 #!/bin/sh
- 
+
 # wlNoiseFloor.sh
 # Returns wlNoiseFloor, in dBm
 # Arguments: targed interface
@@ -11,10 +11,9 @@ if [ $# -ne 1 ]; then
 	exit 1
 fi
 
-# Get hostname, extract noise floor. Note, all associated stations have the same value, so just grab the first one
+# Extract noise floor. Note, all associated stations have the same value, so just grab the first one
 # Use tail, not head (i.e. last line, not first), as head exits immediately, breaks the pipe to cut!
-hostname=`/bin/uname -n`
-noise=`/usr/bin/iwinfo $1 assoclist | /usr/bin/cut -s -d "/" -f 2 | /usr/bin/cut -s -d "(" -f 1 | /usr/bin/cut -s -d " " -f 2 | /usr/bin/tail -1`
+noise=$(/usr/bin/iwinfo "$1" assoclist | /usr/bin/cut -s -d "/" -f 2 | /usr/bin/cut -s -d "(" -f 1 | /usr/bin/cut -s -d " " -f 2 | /usr/bin/tail -1)
 
 # Return snmp result
-/bin/echo $noise
+/bin/echo "$noise"

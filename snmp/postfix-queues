@@ -8,6 +8,6 @@
 QUEUES="incoming active deferred hold"
 
 for i in $QUEUES; do
-        COUNT=`qshape $i | grep TOTAL | awk '{print $2}'`
+        COUNT=$(qshape "$i" | grep TOTAL | awk '{print $2}')
         printf "$COUNT\n"
 done

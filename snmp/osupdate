@@ -34,68 +34,74 @@ CMD_APK=' version'
 ################################################################
 function check-update() {
     if command -v zypper &>/dev/null ; then
-	# OpenSUSE
-	UPDATES=`$BIN_ZYPPER $CMD_ZYPPER | $BIN_WC $CMD_WC`
-	if [ $UPDATES -ge 2 ]; then
+        # OpenSUSE
+        # shellcheck disable=SC2086
+        UPDATES=$($BIN_ZYPPER $CMD_ZYPPER | $BIN_WC $CMD_WC)
+        if [ "$UPDATES" -ge 2 ]; then
             echo $(($UPDATES-2));
-	else
+        else
             echo "0";
-	fi
+        fi
     elif command -v dnf &>/dev/null ; then
-	# Fedora
-	UPDATES=`$BIN_DNF $CMD_DNF | $BIN_WC $CMD_WC`
-	if [ $UPDATES -ge 1 ]; then
+        # Fedora
+        # shellcheck disable=SC2086
+        UPDATES=$($BIN_DNF $CMD_DNF | $BIN_WC $CMD_WC)
+        if [ "$UPDATES" -ge 1 ]; then
             echo $(($UPDATES-1));
-	else
+        else
             echo "0";
-	fi
+        fi
     elif command -v pacman &>/dev/null ; then
-	# Arch
-	UPDATES=`$BIN_PACMAN $CMD_PACMAN | $BIN_WC $CMD_WC`
-	if [ $UPDATES -ge 1 ]; then
+        # Arch
+        UPDATES=$($BIN_PACMAN $CMD_PACMAN | $BIN_WC $CMD_WC)
+        if [ "$UPDATES" -ge 1 ]; then
             echo $(($UPDATES-1));
-	else
+        else
             echo "0";
-	fi
+        fi
     elif command -v yum &>/dev/null ; then
-	# CentOS / Redhat
-	UPDATES=`$BIN_YUM $CMD_YUM 2> /dev/null | $BIN_WC $CMD_WC`
-	if [ $UPDATES -ge 1 ]; then
+        # CentOS / Redhat
+        # shellcheck disable=SC2086
+        UPDATES=$($BIN_YUM $CMD_YUM | $BIN_WC $CMD_WC)
+        if [ "$UPDATES" -ge 1 ]; then
             echo $(($UPDATES-1));
-	else
+        else
             echo "0";
-	fi
+        fi
     elif command -v apt-get &>/dev/null ; then
-	# Debian / Devuan / Ubuntu
-	UPDATES=`$BIN_APT $CMD_APT | $BIN_GREP $CMD_GREP 'Inst'`
-	if [ $UPDATES -ge 1 ]; then
-            echo $UPDATES;
-	else
+        # Debian / Devuan / Ubuntu
+        # shellcheck disable=SC2086
+        UPDATES=$($BIN_APT $CMD_APT | $BIN_GREP $CMD_GREP 'Inst')
+        if [ "$UPDATES" -ge 1 ]; then
+            echo "$UPDATES";
+        else
             echo "0";
-	fi
+        fi
     elif command -v pkg &>/dev/null ; then
-	# FreeBSD
-	UPDATES=`$BIN_PKG $CMD_PKG | $BIN_WC $CMD_WC`
-	if [ $UPDATES -ge 1 ]; then
-            echo $UPDATES;
-	else
+        # FreeBSD
+        # shellcheck disable=SC2086
+        UPDATES=$($BIN_PKG $CMD_PKG | $BIN_WC $CMD_WC)
+        if [ "$UPDATES" -ge 1 ]; then
+            echo "$UPDATES";
+        else
             echo "0";
-	fi
+        fi
     elif command -v apk &>/dev/null ; then
-	# Alpine
-	UPDATES=`$BIN_APK $CMD_APK | $BIN_WC $CMD_WC`
-	if [ $UPDATES -ge 2 ]; then
+        # Alpine
+        # shellcheck disable=SC2086
+        UPDATES=$($BIN_APK $CMD_APK | $BIN_WC $CMD_WC)
+        if [ "$UPDATES" -ge 2 ]; then
             echo $(($UPDATES-1));
-	else
+        else
             echo "0";
-	fi
+        fi
     else
         echo "0";
     fi
 }
 
 # Cache the file for 30 minutes
-# We cache because it is a 1sec delay, which is painful for the poller
+# We cache because it is a several second delay, which is painful for the poller
 DATE=$(date +%s)
 FILE=/var/cache/librenms/agent-local-osupdate
 

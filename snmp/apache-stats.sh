@@ -12,7 +12,7 @@ PATH=/sbin:/bin:/usr/sbin:/usr/bin
 
 function debugecho() {
     if [ ${#Debug} -gt 0 ]; then
-        echo debug: $@
+        echo debug: "$@"
     fi
 }
 
@@ -23,6 +23,7 @@ function debugecho() {
 Tmp_File=/tmp/apache_status
 
 # Debug=on; use environment, i.e. Debug=on apache-stats.sh
+# shellcheck disable=SC2153
 if [ "${DEBUG}" != "" ]; then
     Debug=${DEBUG}
 else
@@ -195,17 +196,17 @@ for (( c=0; c<${#Scoreboard}; c++ )); do
 done
 
 # scoreboard output order must be this ...
-echo ${Scoreboard_}
-echo ${ScoreboardS}
-echo ${ScoreboardR}
-echo ${ScoreboardW}
-echo ${ScoreboardK}
-echo ${ScoreboardD}
-echo ${ScoreboardC}
-echo ${ScoreboardL}
-echo ${ScoreboardG}
-echo ${ScoreboardI}
-echo ${ScoreboardDot}
+echo "${Scoreboard_}"
+echo "${ScoreboardS}"
+echo "${ScoreboardR}"
+echo "${ScoreboardW}"
+echo "${ScoreboardK}"
+echo "${ScoreboardD}"
+echo "${ScoreboardC}"
+echo "${ScoreboardL}"
+echo "${ScoreboardG}"
+echo "${ScoreboardI}"
+echo "${ScoreboardDot}"
 
 # clean up
 if [ -f ${Tmp_File} ]; then

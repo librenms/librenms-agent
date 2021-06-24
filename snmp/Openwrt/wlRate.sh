@@ -1,5 +1,5 @@
 #!/bin/sh
- 
+
 # wlRate.sh
 # Returns wlRate, bit rate in Mbit/s
 # Arguments:
@@ -14,19 +14,18 @@ if [ $# -ne 3 ]; then
 	exit 1
 fi
 
-# Get hostname, calculate result. Sum just for debug, and have to return integer
+# Calculate result. Sum just for debug, and have to return integer
 # => If not integer (e.g. 2.67e+07), LibreNMS will drop the exponent (result, 2.67 bits/sec!)
-hostname=`/bin/uname -n`
-ratelist=`/usr/sbin/iw dev $1 station dump | /bin/grep "$2 bitrate" | /usr/bin/cut -f 2 -s -d" "`
-if [ "$3" == "sum" ]; then
-  result=`/bin/echo "$ratelist" | /usr/bin/awk -F ':' '{sum += $2} END {printf "%d\n", 1000000*sum}'`
-elif [ "$3" == "avg" ]; then
-  result=`/bin/echo "$ratelist" | /usr/bin/awk -F ':' '{sum += $2} END {printf "%d\n", 1000000*sum/NR}'`
-elif [ "$3" == "min" ]; then
-  result=`/bin/echo "$ratelist" | /usr/bin/awk -F ':' 'NR == 1 || $2 < min {min = $2} END {printf "%d\n", 1000000*min}'`
-elif [ "$3" == "max" ]; then
-  result=`/bin/echo "$ratelist" | /usr/bin/awk -F ':' 'NR == 1 || $2 > max {max = $2} END {printf "%d\n", 1000000*max}'`
+ratelist=$(/usr/sbin/iw dev "$1" station dump | /bin/grep "$2 bitrate" | /usr/bin/cut -f 2 -s -d" ")
+if [ "$3" = "sum" ]; then
+  result=$(/bin/echo "$ratelist" | /usr/bin/awk -F ':' '{sum += $2} END {printf "%d\n", 1000000*sum}')
+elif [ "$3" = "avg" ]; then
+  result=$(/bin/echo "$ratelist" | /usr/bin/awk -F ':' '{sum += $2} END {printf "%d\n", 1000000*sum/NR}')
+elif [ "$3" = "min" ]; then
+  result=$(/bin/echo "$ratelist" | /usr/bin/awk -F ':' 'NR == 1 || $2 < min {min = $2} END {printf "%d\n", 1000000*min}')
+elif [ "$3" = "max" ]; then
+  result=$(/bin/echo "$ratelist" | /usr/bin/awk -F ':' 'NR == 1 || $2 > max {max = $2} END {printf "%d\n", 1000000*max}')
 fi
 
 # Return snmp result
-echo $result
+echo "$result"

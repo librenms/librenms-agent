@@ -7,7 +7,8 @@ REALPATH=/usr/bin/realpath
 
 CONFIGFILE=/etc/snmp/mdadm.conf
 if [ -f $CONFIGFILE ] ; then
-     . $CONFIGFILE
+    # shellcheck disable=SC1090
+    . $CONFIGFILE
 fi
 
 VERSION=1
@@ -19,10 +20,10 @@ OUTPUT_DATA='['
 # use 'ls' command to check if md blocks exist
 if $LS /dev/md?* 1> /dev/null 2>&1 ; then
     for ARRAY_BLOCKDEVICE in $($LS -1 /dev/md?*) ; do
-        RAID="/sys/block/"$($BASENAME $($REALPATH $ARRAY_BLOCKDEVICE))
+        RAID="/sys/block/"$($BASENAME "$($REALPATH "$ARRAY_BLOCKDEVICE")")
 
         # ignore arrays with no slaves
-        if [ -z "$($LS -1 $RAID/slaves 2> /dev/null)" ] ; then
+        if [ -z "$($LS -1 "$RAID"/slaves 2> /dev/null)" ] ; then
             continue
         fi
         # ignore "non existing" arrays
@@ -30,27 +31,27 @@ if $LS /dev/md?* 1> /dev/null 2>&1 ; then
             continue
         fi
 
-        if [[ $($BASENAME $ARRAY_BLOCKDEVICE) = [[:digit:]] ]] ; then
-            RAID_NAME=$($BASENAME $RAID)
+        if [[ $($BASENAME "$ARRAY_BLOCKDEVICE") = [[:digit:]] ]] ; then
+            RAID_NAME=$($BASENAME "$RAID")
         else
-            RAID_NAME=$($BASENAME $ARRAY_BLOCKDEVICE)
+            RAID_NAME=$($BASENAME "$ARRAY_BLOCKDEVICE")
         fi
-        RAID_DEV_LIST=$($LS $RAID/slaves/)
-        RAID_LEVEL=$($CAT $RAID/md/level)
-        RAID_DISC_COUNT=$($CAT $RAID/md/raid_disks| cut -d' ' -f1)
-        RAID_STATE=$($CAT $RAID/md/array_state)
-        RAID_ACTION=$($CAT $RAID/md/sync_action)
-        RAID_DEGRADED=$($CAT $RAID/md/degraded)
+        RAID_DEV_LIST=$($LS "$RAID"/slaves/)
+        RAID_LEVEL=$($CAT "$RAID"/md/level)
+        RAID_DISC_COUNT=$($CAT "$RAID"/md/raid_disks| cut -d' ' -f1)
+        RAID_STATE=$($CAT "$RAID"/md/array_state)
+        RAID_ACTION=$($CAT "$RAID"/md/sync_action)
+        RAID_DEGRADED=$($CAT "$RAID"/md/degraded)
 
         if [ "$RAID_SYNC_SPEED" = "none" ] ; then
             RAID_SYNC_SPEED=0
         else
-            let "RAID_SYNC_SPEED=$($CAT $RAID/md/sync_speed)*1024"
+            let "RAID_SYNC_SPEED=$($CAT "$RAID"/md/sync_speed)*1024"
         fi
 
-        if [ "$($CAT $RAID/md/sync_completed)" != "none" ] ; then
-            let "RAID_SYNC_COMPLETED=100*$($CAT $RAID/md/sync_completed)"
-        elif [ $RAID_DEGRADED -eq 1 ] ; then
+        if [ "$($CAT "$RAID"/md/sync_completed)" != "none" ] ; then
+            let "RAID_SYNC_COMPLETED=100*$($CAT "$RAID"/md/sync_completed)"
+        elif [ "$RAID_DEGRADED" -eq 1 ] ; then
             RAID_SYNC_COMPLETED=0
         else
             RAID_SYNC_COMPLETED=100
@@ -58,7 +59,7 @@ if $LS /dev/md?* 1> /dev/null 2>&1 ; then
 
         # divide with 2 to size like in /proc/mdstat
         # and multiply with 1024 to get size in bytes
-        let "RAID_SIZE=$($CAT $RAID/size)*1024/2"
+        let "RAID_SIZE=$($CAT "$RAID"/size)*1024/2"
 
         RAID_DEVICE_LIST='['
         ALL_DEVICE_COUNT=0
@@ -73,7 +74,7 @@ if $LS /dev/md?* 1> /dev/null 2>&1 ; then
 
         RAID_MISSING_DEVICES='['
         for D in $RAID_DEV_LIST ; do
-            if [ -L $RAID/slaves/$D ] && [ -f $RAID/slaves/$D ] ; then
+            if [ -L "$RAID"/slaves/"$D" ] && [ -f "$RAID"/slaves/"$D" ] ; then
                 RAID_MISSING_DEVICES=$RAID_MISSING_DEVICES'"'$D'",'
             fi
         done
@@ -83,7 +84,7 @@ if $LS /dev/md?* 1> /dev/null 2>&1 ; then
         RAID_MISSING_DEVICES=$RAID_MISSING_DEVICES']'
 
         let "RAID_HOTSPARE_COUNT=ALL_DEVICE_COUNT-RAID_DISC_COUNT"
-        if [ $RAID_HOTSPARE_COUNT -lt 0 ] ; then
+        if [ "$RAID_HOTSPARE_COUNT" -lt 0 ] ; then
             RAID_HOTSPARE_COUNT=0
         fi
 
@@ -115,5 +116,5 @@ OUTPUT='{"data":'$OUTPUT_DATA\
 '","errorString":"'$ERROR_STRING\
 '","version":"'$VERSION'"}'
 
-echo $OUTPUT
+echo "$OUTPUT"
 

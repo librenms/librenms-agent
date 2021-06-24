@@ -17,13 +17,13 @@ BIN_GREP='/usr/bin/grep'
 ################################################################
 # Don't change anything unless you know what are you doing     #
 ################################################################
-TMP=`$BIN_APCS 2>/dev/null`
+TMP=$($BIN_APCS 2>/dev/null)
 
-for value in "LINEV:[0-9]+" "LOADPCT:[0-9.]+" "BCHARGE:[0-9.]+" "TIMELEFT:[0-9.]+" "^BATTV:[0-9.]+" "NOMINV:[0-9]+" "NOMBATTV:[0-9.]+"
+for value in "^LINEV:[0-9]+" "LOADPCT:[0-9.]+" "BCHARGE:[0-9.]+" "TIMELEFT:[0-9.]+" "^BATTV:[0-9.]+" "NOMINV:[0-9]+" "NOMBATTV:[0-9.]+"
 do
-        OUT=`echo "$TMP" | $BIN_TR -d ' ' | $BIN_GREP -Eo $value | $BIN_CUT -d ":" -f 2`
+        OUT=$(echo "$TMP" | $BIN_TR -d ' ' | $BIN_GREP -Eo "$value" | $BIN_CUT -d ":" -f 2)
         if [ -n "$OUT" ]; then
-                echo $OUT
+                echo "$OUT"
         else
                 echo "Unknown"
         fi
