@@ -26,6 +26,7 @@ jobs:
 
           VALIDATE_BASH_EXEC: false
           VALIDATE_PYTHON_FLAKE8: false
+          VALIDATE_PYTHON_MYPY: false
           VALIDATE_PHP_PHPCS: false
           VALIDATE_PHP_PSALM: false
 
