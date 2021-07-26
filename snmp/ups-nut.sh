@@ -9,7 +9,7 @@
 # 4. restart snmpd on the host                                 #
 # 5. activate the app for the desired host in LibreNMS         #
 ################################################################
-UPS_NAME='APCUPS'
+UPS_NAME="${1:-APCUPS}"
 
 PATH=$PATH:/usr/bin:/bin
 TMP=$(upsc $UPS_NAME 2>/dev/null)
