@@ -18,7 +18,7 @@ jobs:
           fetch-depth: 0
 
       - name: Lint Code Base
-        uses: github/super-linter@v3.15.3
+        uses: github/super-linter@v4
         env:
           FILTER_REGEX_INCLUDE: .*(agent-local|snmp)/.*
           VALIDATE_ALL_CODEBASE: false
@@ -26,6 +26,7 @@ jobs:
 
           VALIDATE_BASH_EXEC: false
           VALIDATE_PYTHON_FLAKE8: false
+          VALIDATE_PYTHON_MYPY: false
           VALIDATE_PHP_PHPCS: false
           VALIDATE_PHP_PSALM: false
 
