@@ -21,7 +21,7 @@ jobs:
         uses: github/super-linter@v4
         env:
           FILTER_REGEX_INCLUDE: .*(agent-local|snmp)/.*
-          VALIDATE_ALL_CODEBASE: true
+          VALIDATE_ALL_CODEBASE: false
           SUPPRESS_POSSUM: true
 
           VALIDATE_BASH_EXEC: false
