@@ -147,4 +147,8 @@ elif [ "${OS}" = "FreeBSD" ] ; then
   fi
 fi
 
+if [ -f /etc/vpp/startup.conf ]; then
+  OSSTR="VPP ${OSSTR}"
+fi
+
 echo "${OSSTR}"
