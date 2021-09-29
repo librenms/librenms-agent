@@ -42,6 +42,11 @@ elif [ "${OS}" = "Linux" ] ; then
     #PSEUDONAME=$(cat /etc/redhat-release | sed s/.*\(// | sed s/\)//)
     REV=$(cat /etc/redhat-release | sed s/.*release\ // | sed s/\ .*//)
 
+  elif [ -f /etc/almalinux-release ] ; then
+    DIST='AlmaLinux'
+    #PSEUDONAME=$(cat /etc/almalinux-release | sed s/.*\(// | sed s/\)//)
+    REV=$(cat /etc/almalinux-release | sed s/.*release\ // | sed s/\ .*//)
+
   elif [ -f /etc/mandrake-release ] ; then
     DIST='Mandrake'
     #PSEUDONAME=$(cat /etc/mandrake-release | sed s/.*\(// | sed s/\)//)
