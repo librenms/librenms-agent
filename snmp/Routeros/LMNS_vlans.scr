@@ -1,7 +1,7 @@
-################################
-###  LibreNMS "glue" script  ###
-### routeros vlans discovery ###
-################################
+###
+### LibreNMS "glue" script for routeros vlans discovery
+### https://github.com/librenms/librenms/pull/13366
+###
 
 :global vlanst [:toarray ""]
 :global vlansu [:toarray ""]
