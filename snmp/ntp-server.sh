@@ -69,11 +69,11 @@ if [ $NTPQV = "p1" ]; then
 	CLK_WANDER=$(echo $NTPQ_RAW | $BIN_AWK -F ' ' '{print $6}')
 fi
 
-VER=$($BIN_NTPD --version)
-if [ "$VER" = '4.2.6p5' ]; then
-  USECMD=$(echo "$BIN_NTPDC" -c iostats)
+VER=$($BIN_NTPD --version 2>&1 | cut -d\  -f 2  | head -n 1)
+if [ "$VER" = "4.2.6p5" ]; then
+  USECMD=$(echo "$BIN_NTPDC" -c iostats 127.0.0.1)
 else
-  USECMD=$(echo "$BIN_NTPQ" -c iostats localhost)
+  USECMD=$(echo "$BIN_NTPQ" -c iostats 127.0.0.1)
 fi
 CMD2=$($USECMD | $BIN_TR -d ' ' | $BIN_CUT -d : -f 2 | $BIN_TR '\n' ' ')
 
