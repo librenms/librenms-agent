@@ -28,7 +28,7 @@ summary_files = [
 
 def parse_yaml_file(filename):
     try:
-        yaml_data = yaml.load(open(filename, "r"))
+        yaml_data = yaml.load(open(filename, "r"), Loader=yaml.FullLoader)
         msg = None
     except yaml.scanner.ScannerError as e:
         yaml_data = []
