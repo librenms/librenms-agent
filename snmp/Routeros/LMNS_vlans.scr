@@ -1,0 +1,58 @@
+###
+### LibreNMS "glue" script for routeros vlans discovery
+### https://github.com/librenms/librenms/pull/13427
+###
+
+:global vlanst [:toarray ""]
+:global vlansu [:toarray ""]
+
+:foreach i in [/interface bridge vlan find] do={
+    :local intf [/interface bridge vlan get $i bridge]
+    :local vlid [/interface bridge vlan get $i vlan-ids]
+
+    :foreach t in [/interface bridge vlan get $i tagged] do={
+        :set $vlanst ($vlanst, "$vlid,$t")
+    }
+
+    :foreach u in [/interface bridge vlan get $i current-untagged] do={
+        :set $vlansu ($vlansu, "$vlid,$u")
+    }
+
+    :foreach u in [/interface bridge port find where bridge=$intf and pvid=$vlid] do={
+        :local iu [/interface bridge port get $u interface]
+        :local fl 0
+        :foreach tmp in $vlansu do={
+            :local ar [:toarray $tmp]
+            :if ((($ar->0) = $vlid) && (($ar->1) = $iu))  do={
+                :set fl 1
+            }
+        }
+        :if ( $fl != 1 ) do={
+            :set $vlansu ($vlansu, "$vlid,$iu")
+        }
+    }
+}
+
+:foreach vl in [/interface vlan find ] do={
+    :local intf [/interface vlan get $vl interface]
+    :local vlid [/interface vlan get $vl vlan-id]
+    :local fl 0
+
+    :foreach tmp in $vlanst do={
+        :local ar [:toarray $tmp]
+        :if ((($ar->0) = $vlid) && (($ar->1) = $intf)) do={
+            :set fl 1
+        }
+    }
+    :if ( $fl != 1 ) do={
+        :set $vlanst ($vlanst, "$vlid,$intf")
+    }
+}
+
+:foreach tmp in $vlanst do={
+    :put "T,$tmp"
+}
+
+:foreach tmp in $vlansu do={
+    :put "U,$tmp"
+}
