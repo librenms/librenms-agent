@@ -27,9 +27,9 @@ if (!array_key_exists('SCRIPT_FILENAME', $_SERVER)
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-# Define MySQL connection constants in config.php. Instead of defining
-# parameters here, you can define them in another file named the same as this
-# file, with a .cnf extension.
+# Define MySQL connection constants. Instead of defining parameters here,
+# you can also define them in another file named the same as this
+# file with a .cnf extension.
 # ============================================================================
 
 $mysql_user = '';
@@ -77,9 +77,6 @@ echo("<<<mysql>>>\n");
 if (file_exists(__FILE__ . '.cnf' ) ) {
    require(__FILE__ . '.cnf');
    debug('Found configuration file ' . __FILE__ . '.cnf');
-} else {
-  echo("No ".__FILE__ . ".cnf found!\n");
-  exit();
 }
 
 # Make this a happy little script even when there are errors.
