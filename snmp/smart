@@ -112,7 +112,7 @@ if ( defined( $opts{g} ) ){
 		$cache='#Could not touch '.$cache. "You will need to manually set it\n".
 			"cache=?\n";
 	}else{
-                system('rm -f '.$cache.'>/dev/null');
+		system('rm -f '.$cache.'>/dev/null');
 		$cache='cache='.$cache."\n";
 	}
 
@@ -307,7 +307,7 @@ foreach my $line ( @disks ){
                     if ($mappings{$key} == 231) {
                         $IDs{$mappings{$key}} = 100-$val;
                     } else {
-                    $IDs{$mappings{$key}} = $val;
+                        $IDs{$mappings{$key}} = $val;
                     }
                 }
             }
