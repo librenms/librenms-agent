@@ -157,7 +157,7 @@ sub stats{
 	}
 	
 	my $j=JSON->new;
-
+	$j->canonical(1);
 	if ( $_[0] ){
         $j->pretty(1);
 		return $j->encode( \%toReturn );
