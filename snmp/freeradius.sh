@@ -22,7 +22,7 @@ RADIUS_STATUS_CMD='Message-Authenticator = 0x00, FreeRADIUS-Statistics-Type = 31
 BIN_GREP="$(command -v grep)"
 BIN_RADCLIENT="$(command -v radclient)"
 
-if [ $AGENT == 1 ]; then
+if [ $AGENT -eq 1 ]; then
   echo "<<<freeradius>>>"
 fi
 
