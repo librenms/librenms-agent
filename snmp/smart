@@ -12,11 +12,11 @@
 #    and/or other materials provided with the distribution.
 #
 #THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
 #WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
 #IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
-#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, 
-#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, 
+#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
 #DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
 #LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
 #OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
@@ -112,6 +112,7 @@ if ( defined( $opts{g} ) ){
 		$cache='#Could not touch '.$cache. "You will need to manually set it\n".
 			"cache=?\n";
 	}else{
+		system('rm -f '.$cache.'>/dev/null');
 		$cache='cache='.$cache."\n";
 	}
 
@@ -175,7 +176,7 @@ if ( defined( $opts{g} ) ){
 
 	}
 
-	print "useSN=0\n".'smartctl='.$smartctl."\n".
+	print "useSN=1\n".'smartctl='.$smartctl."\n".
 	$cache.
 	$drive_lines;
 
@@ -283,7 +284,7 @@ foreach my $line ( @disks ){
 			  '233'=>'null',
 			  '9'=>'null',
 	);
-    
+
     my @outputA;
 
 	if($output =~ /NVMe Log/)
@@ -293,6 +294,7 @@ foreach my $line ( @disks ){
             'Temperature' => 194,
             'Power Cycles' => 12,
             'Power On Hours' => 9,
+            'Percentage Used' => 231,
         );
         foreach(split(/\n/, $output ))
         {
@@ -302,7 +304,11 @@ foreach my $line ( @disks ){
                 $val =~ s/^\s+|\s+$|\D+//g;
                 if(exists($mappings{$key}))
                 {
-                    $IDs{$mappings{$key}} = $val;       
+                    if ($mappings{$key} == 231) {
+                        $IDs{$mappings{$key}} = 100-$val;
+                    } else {
+                        $IDs{$mappings{$key}} = $val;
+                    }
                 }
             }
         }
@@ -344,7 +350,8 @@ foreach my $line ( @disks ){
 					( $id == 231 ) ||
 					( $id == 233 )
 					) {
-					$IDs{$id}=$raw;
+					my @rawA=split( /\ /, $raw );
+					$IDs{$id}=$rawA[0];
 				}
 
 				# 9, power on hours
@@ -426,7 +433,7 @@ foreach my $line ( @disks ){
 	# get the drive serial number, if needed
 	my $disk_id=$name;
 	if ( $useSN ){
-		while (`$smartctl -i $disk` =~ /Serial Number:(.*)/g) {
+		while (`$smartctl -i $disk` =~ /(?i)Serial Number:(.*)/g) {
 			$disk_id = $1;
 			$disk_id =~ s/^\s+|\s+$//g;
 		}
