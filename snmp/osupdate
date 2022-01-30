@@ -24,6 +24,7 @@ BIN_APT='/usr/bin/env apt-get'
 CMD_APT='-qq -s upgrade'
 BIN_PACMAN='/usr/bin/env pacman'
 CMD_PACMAN='-Sup'
+BIN_CHECKUPDATES='/usr/bin/env checkupdates'
 BIN_PKG='/usr/sbin/pkg'
 CMD_PKG=' audit -q -F'
 BIN_APK='/sbin/apk'
@@ -52,7 +53,17 @@ elif command -v dnf &>/dev/null ; then
     fi
 elif command -v pacman &>/dev/null ; then
     # Arch
-    UPDATES=$($BIN_PACMAN $CMD_PACMAN | $BIN_WC $CMD_WC)
+    # calling pacman -Sup does not refresh the package list from the mirrors,
+    # thus it is not useful to find out if there are updates. Keep the pacman call
+    # to accomodate users that do not have it. checkupdates is in pacman-contrib.
+    # also enables snmpd to collect this information if it's not run as root
+    if command -v checkupdates &>/dev/null ; then
+        # shellcheck disable=SC2086
+        UPDATES=$($BIN_CHECKUPDATES | $BIN_WC $CMD_WC)
+    else
+        # shellcheck disable=SC2086
+        UPDATES=$($BIN_PACMAN $CMD_PACMAN | $BIN_WC $CMD_WC)
+    fi
     if [ "$UPDATES" -ge 1 ]; then
         echo $(($UPDATES-1));
     else
