@@ -2,9 +2,10 @@
 # Author: Sharad Kumar <skumar@securevoip.io>
 # This script is for OpenSIPS 3.X + version
 
-total_memory=$(opensips-cli -x mi  get_statistics total_size | awk '/shmem:total_size/ { gsub(/[",]/,""); print "Total Memory="  $2}')
-used_memory=$(opensips-cli -x mi  get_statistics real_used_size | awk '/shmem:real_used_size/ { gsub(/[",]/,""); print "Used Memory=" $2}')
-free_memory=$(opensips-cli -x mi  get_statistics free_size | awk '/shmem:free_size/ { gsub(/[",]/,""); print "Free Memory=" $2}')
+statistics=$(curl -s --header "Content-Type: application/json" -X POST -i http://127.0.0.1:8888/json -d '{"jsonrpc":"2.0","id":1,"method":"get_statistics", "params":[["all"]]}')
+total_memory=$(echo "$statistics" | grep -Po '"shmem:total_size":(\d+)' |awk -F':' '{print $3}')
+used_memory=$(echo "$statistics" | grep -Po '"shmem:used_size":(\d+)' |awk -F':' '{print $3}')
+free_memory=$(echo "$statistics" | grep -Po '"shmem:free_size":(\d+)' |awk -F':' '{print $3}')
 load_average=$(ps -C opensips -o %cpu | awk '{sum += $1} END {print "Load Average=" sum}')
 total_files=$(lsof -c opensips | wc -l)
 
