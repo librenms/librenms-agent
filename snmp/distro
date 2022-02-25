@@ -35,6 +35,8 @@ elif [ "${OS}" = "Linux" ] ; then
       DIST="Oracle"
     elif [ -f /etc/rockstor-release ]; then
       DIST="Rockstor"
+    elif [ -f /etc/rocky-release ]; then
+      DIST="Rocky"
     else
       DIST="RedHat"
     fi
