@@ -17,9 +17,9 @@ list_devices() {
 maybe_get() { if [ -f "${1}" ]; then cat "${1}"; else echo 0; fi }
 
 mdadmSNMPOutput='{ "data": ['
-for mdadmArray in /dev/md*; do
-    # Ignore mdadm folders
-    [ -d "${mdadmArray}" ] && continue
+for mdadmArray in "/dev/md"[[:digit:]]*; do
+    # Ignore partitions
+    if [[ "${mdadmArray}" =~ '/dev/md'[[:digit:]]+'p' ]]; then continue; fi
 
     mdadmName="$(basename "$(realpath "${mdadmArray}")")"
     mdadmSysDev="/sys/block/${mdadmName}"
