@@ -13,8 +13,18 @@ list_devices() {
     [ "${devCount}" ] && echo "${devCount}"
 }
 
-# Outputs either 0 or the value of the file referenced
-maybe_get() { if [ -f "${1}" ]; then cat "${1}"; else echo 0; fi }
+# Outputs either 0, 100, or the value of the file referenced
+maybe_get() {
+    if [ -f "${1}" ]; then
+        if [ "$(cat "${1}")" == 'none' ]; then
+            echo 100
+        else
+            cat "${1}"
+        fi
+    else
+        echo 0
+    fi
+}
 
 mdadmSNMPOutput='{ "data": ['
 for mdadmArray in "/dev/md"[[:digit:]]*; do
