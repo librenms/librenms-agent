@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 # MDADM SNMP extension for LibreNMS
+# Version
+extendVer='2.0.0'
+# Initial portion of json
+mdadmSNMPOutput='{ "data": ['
+
 # Outputs a list of devices
 list_devices() {
     for device in "${1}/slaves/"*; do
         if [ "${2,,}" == 'count' ]; then
             ((devCount++))
         elif [ "${2,,}" != 'missing' ] || [ ! -e "${device}" ]; then
-            printf "%b\t    \"$(basename "${device}")\"" "${multiDisk}"
+            printf '%b\t    "%s"' "${multiDisk}" "$(basename "${device}")"
             multiDisk=',\n'
         fi
     done
@@ -22,48 +27,53 @@ maybe_get() {
     fi
 }
 
-mdadmSNMPOutput='{ "data": ['
-for mdadmArray in "/dev/md"[[:digit:]]*; do
-    # Ignore partitions
-    if [[ "${mdadmArray}" =~ '/dev/md'[[:digit:]]+'p' ]]; then continue; fi
+main(){
+    if stat "/dev/md"[[:digit:]]* > /dev/null 2>&1; then
+        for mdadmArray in "/dev/md"[[:digit:]]*; do
+            # Ignore partitions
+            if [[ "${mdadmArray}" =~ '/dev/md'[[:digit:]]+'p' ]]; then continue; fi
 
-    mdadmName="$(basename "$(realpath "${mdadmArray}")")"
-    mdadmSysDev="/sys/block/${mdadmName}"
+            mdadmName="$(basename "$(realpath "${mdadmArray}")")"
+            mdadmSysDev="/sys/block/${mdadmName}"
 
-    read -r -d '' mdadmOutput <<MDADMJSON
+            read -r -d '' mdadmOutput <<MDADMJSON
     ${multiArray}{
         "name": "${mdadmName}",
-        "level": "$(cat "${mdadmSysDev}/md/level")",
-        "size": "$((($(cat "${mdadmSysDev}/size") * 1024) / 2))",
-        "disc_count": "$(cat "${mdadmSysDev}/md/raid_disks")",
-        "hotspare_count": "$((($(list_devices "${mdadmSysDev}" count "${mdadmSysDev}") - $(cat "${mdadmSysDev}/md/raid_disks"))))",
+        "level": "$(maybe_get "${mdadmSysDev}/md/level")",
+        "size": $((($(maybe_get "${mdadmSysDev}/size") * 1024) / 2)),
+        "disc_count": $(maybe_get "${mdadmSysDev}/md/raid_disks"),
+        "hotspare_count": $((($(list_devices "${mdadmSysDev}" count "${mdadmSysDev}") - $(maybe_get "${mdadmSysDev}/md/raid_disks")))),
         "device_list": [
 $(list_devices "${mdadmSysDev}")
         ],
         "missing_devices_list": [
 $(list_devices "${mdadmSysDev}" missing)
         ],
-        "state": "$(cat "${mdadmSysDev}/md/array_state")",
+        "state": "$(maybe_get "${mdadmSysDev}/md/array_state")",
         "action": "$(maybe_get "${mdadmSysDev}/md/sync_action")",
         "degraded": "$(maybe_get "${mdadmSysDev}/md/degraded")",
-        "sync_speed": "$(($(maybe_get "${mdadmSysDev}/md/sync_speed") * 1024))",
+        "sync_speed": $(($(maybe_get "${mdadmSysDev}/md/sync_speed") * 1024)),
         "sync_completed": "$(maybe_get "${mdadmSysDev}/md/sync_completed")"
     }
 MDADMJSON
-    # Add a comma only after the first item
-    multiArray=','
-    mdadmSNMPOutput+="${mdadmOutput}"
-done
+            # Add a comma only after the first item
+            multiArray=','
+            mdadmSNMPOutput+="${mdadmOutput}"
+        done
+    else
+        errorCode=2
+        errorString='mdadm array not found!'
+    fi
 
     read -r -d '' metadataOutput <<METADATA
 ],
-    "error": "0",
-    "errorString": null,
-    "version": "1"
+    "error": ${errorCode:-0},
+    "errorString": "${errorString}",
+    "version": "${extendVer}"
 }
 METADATA
 
- sed 's/\s//g' <<< "${mdadmSNMPOutput//$'\n'/}${metadataOutput//$'\n'/}"
+    echo "${mdadmSNMPOutput}${metadataOutput}"
+}
 
-# Very basic debug flag
-[ "${1,,}" == '--debug' ] && echo "${mdadmSNMPOutput}${metadataOutput}"
+main "${@}"
