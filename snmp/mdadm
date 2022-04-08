@@ -27,7 +27,7 @@ maybe_get() {
     fi
 }
 
-main(){
+main() {
     if ! which 'jq' > /dev/null 2>&1; then
         errorCode=1
         # The underscore here is a hack since we have to strip spaces without jq
