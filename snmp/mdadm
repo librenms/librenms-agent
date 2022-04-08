@@ -28,7 +28,11 @@ maybe_get() {
 }
 
 main(){
-    if stat "/dev/md"[[:digit:]]* > /dev/null 2>&1; then
+    if ! which 'jq' > /dev/null 2>&1; then
+        errorCode=1
+        # The underscore here is a hack since we have to strip spaces without jq
+        errorString='jq_missing!'
+    elif stat "/dev/md"[[:digit:]]* > /dev/null 2>&1; then
         for mdadmArray in "/dev/md"[[:digit:]]*; do
             # Ignore partitions
             if [[ "${mdadmArray}" =~ '/dev/md'[[:digit:]]+'p' ]]; then continue; fi
@@ -51,9 +55,9 @@ $(list_devices "${mdadmSysDev}" missing)
         ],
         "state": "$(maybe_get "${mdadmSysDev}/md/array_state")",
         "action": "$(maybe_get "${mdadmSysDev}/md/sync_action")",
-        "degraded": "$(maybe_get "${mdadmSysDev}/md/degraded")",
+        "degraded": $(maybe_get "${mdadmSysDev}/md/degraded"),
         "sync_speed": $(($(maybe_get "${mdadmSysDev}/md/sync_speed") * 1024)),
-        "sync_completed": "$(maybe_get "${mdadmSysDev}/md/sync_completed")"
+        "sync_completed": $(maybe_get "${mdadmSysDev}/md/sync_completed")
     }
 MDADMJSON
             # Add a comma only after the first item
@@ -73,7 +77,8 @@ MDADMJSON
 }
 METADATA
 
-    echo "${mdadmSNMPOutput}${metadataOutput}"
+    # If JQ is missing we need to echo this manually
+    jq -c '.' <<< "${mdadmSNMPOutput}${metadataOutput}" 2> /dev/null || sed 's/\s//g' <<< "${mdadmSNMPOutput//$'\n'/}${metadataOutput//$'\n'/}"
 }
 
 main "${@}"
