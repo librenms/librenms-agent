@@ -95,7 +95,7 @@ while( defined( $nfsstatOutputA[$int] ) ){
 	$nfsstatOutputA[$int]=~s/^ +//;
 	$nfsstatOutputA[$int]=~s/ +/ /g;
 
-	if ( $int == 3 ){
+	if ( $int == 2 ){
 		(
 		 $data{Getattr},
 		 $data{Setattr},
@@ -109,7 +109,7 @@ while( defined( $nfsstatOutputA[$int] ) ){
 	
 	}
 
-	if ( $int == 5 ){
+	if ( $int == 4 ){
 		(
 		 $data{Rename},
 		 $data{Link},
@@ -123,7 +123,7 @@ while( defined( $nfsstatOutputA[$int] ) ){
 	
 	}
 
-	if ( $int == 7 ){
+	if ( $int == 6 ){
 		(
 		 $data{Mknod},
 		 $data{Fsstat},
@@ -134,7 +134,7 @@ while( defined( $nfsstatOutputA[$int] ) ){
 	
 	}
 
-	if ( $int == 10 ){
+	if ( $int == 9 ){
 		(
 		 $data{TimedOut},
 		 $data{Invalid},
@@ -145,7 +145,7 @@ while( defined( $nfsstatOutputA[$int] ) ){
 	
 	}
 
-	if ( $int == 13 ){
+	if ( $int == 12 ){
 		(
 		 $data{AttrHits},
 		 $data{AttrMisses},
@@ -159,7 +159,7 @@ while( defined( $nfsstatOutputA[$int] ) ){
 	
 	}
 
-	if ( $int == 15 ){
+	if ( $int == 14 ){
 		(
 		 $data{BioRLHits},
 		 $data{BioRLMisses},
