@@ -65,7 +65,7 @@ if not error:
                     elif "binding state free" in line:
                         leases["free"] += 1
 
-shell_cmd = "dhcpd-pools -s i -A"
+shell_cmd = "dhcpd-pools -s i -A -l" + configfile["leasefile"]
 pool_data = (
     subprocess.Popen(shell_cmd, shell=True, stdout=subprocess.PIPE)
     .stdout.read()
