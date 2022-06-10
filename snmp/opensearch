@@ -246,7 +246,7 @@ $to_return->{data}{tw_total} = $stats_json->{_all}{total}{warmer}{total};
 $to_return->{data}{tw_time}  = $stats_json->{_all}{total}{warmer}{total_time_in_millis};
 
 $to_return->{data}{tfd_size}      = $stats_json->{_all}{total}{fielddata}{memory_size_in_bytes};
-$to_return->{data}{tfd_evictiosn} = $stats_json->{_all}{total}{fielddata}{evictions};
+$to_return->{data}{tfd_evictions} = $stats_json->{_all}{total}{fielddata}{evictions};
 
 $to_return->{data}{tseg_count}        = $stats_json->{_all}{total}{segments}{count};
 $to_return->{data}{tseg_size}         = $stats_json->{_all}{total}{segments}{memory_in_bytes};
