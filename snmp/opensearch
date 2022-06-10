@@ -25,6 +25,20 @@
 
 =for comment
 
+Add this to snmpd.conf as below and restart snmpd.
+
+    extend opensearch /etc/snmp/extends/opensearch
+
+Supported command line options are as below.
+
+    -h <host>   The host to connect to.
+                Default: 127.0.0.1
+    -p <port>   The port to use.
+                Default: 9200
+    -P          Pretty print.
+
+The last is only really relevant to the usage with SNMP.
+
 =cut
 
 use warnings;
@@ -44,7 +58,8 @@ sub main::HELP_MESSAGE {
 		. "-h <host>   The host to connect to.\n"
 		. "            Default: 127.0.0.1\n"
 		. "-p <port>   The port to use.\n"
-		. "            Default: 9200\n";
+		. "            Default: 9200\n"
+		. "-P          Pretty print.\n";
 }
 
 my $host = '127.0.0.1';
@@ -72,7 +87,7 @@ my $stats_url  = 'http://' . $host . ':' . $port . '/_stats';
 my $health_url = 'http://' . $host . ':' . $port . '/_cluster/health';
 
 my $json = JSON->new->allow_nonref->canonical(1);
-if ($opts{P}) {
+if ( $opts{P} ) {
 	$json->pretty();
 }
 
@@ -86,7 +101,7 @@ if ( $stats_response->is_success ) {
 		$to_return->{errorString} = 'Failed to decode the JSON from "' . $stats_url . '"... ' . $@;
 		$to_return->{error}       = 2;
 		print $json->encode($to_return);
-		if (!$opts{P}) {
+		if ( !$opts{P} ) {
 			print "\n";
 		}
 		exit;
@@ -96,7 +111,7 @@ else {
 	$to_return->{errorString} = 'Failed to get "' . $stats_url . '"... ' . $stats_response->status_line;
 	$to_return->{error}       = 1;
 	print $json->encode($to_return);
-	if (!$opts{P}) {
+	if ( !$opts{P} ) {
 		print "\n";
 	}
 	exit;
@@ -110,7 +125,7 @@ if ( $health_response->is_success ) {
 		$to_return->{errorString} = 'Failed to decode the JSON from "' . $health_url . '"... ' . $@;
 		$to_return->{error}       = 2;
 		print $json->encode($to_return);
-		if (!$opts{P}) {
+		if ( !$opts{P} ) {
 			print "\n";
 		}
 		exit;
@@ -120,7 +135,7 @@ else {
 	$to_return->{errorString} = 'Failed to get "' . $health_url . '"... ' . $health_response->status_line;
 	$to_return->{error}       = 1;
 	print $json->encode($to_return);
-	if (!$opts{P}) {
+	if ( !$opts{P} ) {
 		print "\n";
 	}
 	exit;
@@ -255,7 +270,7 @@ $to_return->{data}{tst_size}     = $stats_json->{_all}{total}{store}{size_in_byt
 $to_return->{data}{tst_res_size} = $stats_json->{_all}{total}{store}{reserved_in_bytes};
 
 print $json->encode($to_return);
-if (!$opts{P}) {
+if ( !$opts{P} ) {
 	print "\n";
 }
 exit 0;
