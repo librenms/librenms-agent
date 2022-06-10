@@ -180,7 +180,6 @@ else {
 # process the stats json, sucking stuff in from under _all.total
 #
 $to_return->{data}{ttl_ops}          = $stats_json->{_all}{total}{translog}{operations};
-$to_return->{data}{ttl_ops}          = $stats_json->{_all}{total}{translog}{operations};
 $to_return->{data}{ttl_size}         = $stats_json->{_all}{total}{translog}{size_in_bytes};
 $to_return->{data}{ttl_uncom_ops}    = $stats_json->{_all}{total}{translog}{uncommitted_operations};
 $to_return->{data}{ttl_uncom_size}   = $stats_json->{_all}{total}{translog}{uncommitted_size_in_bytes};
