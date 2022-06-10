@@ -191,7 +191,6 @@ $to_return->{data}{ti_failed}         = $stats_json->{_all}{total}{indexing}{ind
 $to_return->{data}{ti_del_total}      = $stats_json->{_all}{total}{indexing}{delete_total};
 $to_return->{data}{ti_del_time}       = $stats_json->{_all}{total}{indexing}{delete_time_in_millis};
 $to_return->{data}{ti_noop_up_total}  = $stats_json->{_all}{total}{indexing}{noop_update_total};
-$to_return->{data}{ti_throttled}      = $stats_json->{_all}{total}{indexing}{t};
 $to_return->{data}{ti_throttled_time} = $stats_json->{_all}{total}{indexing}{throttle_time_in_millis};
 
 if ( $stats_json->{_all}{total}{indexing}{is_throttled} eq 'true' ) {
