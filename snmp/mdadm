@@ -1,120 +1,86 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# MDADM SNMP extension for LibreNMS
+# Version
+extendVer='2.0.0'
+# Initial portion of json
+mdadmSNMPOutput='{ "data": ['
 
-CAT=/bin/cat
-LS=/bin/ls
-BASENAME=/usr/bin/basename
-REALPATH=/usr/bin/realpath
-
-CONFIGFILE=/etc/snmp/mdadm.conf
-if [ -f $CONFIGFILE ] ; then
-    # shellcheck disable=SC1090
-    . $CONFIGFILE
-fi
-
-VERSION=1
-ERROR_CODE=0
-ERROR_STRING=""
-
-OUTPUT_DATA='['
-
-# use 'ls' command to check if md blocks exist
-if $LS /dev/md?* 1> /dev/null 2>&1 ; then
-    for ARRAY_BLOCKDEVICE in $($LS -1 /dev/md?*) ; do
-        RAID="/sys/block/"$($BASENAME "$($REALPATH "$ARRAY_BLOCKDEVICE")")
-
-        # ignore arrays with no slaves
-        if [ -z "$($LS -1 "$RAID"/slaves 2> /dev/null)" ] ; then
-            continue
+# Outputs a list of devices
+list_devices() {
+    for device in "${1}/slaves/"*; do
+        if [ "${2,,}" == 'count' ]; then
+            ((devCount++))
+        elif [ "${2,,}" != 'missing' ] || [ ! -e "${device}" ]; then
+            printf '%b\t    "%s"' "${multiDisk}" "$(basename "${device}")"
+            multiDisk=',\n'
         fi
-        # ignore "non existing" arrays
-        if [ ! -f "$RAID/md/degraded" ] ; then
-            continue
-        fi
-
-        if [[ $($BASENAME "$ARRAY_BLOCKDEVICE") = [[:digit:]] ]] ; then
-            RAID_NAME=$($BASENAME "$RAID")
-        else
-            RAID_NAME=$($BASENAME "$ARRAY_BLOCKDEVICE")
-        fi
-        RAID_DEV_LIST=$($LS "$RAID"/slaves/)
-        RAID_LEVEL=$($CAT "$RAID"/md/level)
-        RAID_DISC_COUNT=$($CAT "$RAID"/md/raid_disks| cut -d' ' -f1)
-        RAID_STATE=$($CAT "$RAID"/md/array_state)
-        RAID_ACTION=$($CAT "$RAID"/md/sync_action)
-        RAID_DEGRADED=$($CAT "$RAID"/md/degraded)
-
-        if [ "$RAID_SYNC_SPEED" = "none" ] ; then
-            RAID_SYNC_SPEED=0
-        else
-            let "RAID_SYNC_SPEED=$($CAT "$RAID"/md/sync_speed)*1024"
-        fi
-
-        if [ "$($CAT "$RAID"/md/sync_completed)" != "none" ] ; then
-            let "RAID_SYNC_COMPLETED=100*$($CAT "$RAID"/md/sync_completed)"
-        elif [ "$RAID_DEGRADED" -eq 1 ] ; then
-            RAID_SYNC_COMPLETED=0
-        else
-            RAID_SYNC_COMPLETED=100
-        fi
-
-        # divide with 2 to size like in /proc/mdstat
-        # and multiply with 1024 to get size in bytes
-        let "RAID_SIZE=$($CAT "$RAID"/size)*1024/2"
-
-        RAID_DEVICE_LIST='['
-        ALL_DEVICE_COUNT=0
-        for D in $RAID_DEV_LIST ; do
-            RAID_DEVICE_LIST=$RAID_DEVICE_LIST'"'$D'",'
-            let "ALL_DEVICE_COUNT+=1"
-        done
-        if [ ${#RAID_DEVICE_LIST} -gt 3 ] ; then
-            RAID_DEVICE_LIST=${RAID_DEVICE_LIST: : -1}
-        fi
-        RAID_DEVICE_LIST=$RAID_DEVICE_LIST']'
-
-        RAID_MISSING_DEVICES='['
-        for D in $RAID_DEV_LIST ; do
-            if [ -L "$RAID"/slaves/"$D" ] && [ -f "$RAID"/slaves/"$D" ] ; then
-                RAID_MISSING_DEVICES=$RAID_MISSING_DEVICES'"'$D'",'
-            fi
-        done
-        if [ ${#RAID_MISSING_DEVICES} -gt 3 ] ; then
-            RAID_MISSING_DEVICES=${RAID_MISSING_DEVICES: : -1}
-        fi
-        RAID_MISSING_DEVICES=$RAID_MISSING_DEVICES']'
-
-        let "RAID_HOTSPARE_COUNT=ALL_DEVICE_COUNT-RAID_DISC_COUNT"
-        if [ "$RAID_HOTSPARE_COUNT" -lt 0 ] ; then
-            RAID_HOTSPARE_COUNT=0
-        fi
-
-        ARRAY_DATA='{'\
-'"name":"'$RAID_NAME\
-'","level":"'$RAID_LEVEL\
-'","size":"'$RAID_SIZE\
-'","disc_count":"'$RAID_DISC_COUNT\
-'","hotspare_count":"'$RAID_HOTSPARE_COUNT\
-'","device_list":'$RAID_DEVICE_LIST\
-',"missing_device_list":'$RAID_MISSING_DEVICES\
-',"state":"'$RAID_STATE\
-'","action":"'$RAID_ACTION\
-'","degraded":"'$RAID_DEGRADED\
-'","sync_speed":"'$RAID_SYNC_SPEED\
-'","sync_completed":"'$RAID_SYNC_COMPLETED\
-'"},'
-
-        OUTPUT_DATA=$OUTPUT_DATA$ARRAY_DATA
     done
+    [ "${devCount}" ] && echo "${devCount}"
+}
 
-    OUTPUT_DATA=${OUTPUT_DATA: : -1}']'
-else
-    OUTPUT_DATA=${OUTPUT_DATA}']'
-fi
+# Outputs either 0, 100, or the value of the file referenced
+maybe_get() {
+    if [ -f "${1}" ] && [ "$(cat "${1}")" != 'none' ]; then
+        cat "${1}"
+    else
+        echo 0
+    fi
+}
 
-OUTPUT='{"data":'$OUTPUT_DATA\
-',"error":"'$ERROR_CODE\
-'","errorString":"'$ERROR_STRING\
-'","version":"'$VERSION'"}'
+main() {
+    if ! which 'jq' > /dev/null 2>&1; then
+        errorCode=1
+        # The underscore here is a hack since we have to strip spaces without jq
+        errorString='jq_missing!'
+    elif stat "/dev/md"[[:digit:]]* > /dev/null 2>&1; then
+        for mdadmArray in "/dev/md"[[:digit:]]*; do
+            # Ignore partitions
+            [[ "${mdadmArray}" =~ '/dev/md'[[:digit:]]+'p' ]] && continue
 
-echo "$OUTPUT"
+            mdadmName="$(basename "$(realpath "${mdadmArray}")")"
+            mdadmSysDev="/sys/block/${mdadmName}"
 
+            read -r -d '' mdadmOutput <<MDADMJSON
+    ${multiArray}{
+        "name": "${mdadmName}",
+        "level": "$(maybe_get "${mdadmSysDev}/md/level")",
+        "size": $((($(maybe_get "${mdadmSysDev}/size") * 1024) / 2)),
+        "disc_count": $(maybe_get "${mdadmSysDev}/md/raid_disks"),
+        "hotspare_count": $((($(list_devices "${mdadmSysDev}" count "${mdadmSysDev}") - $(maybe_get "${mdadmSysDev}/md/raid_disks")))),
+        "device_list": [
+$(list_devices "${mdadmSysDev}")
+        ],
+        "missing_devices_list": [
+$(list_devices "${mdadmSysDev}" missing)
+        ],
+        "state": "$(maybe_get "${mdadmSysDev}/md/array_state")",
+        "action": "$(maybe_get "${mdadmSysDev}/md/sync_action")",
+        "degraded": $(maybe_get "${mdadmSysDev}/md/degraded"),
+        "sync_speed": $(($(maybe_get "${mdadmSysDev}/md/sync_speed") * 1024)),
+        "sync_completed": $(maybe_get "${mdadmSysDev}/md/sync_completed")
+    }
+MDADMJSON
+            # Add a comma only after the first item
+            multiArray=','
+            mdadmSNMPOutput+="${mdadmOutput}"
+        done
+    else
+        errorCode=2
+        errorString='mdadm array not found!'
+    fi
+
+    read -r -d '' metadataOutput <<METADATA
+],
+    "error": ${errorCode:-0},
+    "errorString": "${errorString}",
+    "version": "${extendVer}"
+}
+METADATA
+
+    # If JQ is missing we need to echo this manually and strip whitespace
+    # SC2001 is not applicable because we already use parameter expansion search/replace
+    # shellcheck disable=SC2001
+    jq -c '.' <<< "${mdadmSNMPOutput}${metadataOutput}" 2> /dev/null || sed 's/\s//g' <<< "${mdadmSNMPOutput//$'\n'/}${metadataOutput//$'\n'/}"
+}
+
+main "${@}"
