@@ -1,0 +1,274 @@
+#!/usr/bin/env perl
+
+#Copyright (c) 2022, Zane C. Bowers-Hadley
+#All rights reserved.
+#
+#Redistribution and use in source and binary forms, with or without modification,
+#are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+#THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+#WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+#IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+#DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+#LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+#THE POSSIBILITY OF SUCH DAMAGE.
+
+=for comment
+
+Add this to snmpd.conf as below and restart snmpd.
+
+    extend opensearch /etc/snmp/extends/opensearch
+
+Supported command line options are as below.
+
+    -h <host>   The host to connect to.
+                Default: 127.0.0.1
+    -p <port>   The port to use.
+                Default: 9200
+    -P          Pretty print.
+
+The last is only really relevant to the usage with SNMP.
+
+=cut
+
+use warnings;
+use strict;
+use Getopt::Std;
+use JSON;
+use LWP::UserAgent ();
+
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
+
+sub main::VERSION_MESSAGE {
+	print "Elastic/Opensearch SNMP extend 0.0.0\n";
+}
+
+sub main::HELP_MESSAGE {
+	print "\n"
+		. "-h <host>   The host to connect to.\n"
+		. "            Default: 127.0.0.1\n"
+		. "-p <port>   The port to use.\n"
+		. "            Default: 9200\n"
+		. "-P          Pretty print.\n";
+}
+
+my $host = '127.0.0.1';
+my $port = 9200;
+
+#gets the options
+my %opts;
+getopts( 'h:p:P', \%opts );
+if ( defined( $opts{h} ) ) {
+	$host = $opts{h};
+}
+if ( defined( $opts{p} ) ) {
+	$port = $opts{p};
+}
+
+#
+my $to_return = {
+	error       => 0,
+	errorString => '',
+	version     => 1,
+	date        => {},
+};
+
+my $stats_url  = 'http://' . $host . ':' . $port . '/_stats';
+my $health_url = 'http://' . $host . ':' . $port . '/_cluster/health';
+
+my $json = JSON->new->allow_nonref->canonical(1);
+if ( $opts{P} ) {
+	$json->pretty();
+}
+
+my $ua = LWP::UserAgent->new( timeout => 10 );
+
+my $stats_response = $ua->get($stats_url);
+my $stats_json;
+if ( $stats_response->is_success ) {
+	eval { $stats_json = decode_json( $stats_response->decoded_content ); };
+	if ($@) {
+		$to_return->{errorString} = 'Failed to decode the JSON from "' . $stats_url . '"... ' . $@;
+		$to_return->{error}       = 2;
+		print $json->encode($to_return);
+		if ( !$opts{P} ) {
+			print "\n";
+		}
+		exit;
+	}
+}
+else {
+	$to_return->{errorString} = 'Failed to get "' . $stats_url . '"... ' . $stats_response->status_line;
+	$to_return->{error}       = 1;
+	print $json->encode($to_return);
+	if ( !$opts{P} ) {
+		print "\n";
+	}
+	exit;
+}
+
+my $health_response = $ua->get($health_url);
+my $health_json;
+if ( $health_response->is_success ) {
+	eval { $health_json = decode_json( $health_response->decoded_content ); };
+	if ($@) {
+		$to_return->{errorString} = 'Failed to decode the JSON from "' . $health_url . '"... ' . $@;
+		$to_return->{error}       = 2;
+		print $json->encode($to_return);
+		if ( !$opts{P} ) {
+			print "\n";
+		}
+		exit;
+	}
+}
+else {
+	$to_return->{errorString} = 'Failed to get "' . $health_url . '"... ' . $health_response->status_line;
+	$to_return->{error}       = 1;
+	print $json->encode($to_return);
+	if ( !$opts{P} ) {
+		print "\n";
+	}
+	exit;
+}
+
+#
+# process the health json
+#
+#
+$to_return->{data}{cluster_name}       = $health_json->{cluster_name};
+$to_return->{data}{c_nodes}            = $health_json->{number_of_nodes};
+$to_return->{data}{c_data_nodes}       = $health_json->{number_of_data_nodes};
+$to_return->{data}{c_act_pri_shards}   = $health_json->{active_primary_shards};
+$to_return->{data}{c_act_shards}       = $health_json->{active_shards};
+$to_return->{data}{c_rel_shards}       = $health_json->{relocating_shards};
+$to_return->{data}{c_init_shards}      = $health_json->{initializing_shards};
+$to_return->{data}{c_delayed_shards}   = $health_json->{delayed_unassigned_shards};
+$to_return->{data}{c_pending_tasks}    = $health_json->{number_of_pending_tasks};
+$to_return->{data}{c_in_fl_fetch}      = $health_json->{number_of_in_flight_fetch};
+$to_return->{data}{c_task_max_in_time} = $health_json->{task_max_waiting_in_queue_millis};
+$to_return->{data}{c_act_shards_perc}  = $health_json->{active_shards_percent_as_number};
+
+# status color to int, nagious style
+# green / ok = 0
+# yellow / warning = 1
+# red / critical = 2
+# unknown = 3
+if ( $health_json->{status} =~ /[Gg][Rr][Ee][Ee][Nn]/ ) {
+	$to_return->{data}{status} = 0;
+}
+elsif ( $health_json->{status} =~ /[Yy][Ee][Ll][Ll][Oo][Ww]/ ) {
+	$to_return->{data}{status} = 1;
+}
+elsif ( $health_json->{status} =~ /[Rr][Ee][Dd]/ ) {
+	$to_return->{data}{status} = 2;
+}
+else {
+	$to_return->{data}{status} = 3;
+}
+
+#
+# process the stats json, sucking stuff in from under _all.total
+#
+$to_return->{data}{ttl_ops}          = $stats_json->{_all}{total}{translog}{operations};
+$to_return->{data}{ttl_size}         = $stats_json->{_all}{total}{translog}{size_in_bytes};
+$to_return->{data}{ttl_uncom_ops}    = $stats_json->{_all}{total}{translog}{uncommitted_operations};
+$to_return->{data}{ttl_uncom_size}   = $stats_json->{_all}{total}{translog}{uncommitted_size_in_bytes};
+$to_return->{data}{ttl_last_mod_age} = $stats_json->{_all}{total}{translog}{earliest_last_modified_age};
+
+$to_return->{data}{ti_total}          = $stats_json->{_all}{total}{indexing}{index_total};
+$to_return->{data}{ti_time}           = $stats_json->{_all}{total}{indexing}{index_time_in_millis};
+$to_return->{data}{ti_failed}         = $stats_json->{_all}{total}{indexing}{index_failed};
+$to_return->{data}{ti_del_total}      = $stats_json->{_all}{total}{indexing}{delete_total};
+$to_return->{data}{ti_del_time}       = $stats_json->{_all}{total}{indexing}{delete_time_in_millis};
+$to_return->{data}{ti_noop_up_total}  = $stats_json->{_all}{total}{indexing}{noop_update_total};
+$to_return->{data}{ti_throttled_time} = $stats_json->{_all}{total}{indexing}{throttle_time_in_millis};
+
+if ( $stats_json->{_all}{total}{indexing}{is_throttled} eq 'true' ) {
+	$to_return->{data}{ti_throttled} = 1;
+}
+else {
+	$to_return->{data}{ti_throttled} = 0;
+}
+
+$to_return->{data}{ts_q_total}  = $stats_json->{_all}{total}{search}{query_total};
+$to_return->{data}{ts_q_time}   = $stats_json->{_all}{total}{search}{query_time_in_millis};
+$to_return->{data}{ts_f_total}  = $stats_json->{_all}{total}{search}{fetch_total};
+$to_return->{data}{ts_f_time}   = $stats_json->{_all}{total}{search}{fetch_time_in_millis};
+$to_return->{data}{ts_sc_total} = $stats_json->{_all}{total}{search}{scroll_total};
+$to_return->{data}{ts_sc_time}  = $stats_json->{_all}{total}{search}{scroll_time_in_millis};
+$to_return->{data}{ts_su_total} = $stats_json->{_all}{total}{search}{suggest_total};
+$to_return->{data}{ts_su_time}  = $stats_json->{_all}{total}{search}{suggest_time_in_millis};
+
+$to_return->{data}{tr_total}     = $stats_json->{_all}{total}{refresh}{total};
+$to_return->{data}{tr_time}      = $stats_json->{_all}{total}{refresh}{total_time_in_millis};
+$to_return->{data}{tr_ext_total} = $stats_json->{_all}{total}{refresh}{external_total};
+$to_return->{data}{tr_ext_time}  = $stats_json->{_all}{total}{refresh}{external_total_time_in_millis};
+
+$to_return->{data}{tf_total}    = $stats_json->{_all}{total}{flush}{total};
+$to_return->{data}{tf_periodic} = $stats_json->{_all}{total}{flush}{periodic};
+$to_return->{data}{tf_time}     = $stats_json->{_all}{total}{flush}{total_time_in_millis};
+
+$to_return->{data}{tqc_size}        = $stats_json->{_all}{total}{query_cache}{memory_size_in_bytes};
+$to_return->{data}{tqc_total}       = $stats_json->{_all}{total}{query_cache}{total_count};
+$to_return->{data}{tqc_hit}         = $stats_json->{_all}{total}{query_cache}{hit_count};
+$to_return->{data}{tqc_miss}        = $stats_json->{_all}{total}{query_cache}{miss_count};
+$to_return->{data}{tqc_miss}        = $stats_json->{_all}{total}{query_cache}{miss_count};
+$to_return->{data}{tqc_cache_size}  = $stats_json->{_all}{total}{query_cache}{cache_size};
+$to_return->{data}{tqc_cache_count} = $stats_json->{_all}{total}{query_cache}{cache_count};
+$to_return->{data}{tqc_evictions}   = $stats_json->{_all}{total}{query_cache}{evictions};
+
+$to_return->{data}{tg_total}         = $stats_json->{_all}{total}{get}{total};
+$to_return->{data}{tg_time}          = $stats_json->{_all}{total}{get}{time_in_millis};
+$to_return->{data}{tg_exists_total}  = $stats_json->{_all}{total}{get}{exists_total};
+$to_return->{data}{tg_exists_time}   = $stats_json->{_all}{total}{get}{exists_time_in_millis};
+$to_return->{data}{tg_missing_total} = $stats_json->{_all}{total}{get}{missing_total};
+$to_return->{data}{tg_missing_time}  = $stats_json->{_all}{total}{get}{missing_time_in_millis};
+
+$to_return->{data}{tm_total}          = $stats_json->{_all}{total}{merges}{total};
+$to_return->{data}{tm_time}           = $stats_json->{_all}{total}{merges}{total_time_in_millis};
+$to_return->{data}{tm_docs}           = $stats_json->{_all}{total}{merges}{total_docs};
+$to_return->{data}{tm_size}           = $stats_json->{_all}{total}{merges}{total_size_in_bytes};
+$to_return->{data}{tm_throttled_time} = $stats_json->{_all}{total}{merges}{total_throttled_time_in_millis};
+$to_return->{data}{tm_throttled_size} = $stats_json->{_all}{total}{merges}{total_auto_throttle_in_bytes};
+
+$to_return->{data}{tw_total} = $stats_json->{_all}{total}{warmer}{total};
+$to_return->{data}{tw_time}  = $stats_json->{_all}{total}{warmer}{total_time_in_millis};
+
+$to_return->{data}{tfd_size}      = $stats_json->{_all}{total}{fielddata}{memory_size_in_bytes};
+$to_return->{data}{tfd_evictions} = $stats_json->{_all}{total}{fielddata}{evictions};
+
+$to_return->{data}{tseg_count}        = $stats_json->{_all}{total}{segments}{count};
+$to_return->{data}{tseg_size}         = $stats_json->{_all}{total}{segments}{memory_in_bytes};
+$to_return->{data}{tseg_terms_size}   = $stats_json->{_all}{total}{segments}{terms_memory_in_bytes};
+$to_return->{data}{tseg_fields_size}  = $stats_json->{_all}{total}{segments}{stored_fields_memory_in_bytes};
+$to_return->{data}{tseg_tvector_size} = $stats_json->{_all}{total}{segments}{term_vectors_memory_in_bytes};
+$to_return->{data}{tseg_norms_size}   = $stats_json->{_all}{total}{segments}{norms_memory_in_bytes};
+$to_return->{data}{tseg_points_size}  = $stats_json->{_all}{total}{segments}{points_memory_in_bytes};
+$to_return->{data}{tseg_docval_size}  = $stats_json->{_all}{total}{segments}{doc_values_memory_in_bytes};
+$to_return->{data}{tseg_indwrt_size}  = $stats_json->{_all}{total}{segments}{index_writer_memory_in_bytes};
+$to_return->{data}{tseg_vermap_size}  = $stats_json->{_all}{total}{segments}{version_map_memory_in_bytes};
+$to_return->{data}{tseg_fbs_size}     = $stats_json->{_all}{total}{segments}{fixed_bit_set_memory_in_bytes};
+
+$to_return->{data}{trc_size}      = $stats_json->{_all}{total}{request_cache}{memory_size_in_bytes};
+$to_return->{data}{trc_evictions} = $stats_json->{_all}{total}{request_cache}{evictions};
+$to_return->{data}{trc_hits}      = $stats_json->{_all}{total}{request_cache}{hit_count};
+$to_return->{data}{trc_misses}    = $stats_json->{_all}{total}{request_cache}{miss_count};
+
+$to_return->{data}{tst_size}     = $stats_json->{_all}{total}{store}{size_in_bytes};
+$to_return->{data}{tst_res_size} = $stats_json->{_all}{total}{store}{reserved_in_bytes};
+
+print $json->encode($to_return);
+if ( !$opts{P} ) {
+	print "\n";
+}
+exit 0;
