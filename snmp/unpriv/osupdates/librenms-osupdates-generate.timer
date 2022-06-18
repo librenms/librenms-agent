@@ -1,0 +1,11 @@
+# librenms-osupdates-generate.timer
+
+[Unit]
+Description=generates osupdates information minutely
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,8 @@
+# librenms-osupdates-generate.service
+
+[Unit]
+Description=generate osupdates information
+
+[Service]
+ExecStart=/usr/local/bin/osupdates-unpriv-generate.sh
+
