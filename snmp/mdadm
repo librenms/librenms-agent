@@ -40,7 +40,16 @@ main() {
             mdadmName="$(basename "$(realpath "${mdadmArray}")")"
             mdadmSysDev="/sys/block/${mdadmName}"
 
+            degraded=$(maybe_get "${mdadmSysDev}/md/degraded")
+            syncSpeed=$(($(maybe_get "${mdadmSysDev}/md/sync_speed") * 1024))
+
+            syncCompleted=$(maybe_get "${mdadmSysDev}/md/sync_completed")
+            if [ $syncCompleted -eq 0 ] && [ $degraded -eq 0 ] && [ $syncSpeed -eq 0 ]; then
+                syncCompleted="100"
+            fi
+
             read -r -d '' mdadmOutput <<MDADMJSON
+
     ${multiArray}{
         "name": "${mdadmName}",
         "level": "$(maybe_get "${mdadmSysDev}/md/level")",
@@ -55,9 +64,9 @@ $(list_devices "${mdadmSysDev}" missing)
         ],
         "state": "$(maybe_get "${mdadmSysDev}/md/array_state")",
         "action": "$(maybe_get "${mdadmSysDev}/md/sync_action")",
-        "degraded": $(maybe_get "${mdadmSysDev}/md/degraded"),
-        "sync_speed": $(($(maybe_get "${mdadmSysDev}/md/sync_speed") * 1024)),
-        "sync_completed": $(maybe_get "${mdadmSysDev}/md/sync_completed")
+        "degraded": $degraded,
+        "sync_speed": $syncSpeed,
+        "sync_completed": $syncCompleted
     }
 MDADMJSON
             # Add a comma only after the first item
