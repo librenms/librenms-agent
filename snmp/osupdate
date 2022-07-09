@@ -20,6 +20,8 @@ BIN_YUM='/usr/bin/env yum'
 CMD_YUM='-q check-update'
 BIN_DNF='/usr/bin/env dnf'
 CMD_DNF='-q check-update'
+BIN_TDNF='/usr/bin/env tdnf'
+CMD_TDNF='-q check-update'
 BIN_APT='/usr/bin/env apt-get'
 CMD_APT='-qq -s upgrade'
 BIN_PACMAN='/usr/bin/env pacman'
@@ -48,6 +50,15 @@ elif command -v dnf &>/dev/null ; then
     UPDATES=$($BIN_DNF $CMD_DNF | $BIN_WC $CMD_WC)
     if [ "$UPDATES" -ge 1 ]; then
         echo $(($UPDATES-1));
+    else
+        echo "0";
+    fi
+elif command -v tdnf &>/dev/null ; then
+    # PhotonOS
+    # shellcheck disable=SC2086
+    UPDATES=$($BIN_TDNF $CMD_TDNF | $BIN_WC $CMD_WC)
+    if [ "$UPDATES" -ge 1 ]; then
+        echo "$UPDATES";
     else
         echo "0";
     fi
