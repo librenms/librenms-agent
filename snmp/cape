@@ -319,7 +319,8 @@ eval {
 	my $sth = $dbh->prepare($query);
 	$sth->execute;
 	my $task_status;
-	$sth->bind_columns( undef, \$task_status );
+	my $task_package;
+	$sth->bind_columns( undef, \$task_status, \$task_package );
 	while ( $sth->fetch ) {
 		if ( defined( $return_json->{data}->{$task_status} ) ) {
 			$return_json->{data}->{$task_status}++;
