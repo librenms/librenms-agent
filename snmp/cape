@@ -55,10 +55,13 @@ my $target_time  = $current_time - 300;
 my $return_json = {
 	data => {
 		error             => 0,
+		errors            => [],
 		info              => 0,
 		debug             => 0,
 		warning           => 0,
+		warnigns          => [],
 		critical          => 0,
+		criticals         => [],
 		banned            => 0,
 		pending           => 0,
 		running           => 0,
@@ -80,13 +83,16 @@ my $level_check = { info => 1, debug => 1, error => 1, warning => 1, critical =>
 
 # read the config and put together the defaults
 my $defaults = {
-	dsn     => 'dbi:Pg:dbname=cape',
-	user    => 'cape',
-	pass    => '',
-	clog    => '/opt/CAPEv2/log/cuckoo.log',
-	plog    => '/opt/CAPEv2/log/process.log',
-	mplogok => 1,
-	ignores => '/usr/local/etc/cape_extend.ignores',
+	dsn           => 'dbi:Pg:dbname=cape',
+	user          => 'cape',
+	pass          => '',
+	clog          => '/opt/CAPEv2/log/cuckoo.log',
+	plog          => '/opt/CAPEv2/log/process.log',
+	mplogok       => 1,
+	ignores       => '/usr/local/etc/cape_extend.ignores',
+	sendErrors    => 1,
+	sendCriticals => 1,
+	sendWarnings  => 1,
 };
 my $config = Config::Tiny->read( $ini_file, 'utf8' );
 if ( !defined($config) ) {
@@ -104,15 +110,15 @@ else {
 }
 
 # read in the ignore file
-my $ignores      = { info => [], debug => [], error => [], warning => [], critical => [] };
-if ( -f $config->{ignores}) {
+my $ignores = { info => [], debug => [], error => [], warning => [], critical => [] };
+if ( -f $config->{ignores} ) {
 	my $ignore_raw   = read_file( $config->{ignores} );
-	my @ignore_split = grep(!/^[\ \t]*$/,grep( !/^[\ \t]*\#/, split( /\n/, $ignore_raw ) ));
+	my @ignore_split = grep( !/^[\ \t]*$/, grep( !/^[\ \t]*\#/, split( /\n/, $ignore_raw ) ) );
 	foreach my $to_ignore (@ignore_split) {
 		my ( $ignore_level, $pattern ) = split( /[\ \t]+/, $to_ignore, 2 );
-		if (defined($ignore_level) and defined($pattern)) {
-			$ignore_level=lc($ignore_level);
-			push(@{ $ignores->{$ignore_level} }, $pattern);
+		if ( defined($ignore_level) and defined($pattern) ) {
+			$ignore_level = lc($ignore_level);
+			push( @{ $ignores->{$ignore_level} }, $pattern );
 		}
 	}
 }
@@ -164,7 +170,7 @@ while ( $process_logs && defined( $logs[$process_loop] ) ) {
 				if ( defined( $level_check->{$level} ) ) {
 					my $add_it     = 1;
 					my $ignore_int = 0;
-					foreach ( @{$ignores->{$level}} ) {
+					foreach ( @{ $ignores->{$level} } ) {
 						my $test = $_;
 						if ( $entry =~ /$test/ ) {
 							$add_it = 0;
@@ -173,6 +179,15 @@ while ( $process_logs && defined( $logs[$process_loop] ) ) {
 					}
 					if ($add_it) {
 						$return_json->{data}->{$level}++;
+						if ( $level eq 'error' and $config->{sendErrors} ) {
+							push( @{ $return_json->{data}->{errors} }, $entry );
+						}
+						elsif ( $level eq 'warning' and $config->{sendWarnings} ) {
+							push( @{ $return_json->{data}->{warnings} }, $entry );
+						}
+						elsif ( $level eq 'criticals' and $config->{sendCriticals} ) {
+							push( @{ $return_json->{data}->{criticals} }, $entry );
+						}
 					}
 				}
 			}
@@ -182,4 +197,4 @@ while ( $process_logs && defined( $logs[$process_loop] ) ) {
 	$process_loop++;
 }
 
-print encode_json($return_json)."\n";
+print encode_json($return_json) . "\n";
