@@ -290,7 +290,7 @@ my $query
 	= "select status from tasks where ( added_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
 	. "( started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
 	. "( completed_on > CURRENT_TIMESTAMP - interval '5 minutes' )";
-if ( !$config->cuckoosql ) {
+if ( !$config->{cuckoosql} ) {
 	$query
 		= $query
 		. " or ( analysis_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
