@@ -270,7 +270,7 @@ while ( $process_logs && defined( $logs[$process_loop] ) ) {
 }
 
 my $query
-	= "select tatus from tasks where ( added_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+	= "select status from tasks where ( added_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
 	. "( started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
 	. "( completed_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
 	. "( analysis_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
@@ -280,7 +280,7 @@ my $query
 	. "( signatures_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
 	. "( signatures_finished_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
 	. "( reporting_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
-	. "( reporting_finished_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or ";
+	. "( reporting_finished_on > CURRENT_TIMESTAMP - interval '5 minutes' );";
 
 eval {
 	my $dbh = DBI->connect( $config->{dsn}, $config->{user}, $config->{pass} ) || die($DBI::errstr);
