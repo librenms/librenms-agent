@@ -121,11 +121,11 @@ if ( !-f $config->{clog} ) {
 else {
 	push( @logs, $config->{clog} );
 }
-if ( !-f $config->{clog} && !$config->{mplogok} ) {
+if ( !-f $config->{plog} && !$config->{mplogok} ) {
 	$return_json->{error} = '"' . $defaults->{clog} . '" does not exist';
 }
 else {
-	push( @logs, $config->{log} );
+	push( @logs, $config->{plog} );
 }
 
 my $process_loop = 0;
