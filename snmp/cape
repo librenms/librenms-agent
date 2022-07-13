@@ -288,7 +288,7 @@ while ( $process_logs && defined( $logs[$process_loop] ) ) {
 }
 
 my $query;
-if ( $config->{dsn} =~ /^dbi:Mysql/ ) {
+if ( $config->{dsn} =~ /^[Dd][Bb][Ii]:[Mm]ysql/ ) {
 	$query
 		= "select status,package from tasks where ( added_on > FROM_UNIXTIME('"
 		. $target_time
