@@ -107,9 +107,9 @@ else {
 my $ignores      = { info => [], debug => [], error => [], warning => [], critical => [] };
 if ( -f $config->{ignores}) {
 	my $ignore_raw   = read_file( $config->{ignores} );
-	my @ignore_split = grep( !/^[\ \t]*\#/, split( /\n/, $ignore_raw ) );
+	my @ignore_split = grep(/^[\ \t]*$/,grep( !/^[\ \t]*\#/, split( /\n/, $ignore_raw ) ));
 	foreach my $to_ignore (@ignore_split) {
-		my ( $ignore_level, $pattern ) = split( /[\ \t]/, $to_ignore, 2 );
+		my ( $ignore_level, $pattern ) = split( /[\ \t]+/, $to_ignore, 2 );
 		if (defined($ignore_level) and defined($pattern)) {
 			$ignore_level=lc($ignore_level);
 			push(@{ $ignores->{$ignore_level} }, $pattern);
