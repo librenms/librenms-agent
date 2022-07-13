@@ -1,0 +1,148 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Getopt::Long;
+use File::ReadBackwards;
+use JSON;
+use Config::Tiny;
+use DBI;
+use Time::Piece;
+
+sub version {
+	print "cape v. 0.0.1\n";
+}
+
+sub help {
+	&version;
+
+	print '
+
+-c <ini>     Config INI file.
+             Default: /usr/local/etc/cape_extend.ini
+';
+}
+
+# get the commandline options
+my $help     = 0;
+my $version  = 0;
+my $ini_file = '/usr/local/etc/cape_extend.ini';
+Getopt::Long::Configure('no_ignore_case');
+Getopt::Long::Configure('bundling');
+GetOptions(
+	'version' => \$version,
+	'v'       => \$version,
+	'help'    => \$help,
+	'h'       => \$help,
+	'i=s'     => \$ini_file,
+);
+
+# print version or help if requested
+if ($help) {
+	&help;
+	exit 42;
+}
+if ($version) {
+	&version;
+	exit 42;
+}
+
+# time
+my $current_time = time;
+my $target_time  = $current_time - 300;
+
+my $return_json = {
+	data => {
+		error             => 0,
+		info              => 0,
+		debug             => 0,
+		warning           => 0,
+		critical          => 0,
+		banned            => 0,
+		pending           => 0,
+		running           => 0,
+		completed         => 0,
+		distributed       => 0,
+		reported          => 0,
+		recovered         => 0,
+		failed_analysis   => 0,
+		failed_processing => 0,
+		failed_reporting  => 0,
+	},
+	error       => 0,
+	errorString => '',
+	version     => 1,
+};
+
+# read the config and put together the defaults
+my $defaults = {
+	dsn     => 'dbi:Pg:dbname=cape',
+	user    => 'cape',
+	pass    => '',
+	clog    => '/opt/CAPEv2/log/cuckoo.log',
+	plog    => '/opt/CAPEv2/log/process.log',
+	mplogok => 1,
+	ignores => '/usr/local/etc/cape_extend.ignores',
+};
+my $config = Config::Tiny->read( $ini_file, 'utf8' );
+if ( !defined($config) ) {
+	$config = $defaults;
+}
+else {
+	$config = $config->{_};
+
+	# reel in the defaults
+	foreach my $default_key ( keys( %{$defaults} ) ) {
+		if ( !defined( $config->{$default_key} ) ) {
+			$config->{$default_key} = $defaults->{$default_key};
+		}
+	}
+}
+
+# put together the list of logs to read
+my @logs;
+if ( !-f $config->{clog} ) {
+	$return_json->{error} = '"' . $defaults->{clog} . '" does not exist';
+}
+else {
+	push( @logs, $config->{clog} );
+}
+if ( !-f $config->{clog} && !$config->{mplogok} ) {
+	$return_json->{error} = '"' . $defaults->{clog} . '" does not exist';
+}
+else {
+	push( @logs, $config->{log} );
+}
+
+my $process_loop = 0;
+my $process = 1;
+while ( $process && defined( $logs[$process_loop] ) ) {
+	my $log = $logs[$process_loop];
+
+	my $bw = File::ReadBackwards->new($log);
+
+	my $continue      = 1;
+	my $current_entry = '';
+	while ( defined( my $log_line = $bw->readline ) && $continue ) {
+		$current_entry = $log_line . $current_entry;
+		if ( $current_entry
+			=~ /20[2-9][0-9]\-[01]\-[0-3][0-9]\ [0-2][0-9]\:[0-5][0-9]\:[0-5][0-9]\,[0-9]+\ \[[a-z-A-Z\.0-9]+\]\ [a-zA-Z]+\:/
+			)
+		{
+			# parse it and blank it for when we get to the next one.
+			my ( $date, $time, $lib, $level, $entry ) = split( /[\ \t]+/, $current_entry );
+			$current_entry = '';
+
+			# chomp off the seconds place after the ,
+			$time =~ s/\,.*//;
+			my $t = Time::Piece->strptime( $date.'T'.$time, '%Y-%m-%dT%H:%M:%S' );
+
+			if ( $t->epoch <= $target_time ) {
+				$process = 0;
+			}
+
+		}
+	}
+
+	$process_loop++;
+}
