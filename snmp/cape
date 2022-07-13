@@ -148,7 +148,7 @@ while ( $process_logs && defined( $logs[$process_loop] ) ) {
 			)
 		{
 			# parse it and blank it for when we get to the next one.
-			my ( $date, $time, $lib, $level, $entry ) = split( /[\ \t]+/, $current_entry );
+			my ( $date, $time, $lib, $level, $entry ) = split( /[\ \t]+/, $current_entry, 5 );
 			$current_entry = '';
 
 			# chomp off the seconds place after the ,
@@ -169,11 +169,11 @@ while ( $process_logs && defined( $logs[$process_loop] ) ) {
 						if ( $entry =~ /$test/ ) {
 							$add_it = 0;
 						}
-						if ($add_it) {
-							$ignore_int++;
-						}
+						$ignore_int++;
 					}
-					$return_json->{data}->{$level}++;
+					if ($add_it) {
+						$return_json->{data}->{$level}++;
+					}
 				}
 			}
 		}
