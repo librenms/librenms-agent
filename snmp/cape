@@ -38,25 +38,41 @@ The defeault setttings are...
 
     # DBI connection DSN
 	dsn=dbi:Pg:dbname=cape
+    
     # DB user
 	user=cape
+    
     # DB PW
 	pass=
+    
     # CAPEv2 cuckoo log file
     clog=/opt/CAPEv2/log/cuckoo.log
+    
     # CAPEv2 process log file
 	plog=/opt/CAPEv2/log/process.log
+    
     # 0/1 for if it is okay for the process log to not exist
     # this enables it to work with cuckoo as well as CAPEv2
 	mplogok=1
+    
     # list of ignores
 	ignores=/usr/local/etc/cape_extend.ignores
+    
     # send errors along for inclusion in the event log
 	sendErrors=1
+    
     # send criticals along for inclusion in the event log
 	sendCriticals=1
+    
     # send warnings along for inclusion in the event log
 	sendWarnings= 1
+    
+    # don't use analysis_started_on. analysis_finished_on. processing_started_on,
+    # processing_finished_on, signatures_started_on, signatures_finished_on,
+    # reporting_started_on, or reporting_finished_on with the SQL statement
+    #
+    # This is specifically for supporting ancient cuckoo instances.
+    cuckoosql=0
 
 The ignores file will only be used if it exists. The format is as below.
 
@@ -164,6 +180,7 @@ my $defaults = {
 	sendErrors    => 1,
 	sendCriticals => 1,
 	sendWarnings  => 1,
+	cuckoosql     => 0,
 };
 my $config = Config::Tiny->read( $ini_file, 'utf8' );
 if ( !defined($config) ) {
@@ -272,15 +289,22 @@ while ( $process_logs && defined( $logs[$process_loop] ) ) {
 my $query
 	= "select status from tasks where ( added_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
 	. "( started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
-	. "( completed_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
-	. "( analysis_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
-	. "(analysis_finished_on  > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
-	. "( processing_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
-	. "( processing_finished_on  > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
-	. "( signatures_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
-	. "( signatures_finished_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
-	. "( reporting_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
-	. "( reporting_finished_on > CURRENT_TIMESTAMP - interval '5 minutes' );";
+	. "( completed_on > CURRENT_TIMESTAMP - interval '5 minutes' )";
+if ( !$config->cuckoosql ) {
+	$query
+		= $query
+		. " or ( analysis_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+		. "(analysis_finished_on  > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+		. "( processing_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+		. "( processing_finished_on  > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+		. "( signatures_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+		. "( signatures_finished_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+		. "( reporting_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+		. "( reporting_finished_on > CURRENT_TIMESTAMP - interval '5 minutes' );";
+}
+else {
+	$query = $query . ';';
+}
 
 eval {
 	my $dbh = DBI->connect( $config->{dsn}, $config->{user}, $config->{pass} ) || die($DBI::errstr);
@@ -296,7 +320,7 @@ eval {
 };
 if ($@) {
 	$return_json->{error}       = 2;
-	$return_json->{errorString} = $return_json->{errorString}.' SQL error: ' . $@;
+	$return_json->{errorString} = $return_json->{errorString} . ' SQL error: ' . $@;
 }
 
 print encode_json($return_json) . "\n";
