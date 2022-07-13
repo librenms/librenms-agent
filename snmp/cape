@@ -107,7 +107,7 @@ else {
 my $ignores      = { info => [], debug => [], error => [], warning => [], critical => [] };
 if ( -f $config->{ignores}) {
 	my $ignore_raw   = read_file( $config->{ignores} );
-	my @ignore_split = grep(/^[\ \t]*$/,grep( !/^[\ \t]*\#/, split( /\n/, $ignore_raw ) ));
+	my @ignore_split = grep(!/^[\ \t]*$/,grep( !/^[\ \t]*\#/, split( /\n/, $ignore_raw ) ));
 	foreach my $to_ignore (@ignore_split) {
 		my ( $ignore_level, $pattern ) = split( /[\ \t]+/, $to_ignore, 2 );
 		if (defined($ignore_level) and defined($pattern)) {
@@ -164,8 +164,8 @@ while ( $process_logs && defined( $logs[$process_loop] ) ) {
 				if ( defined( $level_check->{$level} ) ) {
 					my $add_it     = 1;
 					my $ignore_int = 0;
-					while ( defined( $ignores->{$level} ) && defined( $ignores->{$level}->[$ignore_int] ) ) {
-						my $test = $ignores->{$level}->[$ignore_int];
+					foreach ( @{$ignores->{$level}} ) {
+						my $test = $_;
 						if ( $entry =~ /$test/ ) {
 							$add_it = 0;
 						}
