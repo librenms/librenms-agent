@@ -269,4 +269,34 @@ while ( $process_logs && defined( $logs[$process_loop] ) ) {
 	$process_loop++;
 }
 
+my $query
+	= "select tatus from tasks where ( added_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+	. "( started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+	. "( completed_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+	. "( analysis_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+	. "(analysis_finished_on  > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+	. "( processing_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+	. "( processing_finished_on  > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+	. "( signatures_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+	. "( signatures_finished_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+	. "( reporting_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+	. "( reporting_finished_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or ";
+
+eval {
+	my $dbh = DBH->connect( $config->{dsn}, $config->{user}, $config->{pass} ) || die($DBI::errstr);
+	my $sth = $dbh->prepare($query);
+	$sth->execute;
+	my $task_status;
+	$sth->bind_columns( undef, \$task_status );
+	while ( $sth->fetch ) {
+		if ( defined( $return_json->{data}->{$task_status} ) ) {
+			$return_json->{data}->{$task_status}++;
+		}
+	}
+};
+if ($@) {
+	$return_json->{error}       = 2;
+	$return_json->{errorString} = $return_json->{errorString}.' SQL error: ' . $@;
+}
+
 print encode_json($return_json) . "\n";
