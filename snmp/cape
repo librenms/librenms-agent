@@ -283,7 +283,7 @@ my $query
 	. "( reporting_finished_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or ";
 
 eval {
-	my $dbh = DBH->connect( $config->{dsn}, $config->{user}, $config->{pass} ) || die($DBI::errstr);
+	my $dbh = DBI->connect( $config->{dsn}, $config->{user}, $config->{pass} ) || die($DBI::errstr);
 	my $sth = $dbh->prepare($query);
 	$sth->execute;
 	my $task_status;
