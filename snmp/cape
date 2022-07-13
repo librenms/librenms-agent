@@ -105,10 +105,12 @@ else {
 
 # read in the ignore file
 my $ignore_raw   = read_file( $config->{ignores} );
-my @ignore_split = grep( !/^[\ \t]*\#/, split( /\n/, $ignore_raw ) );
-my $ignores      = { info => [], debug => [], error => [], warning => [], critical => [] };
-foreach my $to_ignore (@ignore_split) {
-	my ( $ignore_level, $pattern ) = split( /[\ \t]/, $to_ignore, 2 );
+if ( -f $config->{ignores}) {
+	my @ignore_split = grep( !/^[\ \t]*\#/, split( /\n/, $ignore_raw ) );
+	my $ignores      = { info => [], debug => [], error => [], warning => [], critical => [] };
+	foreach my $to_ignore (@ignore_split) {
+		my ( $ignore_level, $pattern ) = split( /[\ \t]/, $to_ignore, 2 );
+	}
 }
 
 # put together the list of logs to read
