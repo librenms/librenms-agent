@@ -159,6 +159,7 @@ my $return_json = {
 		failed_analysis   => 0,
 		failed_processing => 0,
 		failed_reporting  => 0,
+		packages          => {},
 	},
 	error       => 0,
 	errorString => '',
@@ -288,9 +289,15 @@ while ( $process_logs && defined( $logs[$process_loop] ) ) {
 
 my $query;
 if ( $config->{dsn} =~ /^dbi:Mysql/ ) {
-	$query="select status,package from tasks where ( added_on > FROM_UNIXTIME('".$target_time."')) or ".
-	"( started_on > FROM_UNIXTIME('".$target_time."')) or ".
-	"( completed_on > FROM_UNIXTIME('".$target_time."')); ";
+	$query
+		= "select status,package from tasks where ( added_on > FROM_UNIXTIME('"
+		. $target_time
+		. "')) or "
+		. "( started_on > FROM_UNIXTIME('"
+		. $target_time
+		. "')) or "
+		. "( completed_on > FROM_UNIXTIME('"
+		. $target_time . "')); ";
 }
 else {
 	$query
@@ -324,6 +331,11 @@ eval {
 	while ( $sth->fetch ) {
 		if ( defined( $return_json->{data}->{$task_status} ) ) {
 			$return_json->{data}->{$task_status}++;
+		}
+		if ( defined( $return_json->{data}->{packages}->{$task_package} ) ) {
+			$return_json->{data}->{packages}->{$task_package}++;
+		}else {
+			$return_json->{data}->{packages}->{$task_package}=1;
 		}
 	}
 };
