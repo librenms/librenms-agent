@@ -140,7 +140,7 @@ while ( $process_logs && defined( $logs[$process_loop] ) ) {
 	while ( defined( my $log_line = $bw->readline ) && $continue ) {
 		$current_entry = $log_line . $current_entry;
 		if ( $current_entry
-			=~ /20[01][0-9][0-9]\-[01][0-9]\-[0-3][0-9]\ [0-2][0-9]\:[0-5][0-9]\:[0-5][0-9]\,[0-9]+\ \[[a-z-A-Z\.0-9]+\]\ [a-zA-Z]+\:/
+			=~ /^20[0-9][0-9]\-[01][0-9]\-[0-3][0-9]\ [0-2][0-9]\:[0-5][0-9]\:[0-5][0-9]\,[0-9]+\ \[[a-z-A-Z\.0-9]+\]\ [a-zA-Z]+\:/
 			)
 		{
 			# parse it and blank it for when we get to the next one.
@@ -156,6 +156,7 @@ while ( $process_logs && defined( $logs[$process_loop] ) ) {
 			}
 			else {
 				$level = lc($level);
+				$level =~ s/\://;
 				if ( defined( $level_check->{$level} ) ) {
 					my $add_it     = 1;
 					my $ignore_int = 0;
@@ -178,4 +179,3 @@ while ( $process_logs && defined( $logs[$process_loop] ) ) {
 }
 
 print encode_json($return_json)."\n";
-
