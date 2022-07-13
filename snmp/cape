@@ -1,5 +1,76 @@
 #!/usr/bin/env perl
 
+#Copyright (c) 2022, Zane C. Bowers-Hadley
+#All rights reserved.
+#
+#Redistribution and use in source and binary forms, with or without modification,
+#are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+#THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+#WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+#IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+#DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+#LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+#THE POSSIBILITY OF SUCH DAMAGE.
+
+=for comment
+
+Add this to snmpd.conf as below and restart snmpd.
+
+    extend cape /etc/snmp/extends/cape
+
+Supported command line options are as below.
+
+    -c <ini>     Config INI file.
+                 Default: /usr/local/etc/cape_extend.ini
+
+The defeault setttings are...
+
+    # DBI connection DSN
+	dsn=dbi:Pg:dbname=cape
+    # DB user
+	user=cape
+    # DB PW
+	pass=
+    # CAPEv2 cuckoo log file
+    clog=/opt/CAPEv2/log/cuckoo.log
+    # CAPEv2 process log file
+	plog=/opt/CAPEv2/log/process.log
+    # 0/1 for if it is okay for the process log to not exist
+    # this enables it to work with cuckoo as well as CAPEv2
+	mplogok=1
+    # list of ignores
+	ignores=/usr/local/etc/cape_extend.ignores
+    # send errors along for inclusion in the event log
+	sendErrors=1
+    # send criticals along for inclusion in the event log
+	sendCriticals=1
+    # send warnings along for inclusion in the event log
+	sendWarnings= 1
+
+The ignores file will only be used if it exists. The format is as below.
+
+    <ignore level> <pattern>
+
+This the ignore level will be lower cased. The seperator bween the level and
+the regexp pattern is /[\ \t]+/. So if you want to ignore the two warnings
+generated when VM traffic is dropped, you would use the two lines such as below.
+
+    WARNING PCAP file does not exist at path
+    WARNING Unable to Run Suricata: Pcap file
+
+=cut
+
 use strict;
 use warnings;
 use Getopt::Long;
@@ -143,11 +214,12 @@ my $process_logs = 1;
 while ( $process_logs && defined( $logs[$process_loop] ) ) {
 	my $log = $logs[$process_loop];
 
-	my $bw = File::ReadBackwards->new($log);
+	my $bw;
+	eval { $bw = File::ReadBackwards->new($log); };
 
 	my $continue      = 1;
 	my $current_entry = '';
-	while ( defined( my $log_line = $bw->readline ) && $continue ) {
+	while ( defined($bw) && defined( my $log_line = $bw->readline ) && $continue ) {
 		$current_entry = $log_line . $current_entry;
 		if ( $current_entry
 			=~ /^20[0-9][0-9]\-[01][0-9]\-[0-3][0-9]\ [0-2][0-9]\:[0-5][0-9]\:[0-5][0-9]\,[0-9]+\ \[[a-z-A-Z\.0-9\_\-]+\]\ [a-zA-Z]+\:/
