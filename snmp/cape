@@ -286,24 +286,32 @@ while ( $process_logs && defined( $logs[$process_loop] ) ) {
 	$process_loop++;
 }
 
-my $query
-	= "select status from tasks where ( added_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
-	. "( started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
-	. "( completed_on > CURRENT_TIMESTAMP - interval '5 minutes' )";
-if ( !$config->{cuckoosql} ) {
-	$query
-		= $query
-		. " or ( analysis_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
-		. "(analysis_finished_on  > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
-		. "( processing_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
-		. "( processing_finished_on  > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
-		. "( signatures_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
-		. "( signatures_finished_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
-		. "( reporting_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
-		. "( reporting_finished_on > CURRENT_TIMESTAMP - interval '5 minutes' );";
+my $query;
+if ( $config->{dsn} =~ /^dbi:Mysql/ ) {
+	$query="select status,package from tasks where ( added_on > FROM_UNIXTIME('".$target_time."')) or ".
+	"( started_on > FROM_UNIXTIME('".$target_time."')) or ".
+	"( completed_on > FROM_UNIXTIME('".$target_time."')); ";
 }
 else {
-	$query = $query . ';';
+	$query
+		= "select status,package from tasks where ( added_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+		. "( started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+		. "( completed_on > CURRENT_TIMESTAMP - interval '5 minutes' )";
+	if ( !$config->{cuckoosql} ) {
+		$query
+			= $query
+			. " or ( analysis_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+			. "(analysis_finished_on  > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+			. "( processing_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+			. "( processing_finished_on  > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+			. "( signatures_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+			. "( signatures_finished_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+			. "( reporting_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+			. "( reporting_finished_on > CURRENT_TIMESTAMP - interval '5 minutes' );";
+	}
+	else {
+		$query = $query . ';';
+	}
 }
 
 eval {
