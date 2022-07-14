@@ -141,25 +141,36 @@ my $target_time  = $current_time - 300;
 
 my $return_json = {
 	data => {
-		error             => 0,
-		errors            => [],
-		info              => 0,
-		debug             => 0,
-		warning           => 0,
-		warnigns          => [],
-		critical          => 0,
-		criticals         => [],
-		banned            => 0,
-		pending           => 0,
-		running           => 0,
-		completed         => 0,
-		distributed       => 0,
-		reported          => 0,
-		recovered         => 0,
-		failed_analysis   => 0,
-		failed_processing => 0,
-		failed_reporting  => 0,
-		packages          => {},
+		error                  => 0,
+		errors                 => [],
+		info                   => 0,
+		debug                  => 0,
+		warning                => 0,
+		warnigns               => [],
+		critical               => 0,
+		criticals              => [],
+		banned                 => 0,
+		pending                => 0,
+		running                => 0,
+		completed              => 0,
+		distributed            => 0,
+		reported               => 0,
+		recovered              => 0,
+		failed_analysis        => 0,
+		failed_processing      => 0,
+		failed_reporting       => 0,
+		packages               => {},
+		dropped_files          => 0,
+		running_processes      => 0,
+		api_calls              => 0,
+		domains                => 0,
+		signatures_total       => 0,
+		signatures_alert       => 0,
+		files_written          => 0,
+		registry_keys_modified => 0,
+		crash_issues           => 0,
+		anti_issues            => 0,
+		timedout               => 0,
 	},
 	error       => 0,
 	errorString => '',
@@ -301,7 +312,7 @@ if ( $config->{dsn} =~ /^[Dd][Bb][Ii]:[Mm]ysql/ ) {
 }
 else {
 	$query
-		= "select status,package from tasks where ( added_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+		= "select status,package,dropped_files,running_processes,api_calls,domains,signatures_total,signatures_alert,files_written,registry_keys_modified,crash_issues,anti_issues,timedout from tasks where ( added_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
 		. "( started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
 		. "( completed_on > CURRENT_TIMESTAMP - interval '5 minutes' )";
 	if ( !$config->{cuckoosql} ) {
@@ -327,15 +338,77 @@ eval {
 	$sth->execute;
 	my $task_status;
 	my $task_package;
-	$sth->bind_columns( undef, \$task_status, \$task_package );
-	while ( $sth->fetch ) {
-		if ( defined( $return_json->{data}->{$task_status} ) ) {
-			$return_json->{data}->{$task_status}++;
+	my $dropped_files;
+	my $running_processes;
+	my $api_calls;
+	my $domains;
+	my $signatures_total;
+	my $signatures_alert;
+	my $files_written;
+	my $registry_keys_modified;
+	my $crash_issues;
+	my $anti_issues;
+	my $timedout;
+
+	if ( $config->{dsn} =~ /^[Dd][Bb][Ii]:[Mm]ysql/ ) {
+		$sth->bind_columns( undef, \$task_status, \$task_package );
+		while ( $sth->fetch ) {
+			if ( defined( $return_json->{data}->{$task_status} ) ) {
+				$return_json->{data}->{$task_status}++;
+			}
+
+			# skip blank entries
+			if ( $task_package != '' ) {
+				if ( defined( $return_json->{data}->{packages}->{$task_package} ) ) {
+					$return_json->{data}->{packages}->{$task_package}++;
+				}
+				else {
+					$return_json->{data}->{packages}->{$task_package} = 1;
+				}
+			}
 		}
-		if ( defined( $return_json->{data}->{packages}->{$task_package} ) ) {
-			$return_json->{data}->{packages}->{$task_package}++;
-		}else {
-			$return_json->{data}->{packages}->{$task_package}=1;
+	}
+	else {
+		$sth->bind_columns(
+			undef,               \$task_status,   \$task_package,           \$dropped_files,
+			\$running_processes, \$api_calls,     \$domains,                \$signatures_total,
+			\$signatures_alert,  \$files_written, \$registry_keys_modified, \$crash_issues,
+			\$anti_issues,       \$timedout
+		);
+		while ( $sth->fetch ) {
+			if ( defined( $return_json->{data}->{$task_status} ) ) {
+				$return_json->{data}->{$task_status}++;
+			}
+
+			# skip blank entries
+			if ( $task_package != '' ) {
+				if ( defined( $return_json->{data}->{packages}->{$task_package} ) ) {
+					$return_json->{data}->{packages}->{$task_package}++;
+				}
+				else {
+					$return_json->{data}->{packages}->{$task_package} = 1;
+				}
+			}
+
+			# if dropped files is defined and not blank, the rest will
+			# if this is blank then runstatistics is conf/reporting.conf
+			if ( defined($dropped_files) ) {
+				$return_json->{data}->{dropped_files}          += $dropped_files;
+				$return_json->{data}->{running_processes}      += $running_processes;
+				$return_json->{data}->{api_calls}              += $api_calls;
+				$return_json->{data}->{domains}                += $domains;
+				$return_json->{data}->{signatures_total}       += $signatures_total;
+				$return_json->{data}->{signatures_alert}       += $signatures_alert;
+				$return_json->{data}->{files_written}          += $files_written;
+				$return_json->{data}->{registry_keys_modified} += $registry_keys_modified;
+				$return_json->{data}->{crash_issues}           += $crash_issues;
+				$return_json->{data}->{anti_issues}            += $anti_issues;
+			}
+
+			# timedout value is not a perl boolean
+			if ( $timedout =~ /^[Ff]/ ) {
+				$return_json->{data}->{timedout}++;
+			}
 		}
 	}
 };
