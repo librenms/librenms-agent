@@ -356,7 +356,7 @@ eval {
 	# CAPEv2 does not really play nice with it because of column issues
 	#
 	if ( $config->{dsn} =~ /^[Dd][Bb][Ii]:[Mm]ysql/ ) {
-		$sth->bind_columns( undef, \$task_status );
+		$sth->bind_columns( undef, \$task_status, $task_package );
 		while ( $sth->fetch ) {
 			if ( defined( $return_json->{data}->{$task_status} ) ) {
 				$return_json->{data}->{$task_status}++;
