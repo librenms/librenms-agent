@@ -351,7 +351,6 @@ eval {
 	my $crash_issues;
 	my $anti_issues;
 	my $timedout;
-	my @pkgs;
 	#
 	# MySQL is basically for old Cuckoo support.
 	# CAPEv2 does not really play nice with it because of column issues
@@ -379,14 +378,13 @@ eval {
 			}
 
 			# skip blank entries
-			if ( $task_package != '' ) {
+			if ( $task_package ne '' ) {
 				if ( defined( $return_json->{data}->{packages}->{$task_package} ) ) {
 					$return_json->{data}->{packages}->{$task_package}++;
 				}
 				else {
 					$return_json->{data}->{packages}->{$task_package} = 1;
 				}
-				push(@pkgs, $task_package);
 			}
 
 			# if dropped files is defined and not blank, the rest will
@@ -404,7 +402,7 @@ eval {
 				$return_json->{data}->{anti_issues}            += $anti_issues;
 
 				# put per package stats together
-				if ( $task_package != '' ) {
+				if ( $task_package ne '' ) {
 					if ( !defined( $return_json->{data}->{pkg_stats}->{$task_package} ) ) {
 						$return_json->{data}->{pkg_stats}->{$task_package} = {
 							dropped_files          => $dropped_files,
