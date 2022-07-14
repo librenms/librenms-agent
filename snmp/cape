@@ -1,0 +1,448 @@
+#!/usr/bin/env perl
+
+#Copyright (c) 2022, Zane C. Bowers-Hadley
+#All rights reserved.
+#
+#Redistribution and use in source and binary forms, with or without modification,
+#are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+#THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+#WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+#IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+#DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+#LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+#THE POSSIBILITY OF SUCH DAMAGE.
+
+=for comment
+
+Add this to snmpd.conf as below and restart snmpd.
+
+    extend cape /etc/snmp/extends/cape
+
+Supported command line options are as below.
+
+    -c <ini>     Config INI file.
+                 Default: /usr/local/etc/cape_extend.ini
+
+The defeault setttings are...
+
+    # DBI connection DSN
+	dsn=dbi:Pg:dbname=cape
+    
+    # DB user
+	user=cape
+    
+    # DB PW
+	pass=
+    
+    # CAPEv2 cuckoo log file
+    clog=/opt/CAPEv2/log/cuckoo.log
+    
+    # CAPEv2 process log file
+	plog=/opt/CAPEv2/log/process.log
+    
+    # 0/1 for if it is okay for the process log to not exist
+    # this enables it to work with cuckoo as well as CAPEv2
+	mplogok=1
+    
+    # list of ignores
+	ignores=/usr/local/etc/cape_extend.ignores
+    
+    # send errors along for inclusion in the event log
+	sendErrors=1
+    
+    # send criticals along for inclusion in the event log
+	sendCriticals=1
+    
+    # send warnings along for inclusion in the event log
+	sendWarnings= 1
+    
+    # don't use analysis_started_on. analysis_finished_on. processing_started_on,
+    # processing_finished_on, signatures_started_on, signatures_finished_on,
+    # reporting_started_on, or reporting_finished_on with the SQL statement
+    #
+    # This is specifically for supporting ancient cuckoo instances.
+    cuckoosql=0
+
+The ignores file will only be used if it exists. The format is as below.
+
+    <ignore level> <pattern>
+
+This the ignore level will be lower cased. The seperator bween the level and
+the regexp pattern is /[\ \t]+/. So if you want to ignore the two warnings
+generated when VM traffic is dropped, you would use the two lines such as below.
+
+    WARNING PCAP file does not exist at path
+    WARNING Unable to Run Suricata: Pcap file
+
+=cut
+
+use strict;
+use warnings;
+use Getopt::Long;
+use File::ReadBackwards;
+use JSON;
+use Config::Tiny;
+use DBI;
+use Time::Piece;
+use File::Slurp;
+
+sub version {
+	print "cape v. 0.0.1\n";
+}
+
+sub help {
+	&version;
+
+	print '
+
+-c <ini>     Config INI file.
+             Default: /usr/local/etc/cape_extend.ini
+';
+}
+
+# get the commandline options
+my $help     = 0;
+my $version  = 0;
+my $ini_file = '/usr/local/etc/cape_extend.ini';
+Getopt::Long::Configure('no_ignore_case');
+Getopt::Long::Configure('bundling');
+GetOptions(
+	'version' => \$version,
+	'v'       => \$version,
+	'help'    => \$help,
+	'h'       => \$help,
+	'i=s'     => \$ini_file,
+);
+
+# print version or help if requested
+if ($help) {
+	&help;
+	exit 42;
+}
+if ($version) {
+	&version;
+	exit 42;
+}
+
+# time
+my $current_time = time;
+my $target_time  = $current_time - 300;
+
+my $return_json = {
+	data => {
+		error                  => 0,
+		errors                 => [],
+		info                   => 0,
+		debug                  => 0,
+		warning                => 0,
+		warnigns               => [],
+		critical               => 0,
+		criticals              => [],
+		banned                 => 0,
+		pending                => 0,
+		running                => 0,
+		completed              => 0,
+		distributed            => 0,
+		reported               => 0,
+		recovered              => 0,
+		failed_analysis        => 0,
+		failed_processing      => 0,
+		failed_reporting       => 0,
+		packages               => {},
+		dropped_files          => 0,
+		running_processes      => 0,
+		api_calls              => 0,
+		domains                => 0,
+		signatures_total       => 0,
+		signatures_alert       => 0,
+		files_written          => 0,
+		registry_keys_modified => 0,
+		crash_issues           => 0,
+		anti_issues            => 0,
+		timedout               => 0,
+		pkg_stats              => {},
+		total_tasks            => 0,
+	},
+	error       => 0,
+	errorString => '',
+	version     => 1,
+};
+
+# used for checking if the level value is somethingw understand
+my $level_check = { info => 1, debug => 1, error => 1, warning => 1, critical => 1 };
+
+# read the config and put together the defaults
+my $defaults = {
+	dsn           => 'dbi:Pg:dbname=cape',
+	user          => 'cape',
+	pass          => '',
+	clog          => '/opt/CAPEv2/log/cuckoo.log',
+	plog          => '/opt/CAPEv2/log/process.log',
+	mplogok       => 1,
+	ignores       => '/usr/local/etc/cape_extend.ignores',
+	sendErrors    => 1,
+	sendCriticals => 1,
+	sendWarnings  => 1,
+	cuckoosql     => 0,
+};
+my $config = Config::Tiny->read( $ini_file, 'utf8' );
+if ( !defined($config) ) {
+	$config = $defaults;
+}
+else {
+	$config = $config->{_};
+
+	# reel in the defaults
+	foreach my $default_key ( keys( %{$defaults} ) ) {
+		if ( !defined( $config->{$default_key} ) ) {
+			$config->{$default_key} = $defaults->{$default_key};
+		}
+	}
+}
+
+# read in the ignore file
+my $ignores = { info => [], debug => [], error => [], warning => [], critical => [] };
+if ( -f $config->{ignores} ) {
+	my $ignore_raw   = read_file( $config->{ignores} );
+	my @ignore_split = grep( !/^[\ \t]*$/, grep( !/^[\ \t]*\#/, split( /\n/, $ignore_raw ) ) );
+	foreach my $to_ignore (@ignore_split) {
+		my ( $ignore_level, $pattern ) = split( /[\ \t]+/, $to_ignore, 2 );
+		if ( defined($ignore_level) and defined($pattern) ) {
+			$ignore_level = lc($ignore_level);
+			push( @{ $ignores->{$ignore_level} }, $pattern );
+		}
+	}
+}
+
+# put together the list of logs to read
+my @logs;
+if ( !-f $config->{clog} ) {
+	$return_json->{error} = '"' . $defaults->{clog} . '" does not exist';
+}
+else {
+	push( @logs, $config->{clog} );
+}
+if ( !-f $config->{plog} && !$config->{mplogok} ) {
+	$return_json->{error} = '"' . $defaults->{clog} . '" does not exist';
+}
+else {
+	push( @logs, $config->{plog} );
+}
+
+my $process_loop = 0;
+my $process_logs = 1;
+while ( $process_logs && defined( $logs[$process_loop] ) ) {
+	my $log = $logs[$process_loop];
+
+	my $bw;
+	eval { $bw = File::ReadBackwards->new($log); };
+
+	my $continue      = 1;
+	my $current_entry = '';
+	while ( defined($bw) && defined( my $log_line = $bw->readline ) && $continue ) {
+		$current_entry = $log_line . $current_entry;
+		if ( $current_entry
+			=~ /^20[0-9][0-9]\-[01][0-9]\-[0-3][0-9]\ [0-2][0-9]\:[0-5][0-9]\:[0-5][0-9]\,[0-9]+\ \[[a-z-A-Z\.0-9\_\-]+\]\ [a-zA-Z]+\:/
+			)
+		{
+			# parse it and blank it for when we get to the next one.
+			my ( $date, $time, $lib, $level, $entry ) = split( /[\ \t]+/, $current_entry, 5 );
+			$current_entry = '';
+
+			# chomp off the seconds place after the ,
+			$time =~ s/\,.*//;
+			my $t = Time::Piece->strptime( $date . 'T' . $time, '%Y-%m-%dT%H:%M:%S' );
+
+			if ( $t->epoch <= $target_time ) {
+				$continue = 0;
+			}
+			else {
+				$level = lc($level);
+				$level =~ s/\://;
+				if ( defined( $level_check->{$level} ) ) {
+					my $add_it     = 1;
+					my $ignore_int = 0;
+					foreach ( @{ $ignores->{$level} } ) {
+						my $test = $_;
+						if ( $entry =~ /$test/ ) {
+							$add_it = 0;
+						}
+						$ignore_int++;
+					}
+					if ($add_it) {
+						$return_json->{data}->{$level}++;
+						if ( $level eq 'error' and $config->{sendErrors} ) {
+							push( @{ $return_json->{data}->{errors} }, $entry );
+						}
+						elsif ( $level eq 'warning' and $config->{sendWarnings} ) {
+							push( @{ $return_json->{data}->{warnings} }, $entry );
+						}
+						elsif ( $level eq 'criticals' and $config->{sendCriticals} ) {
+							push( @{ $return_json->{data}->{criticals} }, $entry );
+						}
+					}
+				}
+			}
+		}
+	}
+
+	$process_loop++;
+}
+
+my $query;
+if ( $config->{dsn} =~ /^[Dd][Bb][Ii]:[Mm]ysql/ ) {
+	$query
+		= "select status,package from tasks where ( added_on > FROM_UNIXTIME('"
+		. $target_time
+		. "')) or "
+		. "( started_on > FROM_UNIXTIME('"
+		. $target_time
+		. "')) or "
+		. "( completed_on > FROM_UNIXTIME('"
+		. $target_time . "')); ";
+}
+else {
+	$query
+		= "select status,package,dropped_files,running_processes,api_calls,domains,signatures_total,signatures_alert,files_written,registry_keys_modified,crash_issues,anti_issues,timedout from tasks where ( added_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+		. "( started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+		. "( completed_on > CURRENT_TIMESTAMP - interval '5 minutes' )";
+	if ( !$config->{cuckoosql} ) {
+		$query
+			= $query
+			. " or ( analysis_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+			. "(analysis_finished_on  > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+			. "( processing_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+			. "( processing_finished_on  > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+			. "( signatures_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+			. "( signatures_finished_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+			. "( reporting_started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+			. "( reporting_finished_on > CURRENT_TIMESTAMP - interval '5 minutes' );";
+	}
+	else {
+		$query = $query . ';';
+	}
+}
+
+eval {
+	my $dbh = DBI->connect( $config->{dsn}, $config->{user}, $config->{pass} ) || die($DBI::errstr);
+	my $sth = $dbh->prepare($query);
+	$sth->execute;
+	my $task_status;
+	my $task_package;
+	my $dropped_files;
+	my $running_processes;
+	my $api_calls;
+	my $domains;
+	my $signatures_total;
+	my $signatures_alert;
+	my $files_written;
+	my $registry_keys_modified;
+	my $crash_issues;
+	my $anti_issues;
+	my $timedout;
+	#
+	# MySQL is basically for old Cuckoo support.
+	# CAPEv2 does not really play nice with it because of column issues
+	#
+	if ( $config->{dsn} =~ /^[Dd][Bb][Ii]:[Mm]ysql/ ) {
+		$sth->bind_columns( undef, \$task_status, \$task_package );
+		while ( $sth->fetch ) {
+			if ( defined( $return_json->{data}->{$task_status} ) ) {
+				$return_json->{data}->{$task_status}++;
+				$return_json->{data}->{total_tasks}++;
+			}
+		}
+	}
+	else {
+		$sth->bind_columns(
+			undef,               \$task_status,   \$task_package,           \$dropped_files,
+			\$running_processes, \$api_calls,     \$domains,                \$signatures_total,
+			\$signatures_alert,  \$files_written, \$registry_keys_modified, \$crash_issues,
+			\$anti_issues,       \$timedout
+		);
+		while ( $sth->fetch ) {
+			if ( defined( $return_json->{data}->{$task_status} ) ) {
+				$return_json->{data}->{$task_status}++;
+				$return_json->{data}->{total_tasks}++;
+			}
+
+			# skip blank entries
+			if ( $task_package ne '' ) {
+				if ( defined( $return_json->{data}->{packages}->{$task_package} ) ) {
+					$return_json->{data}->{packages}->{$task_package}++;
+				}
+				else {
+					$return_json->{data}->{packages}->{$task_package} = 1;
+				}
+			}
+
+			# if dropped files is defined and not blank, the rest will
+			# if this is blank then runstatistics is conf/reporting.conf
+			if ( defined($dropped_files) ) {
+				$return_json->{data}->{dropped_files}          += $dropped_files;
+				$return_json->{data}->{running_processes}      += $running_processes;
+				$return_json->{data}->{api_calls}              += $api_calls;
+				$return_json->{data}->{domains}                += $domains;
+				$return_json->{data}->{signatures_total}       += $signatures_total;
+				$return_json->{data}->{signatures_alert}       += $signatures_alert;
+				$return_json->{data}->{files_written}          += $files_written;
+				$return_json->{data}->{registry_keys_modified} += $registry_keys_modified;
+				$return_json->{data}->{crash_issues}           += $crash_issues;
+				$return_json->{data}->{anti_issues}            += $anti_issues;
+
+				# put per package stats together
+				if ( $task_package ne '' ) {
+					if ( !defined( $return_json->{data}->{pkg_stats}->{$task_package} ) ) {
+						$return_json->{data}->{pkg_stats}->{$task_package} = {
+							dropped_files          => $dropped_files,
+							running_processes      => $running_processes,
+							api_calls              => $api_calls,
+							domains                => $domains,
+							signatures_total       => $signatures_total,
+							signatures_alert       => $signatures_alert,
+							files_written          => $files_written,
+							registry_keys_modified => $registry_keys_modified,
+							crash_issues           => $crash_issues,
+							anti_issues            => $anti_issues
+						};
+					}
+					else {
+						$return_json->{data}->{pkg_stats}->{$task_package}->{dropped_files}     += $dropped_files;
+						$return_json->{data}->{pkg_stats}->{$task_package}->{running_processes} += $running_processes;
+						$return_json->{data}->{pkg_stats}->{$task_package}->{api_calls}         += $api_calls;
+						$return_json->{data}->{pkg_stats}->{$task_package}->{domains}           += $domains;
+						$return_json->{data}->{pkg_stats}->{$task_package}->{signatures_total}  += $signatures_total;
+						$return_json->{data}->{pkg_stats}->{$task_package}->{signatures_alert}  += $signatures_alert;
+						$return_json->{data}->{pkg_stats}->{$task_package}->{files_written}     += $files_written;
+						$return_json->{data}->{pkg_stats}->{$task_package}->{registry_keys_modified}
+							+= $registry_keys_modified;
+						$return_json->{data}->{pkg_stats}->{$task_package}->{crash_issues} += $crash_issues;
+						$return_json->{data}->{pkg_stats}->{$task_package}->{anti_issues}  += $anti_issues;
+					}
+				}
+			}
+
+			# timedout value is not a perl boolean
+			if ( $timedout =~ /^[Ff]/ ) {
+				$return_json->{data}->{timedout}++;
+			}
+		}
+	}
+};
+if ($@) {
+	$return_json->{error}       = 2;
+	$return_json->{errorString} = $return_json->{errorString} . ' SQL error: ' . $@;
+}
+
+print encode_json($return_json) . "\n";
