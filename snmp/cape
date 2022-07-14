@@ -171,6 +171,8 @@ my $return_json = {
 		crash_issues           => 0,
 		anti_issues            => 0,
 		timedout               => 0,
+		pkg_stats              => {},
+		total_tasks            => 0,
 	},
 	error       => 0,
 	errorString => '',
@@ -349,22 +351,17 @@ eval {
 	my $crash_issues;
 	my $anti_issues;
 	my $timedout;
-
+	my @pkgs;
+	#
+	# MySQL is basically for old Cuckoo support.
+	# CAPEv2 does not really play nice with it because of column issues
+	#
 	if ( $config->{dsn} =~ /^[Dd][Bb][Ii]:[Mm]ysql/ ) {
-		$sth->bind_columns( undef, \$task_status, \$task_package );
+		$sth->bind_columns( undef, \$task_status );
 		while ( $sth->fetch ) {
 			if ( defined( $return_json->{data}->{$task_status} ) ) {
 				$return_json->{data}->{$task_status}++;
-			}
-
-			# skip blank entries
-			if ( $task_package != '' ) {
-				if ( defined( $return_json->{data}->{packages}->{$task_package} ) ) {
-					$return_json->{data}->{packages}->{$task_package}++;
-				}
-				else {
-					$return_json->{data}->{packages}->{$task_package} = 1;
-				}
+				$return_json->{data}->{total_tasks}++;
 			}
 		}
 	}
@@ -378,6 +375,7 @@ eval {
 		while ( $sth->fetch ) {
 			if ( defined( $return_json->{data}->{$task_status} ) ) {
 				$return_json->{data}->{$task_status}++;
+				$return_json->{data}->{total_tasks}++;
 			}
 
 			# skip blank entries
@@ -388,6 +386,7 @@ eval {
 				else {
 					$return_json->{data}->{packages}->{$task_package} = 1;
 				}
+				push(@pkgs, $task_package);
 			}
 
 			# if dropped files is defined and not blank, the rest will
@@ -403,6 +402,37 @@ eval {
 				$return_json->{data}->{registry_keys_modified} += $registry_keys_modified;
 				$return_json->{data}->{crash_issues}           += $crash_issues;
 				$return_json->{data}->{anti_issues}            += $anti_issues;
+
+				# put per package stats together
+				if ( $task_package != '' ) {
+					if ( !defined( $return_json->{data}->{pkg_stats}->{$task_package} ) ) {
+						$return_json->{data}->{pkg_stats}->{$task_package} = {
+							dropped_files          => $dropped_files,
+							running_processes      => $running_processes,
+							api_calls              => $api_calls,
+							domains                => $domains,
+							signatures_total       => $signatures_total,
+							signatures_alert       => $signatures_alert,
+							files_written          => $files_written,
+							registry_keys_modified => $registry_keys_modified,
+							crash_issues           => $crash_issues,
+							anti_issues            => $anti_issues
+						};
+					}
+					else {
+						$return_json->{data}->{pkg_stats}->{$task_package}->{dropped_files}     += $dropped_files;
+						$return_json->{data}->{pkg_stats}->{$task_package}->{running_processes} += $running_processes;
+						$return_json->{data}->{pkg_stats}->{$task_package}->{api_calls}         += $api_calls;
+						$return_json->{data}->{pkg_stats}->{$task_package}->{domains}           += $domains;
+						$return_json->{data}->{pkg_stats}->{$task_package}->{signatures_total}  += $signatures_total;
+						$return_json->{data}->{pkg_stats}->{$task_package}->{signatures_alert}  += $signatures_alert;
+						$return_json->{data}->{pkg_stats}->{$task_package}->{files_written}     += $files_written;
+						$return_json->{data}->{pkg_stats}->{$task_package}->{registry_keys_modified}
+							+= $registry_keys_modified;
+						$return_json->{data}->{pkg_stats}->{$task_package}->{crash_issues} += $crash_issues;
+						$return_json->{data}->{pkg_stats}->{$task_package}->{anti_issues}  += $anti_issues;
+					}
+				}
 			}
 
 			# timedout value is not a perl boolean
@@ -410,6 +440,36 @@ eval {
 				$return_json->{data}->{timedout}++;
 			}
 		}
+
+		#
+		# average each each status package
+		#
+		my @to_avg = [
+			'dropped_files',          'running_processes', 'api_calls',     'domains',
+			'signatures_total',       'signatures_alert',  'files_written', 'files_written',
+			'registry_keys_modified', 'crash_issues',      'anti_issues'
+		];
+
+		foreach my $current_stat (@to_avg) {
+			if ($return_json->{data}->{$current_stat} > 0) {
+				$return_json->{data}->{'avg.'.$current_stat} = $return_json->{data}->{$current_stat} / $return_json->{data}->{total_tasks}
+			}else {
+				$return_json->{data}->{'avg.'.$current_stat} = 0;
+			}
+		}
+
+		foreach my $pkg (@pkgs) {
+			if (defined($return_json->{data}->{pkg_stats}->{$pkg})) {
+				foreach my $current_stat (@to_avg) {
+					if ($return_json->{data}->{pkg_stats}->{$pkg}->{$current_stat} > 0) {
+						$return_json->{data}->{pkg_stats}->{$pkg}->{'avg.'.$current_stat} = $return_json->{data}->{pkg_stats}->{$pkg}->{'avg.'.$current_stat} / $return_json->{data}->{packages}->{$current_stat};
+					}else {
+						$return_json->{data}->{pkg_stats}->{$pkg}->{'avg.'.$current_stat}=0;
+					}
+				}
+			}
+		}
+
 	}
 };
 if ($@) {
