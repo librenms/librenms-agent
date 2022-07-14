@@ -440,36 +440,6 @@ eval {
 				$return_json->{data}->{timedout}++;
 			}
 		}
-
-		#
-		# average each each status package
-		#
-		my @to_avg = [
-			'dropped_files',          'running_processes', 'api_calls',     'domains',
-			'signatures_total',       'signatures_alert',  'files_written', 'files_written',
-			'registry_keys_modified', 'crash_issues',      'anti_issues'
-		];
-
-		foreach my $current_stat (@to_avg) {
-			if ($return_json->{data}->{$current_stat} > 0) {
-				$return_json->{data}->{'avg.'.$current_stat} = $return_json->{data}->{$current_stat} / $return_json->{data}->{total_tasks}
-			}else {
-				$return_json->{data}->{'avg.'.$current_stat} = 0;
-			}
-		}
-
-		foreach my $pkg (@pkgs) {
-			if (defined($return_json->{data}->{pkg_stats}->{$pkg})) {
-				foreach my $current_stat (@to_avg) {
-					if ($return_json->{data}->{pkg_stats}->{$pkg}->{$current_stat} > 0) {
-						$return_json->{data}->{pkg_stats}->{$pkg}->{'avg.'.$current_stat} = $return_json->{data}->{pkg_stats}->{$pkg}->{'avg.'.$current_stat} / $return_json->{data}->{packages}->{$current_stat};
-					}else {
-						$return_json->{data}->{pkg_stats}->{$pkg}->{'avg.'.$current_stat}=0;
-					}
-				}
-			}
-		}
-
 	}
 };
 if ($@) {
