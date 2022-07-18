@@ -96,6 +96,7 @@ use Config::Tiny;
 use DBI;
 use Time::Piece;
 use File::Slurp;
+use Statistics::Lite qw(:all);
 
 sub version {
 	print "cape v. 0.0.1\n";
@@ -178,6 +179,34 @@ my $return_json = {
 	errorString => '',
 	version     => 1,
 };
+
+my @stats_for=(
+			   'dropped_files',
+			   'running_processes',
+			   'api_calls',
+			   'domains',
+			   'signatures_total',
+			   'signatures_alert',
+			   'files_written',
+			   'registry_keys_modified',
+			   'crash_issues',
+			   'anti_issues',
+			   );
+
+my $ag_stats = {
+	dropped_files          => [],
+	running_processes      => [],
+	api_calls              => [],
+	domains                => [],
+	signatures_total       => [],
+	signatures_alert       => [],
+	files_written          => [],
+	registry_keys_modified => [],
+	crash_issues           => [],
+	anti_issues            => [],
+	};
+
+my $pkg_stats = {};
 
 # used for checking if the level value is somethingw understand
 my $level_check = { info => 1, debug => 1, error => 1, warning => 1, critical => 1 };
@@ -443,6 +472,33 @@ eval {
 if ($@) {
 	$return_json->{error}       = 2;
 	$return_json->{errorString} = $return_json->{errorString} . ' SQL error: ' . $@;
+}
+
+foreach my $current_entry (@stats_for) {
+	if ($#{ $ag_stats->{$current_entry} } > 0) {
+		$return_json->{data}{'min.'.$current_entry}=min( $ag_stats->{$current_entry} );
+		$return_json->{data}{'max.'.$current_entry}=max( $ag_stats->{$current_entry} );
+		$return_json->{data}{'range.'.$current_entry}=range( $ag_stats->{$current_entry} );;
+		$return_json->{data}{'mean.'.$current_entry}=mean( $ag_stats->{$current_entry} );;
+		$return_json->{data}{'median.'.$current_entry}=median( $ag_stats->{$current_entry} );
+		$return_json->{data}{'mode.'.$current_entry}=mode( $ag_stats->{$current_entry} );
+		$return_json->{data}{'v.'.$current_entry}=variance( $ag_stats->{$current_entry} );
+		$return_json->{data}{'sd.'.$current_entry}=stddev( $ag_stats->{$current_entry} );
+		$return_json->{data}{'vp.'.$current_entry}=variancep( $ag_stats->{$current_entry} );
+		$return_json->{data}{'sdp.'.$current_entry}=stddevp( $ag_stats->{$current_entry} );
+	}else {
+		$return_json->{data}{'min.'.$current_entry}=0;
+		$return_json->{data}{'max.'.$current_entry}=0;
+		$return_json->{data}{'range.'.$current_entry}=0;
+		$return_json->{data}{'mean.'.$current_entry}=0;
+		$return_json->{data}{'median.'.$current_entry}=0;
+		$return_json->{data}{'mode.'.$current_entry}=0;
+		$return_json->{data}{'v.'.$current_entry}=0;
+		$return_json->{data}{'sd.'.$current_entry}=0;
+		$return_json->{data}{'vp.'.$current_entry}=0;
+		$return_json->{data}{'sdp.'.$current_entry}=0;
+	}
+
 }
 
 print encode_json($return_json) . "\n";
