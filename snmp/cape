@@ -487,16 +487,16 @@ if ($@) {
 
 foreach my $current_entry (@stats_for) {
 	if ($#{ $ag_stats->{$current_entry} } > 0) {
-		$return_json->{data}{'min.'.$current_entry}=min( $ag_stats->{$current_entry} );
-		$return_json->{data}{'max.'.$current_entry}=max( $ag_stats->{$current_entry} );
-		$return_json->{data}{'range.'.$current_entry}=range( $ag_stats->{$current_entry} );;
-		$return_json->{data}{'mean.'.$current_entry}=mean( $ag_stats->{$current_entry} );;
-		$return_json->{data}{'median.'.$current_entry}=median( $ag_stats->{$current_entry} );
-		$return_json->{data}{'mode.'.$current_entry}=mode( $ag_stats->{$current_entry} );
-		$return_json->{data}{'v.'.$current_entry}=variance( $ag_stats->{$current_entry} );
-		$return_json->{data}{'sd.'.$current_entry}=stddev( $ag_stats->{$current_entry} );
-		$return_json->{data}{'vp.'.$current_entry}=variancep( $ag_stats->{$current_entry} );
-		$return_json->{data}{'sdp.'.$current_entry}=stddevp( $ag_stats->{$current_entry} );
+		$return_json->{data}{'min.'.$current_entry}=min( @{$ag_stats->{$current_entry} });
+		$return_json->{data}{'max.'.$current_entry}=max( @{$ag_stats->{$current_entry}} );
+		$return_json->{data}{'range.'.$current_entry}=range( @{$ag_stats->{$current_entry}} );;
+		$return_json->{data}{'mean.'.$current_entry}=mean( @{$ag_stats->{$current_entry}} );;
+		$return_json->{data}{'median.'.$current_entry}=median( @{$ag_stats->{$current_entry}} );
+		$return_json->{data}{'mode.'.$current_entry}=mode( @{$ag_stats->{$current_entry}} );
+		$return_json->{data}{'v.'.$current_entry}=variance( @{$ag_stats->{$current_entry}} );
+		$return_json->{data}{'sd.'.$current_entry}=stddev( @{$ag_stats->{$current_entry} });
+		$return_json->{data}{'vp.'.$current_entry}=variancep( @{$ag_stats->{$current_entry}} );
+		$return_json->{data}{'sdp.'.$current_entry}=stddevp( @{$ag_stats->{$current_entry}} );
 	}else {
 		$return_json->{data}{'min.'.$current_entry}=0;
 		$return_json->{data}{'max.'.$current_entry}=0;
