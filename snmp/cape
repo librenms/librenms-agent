@@ -96,6 +96,7 @@ use Config::Tiny;
 use DBI;
 use Time::Piece;
 use File::Slurp;
+use Statistics::Lite qw(:all);
 
 sub version {
 	print "cape v. 0.0.1\n";
@@ -178,6 +179,27 @@ my $return_json = {
 	errorString => '',
 	version     => 1,
 };
+
+my @stats_for = (
+	'dropped_files',    'running_processes', 'api_calls',     'domains',
+	'signatures_total', 'signatures_alert',  'files_written', 'registry_keys_modified',
+	'crash_issues',     'anti_issues',
+);
+
+my $ag_stats = {
+	dropped_files          => [],
+	running_processes      => [],
+	api_calls              => [],
+	domains                => [],
+	signatures_total       => [],
+	signatures_alert       => [],
+	files_written          => [],
+	registry_keys_modified => [],
+	crash_issues           => [],
+	anti_issues            => [],
+};
+
+my $pkg_stats = {};
 
 # used for checking if the level value is somethingw understand
 my $level_check = { info => 1, debug => 1, error => 1, warning => 1, critical => 1 };
@@ -387,19 +409,57 @@ eval {
 				}
 			}
 
-			# if dropped files is defined and not blank, the rest will
-			# if this is blank then runstatistics is conf/reporting.conf
-			if ( defined($dropped_files) ) {
-				$return_json->{data}->{dropped_files}          += $dropped_files;
-				$return_json->{data}->{running_processes}      += $running_processes;
-				$return_json->{data}->{api_calls}              += $api_calls;
-				$return_json->{data}->{domains}                += $domains;
-				$return_json->{data}->{signatures_total}       += $signatures_total;
-				$return_json->{data}->{signatures_alert}       += $signatures_alert;
-				$return_json->{data}->{files_written}          += $files_written;
+			if ( defined($running_processes) ) {
+				$return_json->{data}->{running_processes} += $running_processes;
+				push( @{ $ag_stats->{running_processes} }, $running_processes );
+			}
+			else {
+
+			}
+
+			if ( defined($api_calls) ) {
+				$return_json->{data}->{api_calls} += $api_calls;
+				push( @{ $ag_stats->{api_calls} }, $api_calls );
+			}
+
+			if ( defined($domains) ) {
+				$return_json->{data}->{domains} += $domains;
+				push( @{ $ag_stats->{domains} }, $domains );
+			}
+
+			if ( defined($signatures_alert) ) {
+				$return_json->{data}->{signatures_alert} += $signatures_alert;
+				push( @{ $ag_stats->{signatures_alert} }, $signatures_alert );
+			}
+
+			if ( defined($signatures_total) ) {
+				$return_json->{data}->{signatures_total} += $signatures_total;
+				push( @{ $ag_stats->{signatures_total} }, $signatures_total );
+			}
+
+			if ( defined($files_written) ) {
+				$return_json->{data}->{files_written} += $files_written;
+				push( @{ $ag_stats->{files_written} }, $files_written );
+			}
+
+			if ( defined($registry_keys_modified) ) {
 				$return_json->{data}->{registry_keys_modified} += $registry_keys_modified;
-				$return_json->{data}->{crash_issues}           += $crash_issues;
-				$return_json->{data}->{anti_issues}            += $anti_issues;
+				push( @{ $ag_stats->{registry_keys_modified} }, $registry_keys_modified );
+			}
+
+			if ( defined($crash_issues) ) {
+				$return_json->{data}->{crash_issues} += $crash_issues;
+				push( @{ $ag_stats->{crash_issues} }, $crash_issues );
+			}
+
+			if ( defined($anti_issues) ) {
+				$return_json->{data}->{anti_issues} += $anti_issues;
+				push( @{ $ag_stats->{anti_issues} }, $anti_issues );
+			}
+
+			if ( defined($dropped_files) ) {
+				$return_json->{data}->{dropped_files} += $dropped_files;
+				push( @{ $ag_stats->{dropped_files} }, $dropped_files );
 
 				# put per package stats together
 				if ( $task_package ne '' ) {
@@ -416,6 +476,18 @@ eval {
 							crash_issues           => $crash_issues,
 							anti_issues            => $anti_issues
 						};
+						$pkg_stats->{$task_package} = {
+							dropped_files          => [$dropped_files],
+							running_processes      => [$running_processes],
+							api_calls              => [$api_calls],
+							domains                => [$domains],
+							signatures_total       => [$signatures_total],
+							signatures_alert       => [$signatures_alert],
+							files_written          => [$files_written],
+							registry_keys_modified => [$registry_keys_modified],
+							crash_issues           => [$crash_issues],
+							anti_issues            => [$anti_issues]
+						};
 					}
 					else {
 						$return_json->{data}->{pkg_stats}->{$task_package}->{dropped_files}     += $dropped_files;
@@ -429,6 +501,17 @@ eval {
 							+= $registry_keys_modified;
 						$return_json->{data}->{pkg_stats}->{$task_package}->{crash_issues} += $crash_issues;
 						$return_json->{data}->{pkg_stats}->{$task_package}->{anti_issues}  += $anti_issues;
+
+						push( @{ $pkg_stats->{$task_package}->{dropped_files} },          $dropped_files );
+						push( @{ $pkg_stats->{$task_package}->{running_processes} },      $running_processes );
+						push( @{ $pkg_stats->{$task_package}->{api_calls} },              $api_calls );
+						push( @{ $pkg_stats->{$task_package}->{domains} },                $domains );
+						push( @{ $pkg_stats->{$task_package}->{signatures_total} },       $signatures_total );
+						push( @{ $pkg_stats->{$task_package}->{signatures_alert} },       $signatures_alert );
+						push( @{ $pkg_stats->{$task_package}->{files_written} },          $files_written );
+						push( @{ $pkg_stats->{$task_package}->{registry_keys_modified} }, $registry_keys_modified );
+						push( @{ $pkg_stats->{$task_package}->{crash_issues} },           $crash_issues );
+						push( @{ $pkg_stats->{$task_package}->{anti_issues} },            $anti_issues );
 					}
 				}
 			}
@@ -443,6 +526,75 @@ eval {
 if ($@) {
 	$return_json->{error}       = 2;
 	$return_json->{errorString} = $return_json->{errorString} . ' SQL error: ' . $@;
+}
+
+# compute the aggregate stats
+foreach my $current_entry (@stats_for) {
+	if ( $#{ $ag_stats->{$current_entry} } > 0 ) {
+		$return_json->{data}{ 'min.' . $current_entry }    = min( @{ $ag_stats->{$current_entry} } );
+		$return_json->{data}{ 'max.' . $current_entry }    = max( @{ $ag_stats->{$current_entry} } );
+		$return_json->{data}{ 'range.' . $current_entry }  = range( @{ $ag_stats->{$current_entry} } );
+		$return_json->{data}{ 'mean.' . $current_entry }   = mean( @{ $ag_stats->{$current_entry} } );
+		$return_json->{data}{ 'median.' . $current_entry } = median( @{ $ag_stats->{$current_entry} } );
+		$return_json->{data}{ 'mode.' . $current_entry }   = mode( @{ $ag_stats->{$current_entry} } );
+		$return_json->{data}{ 'v.' . $current_entry }      = variance( @{ $ag_stats->{$current_entry} } );
+		$return_json->{data}{ 'sd.' . $current_entry }     = stddev( @{ $ag_stats->{$current_entry} } );
+		$return_json->{data}{ 'vp.' . $current_entry }     = variancep( @{ $ag_stats->{$current_entry} } );
+		$return_json->{data}{ 'sdp.' . $current_entry }    = stddevp( @{ $ag_stats->{$current_entry} } );
+	}
+	else {
+		$return_json->{data}{ 'min.' . $current_entry }    = 0;
+		$return_json->{data}{ 'max.' . $current_entry }    = 0;
+		$return_json->{data}{ 'range.' . $current_entry }  = 0;
+		$return_json->{data}{ 'mean.' . $current_entry }   = 0;
+		$return_json->{data}{ 'median.' . $current_entry } = 0;
+		$return_json->{data}{ 'mode.' . $current_entry }   = 0;
+		$return_json->{data}{ 'v.' . $current_entry }      = 0;
+		$return_json->{data}{ 'sd.' . $current_entry }     = 0;
+		$return_json->{data}{ 'vp.' . $current_entry }     = 0;
+		$return_json->{data}{ 'sdp.' . $current_entry }    = 0;
+	}
+
+}
+
+# compute the stats for each package
+foreach my $current_pkg ( keys( %{$pkg_stats} ) ) {
+	foreach my $current_entry (@stats_for) {
+		if ( $#{ $pkg_stats->{$current_pkg}{$current_entry} } > 0 ) {
+			$return_json->{data}{pkg_stats}{$current_pkg}{ 'min.' . $current_entry }
+				= min( @{ $pkg_stats->{$current_pkg}{$current_entry} } );
+			$return_json->{data}{pkg_stats}{$current_pkg}{ 'max.' . $current_entry }
+				= max( @{ $pkg_stats->{$current_pkg}{$current_entry} } );
+			$return_json->{data}{pkg_stats}{$current_pkg}{ 'range.' . $current_entry }
+				= range( @{ $pkg_stats->{$current_pkg}{$current_entry} } );
+			$return_json->{data}{pkg_stats}{$current_pkg}{ 'mean.' . $current_entry }
+				= mean( @{ $pkg_stats->{$current_pkg}{$current_entry} } );
+			$return_json->{data}{pkg_stats}{$current_pkg}{ 'median.' . $current_entry }
+				= median( @{ $pkg_stats->{$current_pkg}{$current_entry} } );
+			$return_json->{data}{pkg_stats}{$current_pkg}{ 'mode.' . $current_entry }
+				= mode( @{ $pkg_stats->{$current_pkg}{$current_entry} } );
+			$return_json->{data}{pkg_stats}{$current_pkg}{ 'v.' . $current_entry }
+				= variance( @{ $pkg_stats->{$current_pkg}{$current_entry} } );
+			$return_json->{data}{pkg_stats}{$current_pkg}{ 'sd.' . $current_entry }
+				= stddev( @{ $pkg_stats->{$current_pkg}{$current_entry} } );
+			$return_json->{data}{pkg_stats}{$current_pkg}{ 'vp.' . $current_entry }
+				= variancep( @{ $pkg_stats->{$current_pkg}{$current_entry} } );
+			$return_json->{data}{pkg_stats}{$current_pkg}{ 'sdp.' . $current_entry }
+				= stddevp( @{ $pkg_stats->{$current_pkg}{$current_entry} } );
+		}
+		else {
+			$return_json->{data}{pkg_stats}{$current_pkg}{ 'min.' . $current_entry }    = 0;
+			$return_json->{data}{pkg_stats}{$current_pkg}{ 'max.' . $current_entry }    = 0;
+			$return_json->{data}{pkg_stats}{$current_pkg}{ 'range.' . $current_entry }  = 0;
+			$return_json->{data}{pkg_stats}{$current_pkg}{ 'mean.' . $current_entry }   = 0;
+			$return_json->{data}{pkg_stats}{$current_pkg}{ 'median.' . $current_entry } = 0;
+			$return_json->{data}{pkg_stats}{$current_pkg}{ 'mode.' . $current_entry }   = 0;
+			$return_json->{data}{pkg_stats}{$current_pkg}{ 'v.' . $current_entry }      = 0;
+			$return_json->{data}{pkg_stats}{$current_pkg}{ 'sd.' . $current_entry }     = 0;
+			$return_json->{data}{pkg_stats}{$current_pkg}{ 'vp.' . $current_entry }     = 0;
+			$return_json->{data}{pkg_stats}{$current_pkg}{ 'sdp.' . $current_entry }    = 0;
+		}
+	}
 }
 
 print encode_json($return_json) . "\n";
