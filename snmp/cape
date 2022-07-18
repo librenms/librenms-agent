@@ -409,30 +409,57 @@ eval {
 				}
 			}
 
-			# if dropped files is defined and not blank, the rest will
-			# if this is blank then runstatistics is conf/reporting.conf
-			if ( defined($dropped_files) ) {
-				$return_json->{data}->{dropped_files}          += $dropped_files;
-				$return_json->{data}->{running_processes}      += $running_processes;
-				$return_json->{data}->{api_calls}              += $api_calls;
-				$return_json->{data}->{domains}                += $domains;
-				$return_json->{data}->{signatures_total}       += $signatures_total;
-				$return_json->{data}->{signatures_alert}       += $signatures_alert;
-				$return_json->{data}->{files_written}          += $files_written;
-				$return_json->{data}->{registry_keys_modified} += $registry_keys_modified;
-				$return_json->{data}->{crash_issues}           += $crash_issues;
-				$return_json->{data}->{anti_issues}            += $anti_issues;
+			if ( defined($running_processes) ) {
+				$return_json->{data}->{running_processes} += $running_processes;
+				push( @{ $ag_stats->{running_processes} }, $running_processes );
+			}
+			else {
 
-				push( @{ $ag_stats->{dropped_files} },          $dropped_files );
-				push( @{ $ag_stats->{running_processes} },      $running_processes );
-				push( @{ $ag_stats->{api_calls} },              $api_calls );
-				push( @{ $ag_stats->{domains} },                $domains );
-				push( @{ $ag_stats->{signatures_total} },       $signatures_total );
-				push( @{ $ag_stats->{signatures_alert} },       $signatures_alert );
-				push( @{ $ag_stats->{files_written} },          $files_written );
+			}
+
+			if ( defined($api_calls) ) {
+				$return_json->{data}->{api_calls} += $api_calls;
+				push( @{ $ag_stats->{api_calls} }, $api_calls );
+			}
+
+			if ( defined($domains) ) {
+				$return_json->{data}->{domains} += $domains;
+				push( @{ $ag_stats->{domains} }, $domains );
+			}
+
+			if ( defined($signatures_alert) ) {
+				$return_json->{data}->{signatures_alert} += $signatures_alert;
+				push( @{ $ag_stats->{signatures_alert} }, $signatures_alert );
+			}
+
+			if ( defined($signatures_total) ) {
+				$return_json->{data}->{signatures_total} += $signatures_total;
+				push( @{ $ag_stats->{signatures_total} }, $signatures_total );
+			}
+
+			if ( defined($files_written) ) {
+				$return_json->{data}->{files_written} += $files_written;
+				push( @{ $ag_stats->{files_written} }, $files_written );
+			}
+
+			if ( defined($registry_keys_modified) ) {
+				$return_json->{data}->{registry_keys_modified} += $registry_keys_modified;
 				push( @{ $ag_stats->{registry_keys_modified} }, $registry_keys_modified );
-				push( @{ $ag_stats->{crash_issues} },           $crash_issues );
-				push( @{ $ag_stats->{anti_issues} },            $anti_issues );
+			}
+
+			if ( defined($crash_issues) ) {
+				$return_json->{data}->{crash_issues} += $crash_issues;
+				push( @{ $ag_stats->{crash_issues} }, $crash_issues );
+			}
+
+			if ( defined($anti_issues) ) {
+				$return_json->{data}->{anti_issues} += $anti_issues;
+				push( @{ $ag_stats->{anti_issues} }, $anti_issues );
+			}
+
+			if ( defined($dropped_files) ) {
+				$return_json->{data}->{dropped_files} += $dropped_files;
+				push( @{ $ag_stats->{dropped_files} }, $dropped_files );
 
 				# put per package stats together
 				if ( $task_package ne '' ) {
@@ -501,6 +528,7 @@ if ($@) {
 	$return_json->{errorString} = $return_json->{errorString} . ' SQL error: ' . $@;
 }
 
+# compute the aggregate stats
 foreach my $current_entry (@stats_for) {
 	if ( $#{ $ag_stats->{$current_entry} } > 0 ) {
 		$return_json->{data}{ 'min.' . $current_entry }    = min( @{ $ag_stats->{$current_entry} } );
@@ -529,6 +557,7 @@ foreach my $current_entry (@stats_for) {
 
 }
 
+# compute the stats for each package
 foreach my $current_pkg ( keys( %{$pkg_stats} ) ) {
 	foreach my $current_entry (@stats_for) {
 		if ( $#{ $pkg_stats->{$current_pkg}{$current_entry} } > 0 ) {
