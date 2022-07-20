@@ -310,7 +310,7 @@ while ( $process_logs && defined( $logs[$process_loop] ) ) {
 						elsif ( $level eq 'warning' and $config->{sendWarnings} ) {
 							push( @{ $return_json->{data}->{warnings} }, $entry );
 						}
-						elsif ( $level eq 'criticals' and $config->{sendCriticals} ) {
+						elsif ( $level eq 'critical' and $config->{sendCriticals} ) {
 							push( @{ $return_json->{data}->{criticals} }, $entry );
 						}
 					}
