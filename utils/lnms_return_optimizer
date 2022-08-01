@@ -1,0 +1,77 @@
+#!/usr/bin/env perl
+
+use MIME::Base64;
+use Gzip::Faster;
+use Getopt::Long;
+use warnings;
+use strict;
+
+sub version{
+	print "lnms_return_optimizer v. 0.0.1\n";
+}
+
+
+
+my $version;
+my $help;
+my $extract;
+my $new_line;
+GetOptions(
+		   'e' => \$extract,
+		   'n' => \$new_line,
+		   'h' => \$help,
+		   'help' => \$help,
+		   'v' => \$version,
+		   'version' => \$version,
+		   );
+
+if ($version) {
+	version;
+	exit;
+}
+
+if ($help) {
+	version;
+
+	print '
+foo | lnms_return_otimizer
+
+-e         Operate in extract mode instead.
+-n         Include newlines with the base64.
+
+-h         Print help.
+--help     Print help.
+-v         Print version info.
+--version  Print version info.
+';
+
+	exit;
+}
+
+my $data = '';
+foreach my $line (<STDIN>) {
+	$data = $data . $line;
+}
+
+if ($extract) {
+	if ($data =~ /^[A-Za-z0-9\/\+\n]+\=*\n*$/ ) {
+		print gunzip(decode_base64($data));
+	}else {
+		print $data;
+	}
+}else {
+	# gzip and print encode in base64
+	# base64 is needed as snmp does not like 
+	my $compressed = encode_base64(gzip($data));
+	if (!$new_line) {
+		$compressed =~ s/\n//g;
+		$compressed = $compressed . "\n";
+	}
+
+	# check which is smaller and prints it
+	if (length($compressed) > length($data)) {
+		print $data;
+	}else {
+		print $compressed;
+	}
+}
