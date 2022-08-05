@@ -51,6 +51,9 @@ The defeault setttings are...
     # CAPEv2 process log file
 	plog=/opt/CAPEv2/log/process.log
     
+    # storage location
+    storage=/opt/CAPEv2/storage
+    
     # 0/1 for if it is okay for the process log to not exist
     # this enables it to work with cuckoo as well as CAPEv2
 	mplogok=1
@@ -84,6 +87,9 @@ generated when VM traffic is dropped, you would use the two lines such as below.
 
     WARNING PCAP file does not exist at path
     WARNING Unable to Run Suricata: Pcap file
+
+In 'conf/reporting.conf' for cape, 'litereport' will need enabled. 'keys_to_copy'
+should include 'signatures' and 'detections'.
 
 =cut
 
@@ -174,11 +180,15 @@ my $return_json = {
 		timedout               => 0,
 		pkg_stats              => {},
 		total_tasks            => 0,
+		wrong_pkg              => 0,
 	},
 	error       => 0,
 	errorString => '',
 	version     => 1,
 };
+
+# holds a list of reported tasks
+my $reported = {};
 
 my @stats_for = (
 	'dropped_files',    'running_processes', 'api_calls',     'domains',
@@ -211,6 +221,7 @@ my $defaults = {
 	pass          => '',
 	clog          => '/opt/CAPEv2/log/cuckoo.log',
 	plog          => '/opt/CAPEv2/log/process.log',
+	storage       => '/opt/CAPEv2/storage',
 	mplogok       => 1,
 	ignores       => '/usr/local/etc/cape_extend.ignores',
 	sendErrors    => 1,
@@ -314,6 +325,9 @@ while ( $process_logs && defined( $logs[$process_loop] ) ) {
 							push( @{ $return_json->{data}->{criticals} }, $entry );
 						}
 					}
+					if ( $level eq 'warning' && $entry =~ /submitted\ the\ job\ with\ wrong\ package/ ) {
+						$return_json->{wrong_pkg}++;
+					}
 				}
 			}
 		}
@@ -324,8 +338,8 @@ while ( $process_logs && defined( $logs[$process_loop] ) ) {
 
 my $query;
 if ( $config->{dsn} =~ /^[Dd][Bb][Ii]:[Mm]ysql/ ) {
-	$query
-		= "select status,package from tasks where ( added_on > FROM_UNIXTIME('"
+	$query = "select id,status,package from tasks where ( status != 'pending' ) and '.
+'( added_on > FROM_UNIXTIME('"
 		. $target_time
 		. "')) or "
 		. "( started_on > FROM_UNIXTIME('"
@@ -336,9 +350,11 @@ if ( $config->{dsn} =~ /^[Dd][Bb][Ii]:[Mm]ysql/ ) {
 }
 else {
 	$query
-		= "select status,package,dropped_files,running_processes,api_calls,domains,signatures_total,signatures_alert,files_written,registry_keys_modified,crash_issues,anti_issues,timedout from tasks where ( added_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
+		= "select id,status,package,dropped_files,running_processes,api_calls,domains,signatures_total,signatures_alert,files_written,registry_keys_modified,crash_issues,anti_issues,timedout from tasks where"
+		. " (status != 'pending') and "
+		. "  ( added_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
 		. "( started_on > CURRENT_TIMESTAMP - interval '5 minutes' ) or "
-		. "( completed_on > CURRENT_TIMESTAMP - interval '5 minutes' )";
+		. "( completed_on > CURRENT_TIMESTAMP - interval '5 minutes' ) ";
 	if ( !$config->{cuckoosql} ) {
 		$query
 			= $query
@@ -358,6 +374,13 @@ else {
 
 eval {
 	my $dbh = DBI->connect( $config->{dsn}, $config->{user}, $config->{pass} ) || die($DBI::errstr);
+
+	eval {
+		my $sth_pending = $dbh->prepare("select * from tasks where status = 'pending'");
+		$sth_pending->execute;
+		$return_json->{data}{pending} = $sth_pending->rows;
+	};
+
 	my $sth = $dbh->prepare($query);
 	$sth->execute;
 	my $task_status;
@@ -373,6 +396,7 @@ eval {
 	my $crash_issues;
 	my $anti_issues;
 	my $timedout;
+	my $task_id;
 	#
 	# MySQL is basically for old Cuckoo support.
 	# CAPEv2 does not really play nice with it because of column issues
@@ -388,15 +412,32 @@ eval {
 	}
 	else {
 		$sth->bind_columns(
-			undef,               \$task_status,   \$task_package,           \$dropped_files,
-			\$running_processes, \$api_calls,     \$domains,                \$signatures_total,
-			\$signatures_alert,  \$files_written, \$registry_keys_modified, \$crash_issues,
-			\$anti_issues,       \$timedout
+			undef,              \$task_id,           \$task_status,   \$task_package,
+			\$dropped_files,    \$running_processes, \$api_calls,     \$domains,
+			\$signatures_total, \$signatures_alert,  \$files_written, \$registry_keys_modified,
+			\$crash_issues,     \$anti_issues,       \$timedout
 		);
 		while ( $sth->fetch ) {
 			if ( defined( $return_json->{data}->{$task_status} ) ) {
 				$return_json->{data}->{$task_status}++;
 				$return_json->{data}->{total_tasks}++;
+			}
+
+			if ( $task_status eq 'reported' ) {
+				$reported->{$task_id} = {
+					package                => $task_package,
+					dropped_files          => $dropped_files,
+					running_processes      => $running_processes,
+					domains                => $domains,
+					api_calls              => $api_calls,
+					signatures_total       => $signatures_total,
+					signatures_alert       => $signatures_alert,
+					files_written          => $files_written,
+					registry_keys_modified => $registry_keys_modified,
+					crash_issue            => $crash_issues,
+					anti_issues            => $anti_issues,
+					timedout               => $timedout,
+				};
 			}
 
 			# skip blank entries
