@@ -101,7 +101,7 @@ use JSON;
 use Config::Tiny;
 use DBI;
 use Time::Piece;
-use File::Slurp;
+use File::Slurp      qw(read_file);
 use Statistics::Lite qw(:all);
 
 sub version {
@@ -166,7 +166,6 @@ my $return_json = {
 		failed_analysis        => 0,
 		failed_processing      => 0,
 		failed_reporting       => 0,
-		packages               => {},
 		dropped_files          => 0,
 		running_processes      => 0,
 		api_calls              => 0,
@@ -181,6 +180,7 @@ my $return_json = {
 		pkg_stats              => {},
 		total_tasks            => 0,
 		wrong_pkg              => 0,
+		detections_stats       => {},
 	},
 	error       => 0,
 	errorString => '',
@@ -193,7 +193,8 @@ my $reported = {};
 my @stats_for = (
 	'dropped_files',    'running_processes', 'api_calls',     'domains',
 	'signatures_total', 'signatures_alert',  'files_written', 'registry_keys_modified',
-	'crash_issues',     'anti_issues',
+	'crash_issues',     'anti_issues',       'malscore',      'severity',
+	'confidence',       'weight'
 );
 
 my $ag_stats = {
@@ -207,6 +208,10 @@ my $ag_stats = {
 	registry_keys_modified => [],
 	crash_issues           => [],
 	anti_issues            => [],
+	malscores              => [],
+	severity               => [],
+	confidence             => [],
+	weight                 => [],
 };
 
 my $pkg_stats = {};
@@ -440,122 +445,154 @@ eval {
 				};
 			}
 
-			# skip blank entries
-			if ( $task_package ne '' ) {
-				if ( defined( $return_json->{data}->{packages}->{$task_package} ) ) {
-					$return_json->{data}->{packages}->{$task_package}++;
-				}
-				else {
-					$return_json->{data}->{packages}->{$task_package} = 1;
-				}
+			if ( !defined($task_package) || $task_package eq '' ) {
+				$task_package = 'generic';
 			}
 
-			if ( defined($running_processes) ) {
+			if ( !defined($running_processes) ) {
+				$running_processes = 0;
+			}
+			if ($task_status eq 'reported') {
 				$return_json->{data}->{running_processes} += $running_processes;
 				push( @{ $ag_stats->{running_processes} }, $running_processes );
 			}
-			else {
 
+			if ( !defined($api_calls) ) {
+				$api_calls = 0;
 			}
-
-			if ( defined($api_calls) ) {
+			if ($task_status eq 'reported') {
 				$return_json->{data}->{api_calls} += $api_calls;
 				push( @{ $ag_stats->{api_calls} }, $api_calls );
 			}
 
-			if ( defined($domains) ) {
+			if ( !defined($domains) ) {
+				$domains = 0;
+			}
+			if ($task_status eq 'reported') {
 				$return_json->{data}->{domains} += $domains;
 				push( @{ $ag_stats->{domains} }, $domains );
 			}
 
-			if ( defined($signatures_alert) ) {
+			if ( !defined($signatures_alert) ) {
+				$signatures_alert = 0;
+			}
+			if ($task_status eq 'reported') {
 				$return_json->{data}->{signatures_alert} += $signatures_alert;
 				push( @{ $ag_stats->{signatures_alert} }, $signatures_alert );
 			}
 
-			if ( defined($signatures_total) ) {
+			if ( !defined($signatures_total) ) {
+				$signatures_total=0;
+			}
+			if ($task_status eq 'reported') {
 				$return_json->{data}->{signatures_total} += $signatures_total;
 				push( @{ $ag_stats->{signatures_total} }, $signatures_total );
 			}
 
-			if ( defined($files_written) ) {
+			if ( !defined($files_written) ) {
+				$files_written=0;
+			}
+			if ($task_status eq 'reported') {
 				$return_json->{data}->{files_written} += $files_written;
 				push( @{ $ag_stats->{files_written} }, $files_written );
 			}
 
-			if ( defined($registry_keys_modified) ) {
+			if ( !defined($registry_keys_modified) ) {
+				$registry_keys_modified = 0;
+			}
+			if ($task_status eq 'reported') {
 				$return_json->{data}->{registry_keys_modified} += $registry_keys_modified;
 				push( @{ $ag_stats->{registry_keys_modified} }, $registry_keys_modified );
 			}
 
-			if ( defined($crash_issues) ) {
+			if ( !defined($crash_issues) ) {
+				$crash_issues = 0;
+			}
+			if ($task_status eq 'reported') {
 				$return_json->{data}->{crash_issues} += $crash_issues;
 				push( @{ $ag_stats->{crash_issues} }, $crash_issues );
 			}
 
-			if ( defined($anti_issues) ) {
+			if ( !defined($anti_issues) ) {
+				$anti_issues = 0;
+			}
+			if ($task_status eq 'reported') {
 				$return_json->{data}->{anti_issues} += $anti_issues;
 				push( @{ $ag_stats->{anti_issues} }, $anti_issues );
 			}
 
-			if ( defined($dropped_files) ) {
+			if ( !defined($dropped_files) ) {
+				$dropped_files = 0;
+			}
+			if ($task_status eq 'reported') {
 				$return_json->{data}->{dropped_files} += $dropped_files;
 				push( @{ $ag_stats->{dropped_files} }, $dropped_files );
-
-				# put per package stats together
-				if ( $task_package ne '' ) {
-					if ( !defined( $return_json->{data}->{pkg_stats}->{$task_package} ) ) {
-						$return_json->{data}->{pkg_stats}->{$task_package} = {
-							dropped_files          => $dropped_files,
-							running_processes      => $running_processes,
-							api_calls              => $api_calls,
-							domains                => $domains,
-							signatures_total       => $signatures_total,
-							signatures_alert       => $signatures_alert,
-							files_written          => $files_written,
-							registry_keys_modified => $registry_keys_modified,
-							crash_issues           => $crash_issues,
-							anti_issues            => $anti_issues
-						};
-						$pkg_stats->{$task_package} = {
-							dropped_files          => [$dropped_files],
-							running_processes      => [$running_processes],
-							api_calls              => [$api_calls],
-							domains                => [$domains],
-							signatures_total       => [$signatures_total],
-							signatures_alert       => [$signatures_alert],
-							files_written          => [$files_written],
-							registry_keys_modified => [$registry_keys_modified],
-							crash_issues           => [$crash_issues],
-							anti_issues            => [$anti_issues]
-						};
-					}
-					else {
-						$return_json->{data}->{pkg_stats}->{$task_package}->{dropped_files}     += $dropped_files;
-						$return_json->{data}->{pkg_stats}->{$task_package}->{running_processes} += $running_processes;
-						$return_json->{data}->{pkg_stats}->{$task_package}->{api_calls}         += $api_calls;
-						$return_json->{data}->{pkg_stats}->{$task_package}->{domains}           += $domains;
-						$return_json->{data}->{pkg_stats}->{$task_package}->{signatures_total}  += $signatures_total;
-						$return_json->{data}->{pkg_stats}->{$task_package}->{signatures_alert}  += $signatures_alert;
-						$return_json->{data}->{pkg_stats}->{$task_package}->{files_written}     += $files_written;
-						$return_json->{data}->{pkg_stats}->{$task_package}->{registry_keys_modified}
-							+= $registry_keys_modified;
-						$return_json->{data}->{pkg_stats}->{$task_package}->{crash_issues} += $crash_issues;
-						$return_json->{data}->{pkg_stats}->{$task_package}->{anti_issues}  += $anti_issues;
-
-						push( @{ $pkg_stats->{$task_package}->{dropped_files} },          $dropped_files );
-						push( @{ $pkg_stats->{$task_package}->{running_processes} },      $running_processes );
-						push( @{ $pkg_stats->{$task_package}->{api_calls} },              $api_calls );
-						push( @{ $pkg_stats->{$task_package}->{domains} },                $domains );
-						push( @{ $pkg_stats->{$task_package}->{signatures_total} },       $signatures_total );
-						push( @{ $pkg_stats->{$task_package}->{signatures_alert} },       $signatures_alert );
-						push( @{ $pkg_stats->{$task_package}->{files_written} },          $files_written );
-						push( @{ $pkg_stats->{$task_package}->{registry_keys_modified} }, $registry_keys_modified );
-						push( @{ $pkg_stats->{$task_package}->{crash_issues} },           $crash_issues );
-						push( @{ $pkg_stats->{$task_package}->{anti_issues} },            $anti_issues );
-					}
-				}
 			}
+
+			# put per package stats together
+			if ( !defined( $return_json->{data}->{pkg_stats}->{$task_package} ) ) {
+				$return_json->{data}->{pkg_stats}->{$task_package} = {
+					dropped_files          => $dropped_files,
+					running_processes      => $running_processes,
+					api_calls              => $api_calls,
+					domains                => $domains,
+					signatures_total       => $signatures_total,
+					signatures_alert       => $signatures_alert,
+					files_written          => $files_written,
+					registry_keys_modified => $registry_keys_modified,
+					crash_issues           => $crash_issues,
+					anti_issues            => $anti_issues,
+					banned                 => 0,
+					pending                => 0,
+					running                => 0,
+					completed              => 0,
+					distributed            => 0,
+					reported               => 0,
+					recovered              => 0,
+					failed_analysis        => 0,
+					failed_processing      => 0,
+					failed_reporting       => 0,
+					tasks                  => 1,
+				};
+				$pkg_stats->{$task_package} = {
+					dropped_files          => [$dropped_files],
+					running_processes      => [$running_processes],
+					api_calls              => [$api_calls],
+					domains                => [$domains],
+					signatures_total       => [$signatures_total],
+					signatures_alert       => [$signatures_alert],
+					files_written          => [$files_written],
+					registry_keys_modified => [$registry_keys_modified],
+					crash_issues           => [$crash_issues],
+					anti_issues            => [$anti_issues]
+				};
+			}
+			else {
+				$return_json->{data}->{pkg_stats}->{$task_package}->{tasks}++;
+				$return_json->{data}->{pkg_stats}->{$task_package}->{dropped_files}     += $dropped_files;
+				$return_json->{data}->{pkg_stats}->{$task_package}->{running_processes} += $running_processes;
+				$return_json->{data}->{pkg_stats}->{$task_package}->{api_calls}         += $api_calls;
+				$return_json->{data}->{pkg_stats}->{$task_package}->{domains}           += $domains;
+				$return_json->{data}->{pkg_stats}->{$task_package}->{signatures_total}  += $signatures_total;
+				$return_json->{data}->{pkg_stats}->{$task_package}->{signatures_alert}  += $signatures_alert;
+				$return_json->{data}->{pkg_stats}->{$task_package}->{files_written}     += $files_written;
+				$return_json->{data}->{pkg_stats}->{$task_package}->{registry_keys_modified}
+					+= $registry_keys_modified;
+				$return_json->{data}->{pkg_stats}->{$task_package}->{crash_issues} += $crash_issues;
+				$return_json->{data}->{pkg_stats}->{$task_package}->{anti_issues}  += $anti_issues;
+
+				push( @{ $pkg_stats->{$task_package}->{dropped_files} },          $dropped_files );
+				push( @{ $pkg_stats->{$task_package}->{running_processes} },      $running_processes );
+				push( @{ $pkg_stats->{$task_package}->{api_calls} },              $api_calls );
+				push( @{ $pkg_stats->{$task_package}->{domains} },                $domains );
+				push( @{ $pkg_stats->{$task_package}->{signatures_total} },       $signatures_total );
+				push( @{ $pkg_stats->{$task_package}->{signatures_alert} },       $signatures_alert );
+				push( @{ $pkg_stats->{$task_package}->{files_written} },          $files_written );
+				push( @{ $pkg_stats->{$task_package}->{registry_keys_modified} }, $registry_keys_modified );
+				push( @{ $pkg_stats->{$task_package}->{crash_issues} },           $crash_issues );
+				push( @{ $pkg_stats->{$task_package}->{anti_issues} },            $anti_issues );
+			}
+			$return_json->{data}->{pkg_stats}->{$task_package}->{$task_status}++;
 
 			# timedout value is not a perl boolean
 			if ( $timedout =~ /^[Ff]/ ) {
@@ -567,6 +604,33 @@ eval {
 if ($@) {
 	$return_json->{error}       = 2;
 	$return_json->{errorString} = $return_json->{errorString} . ' SQL error: ' . $@;
+}
+
+# put together the stats for the reported items
+foreach my $task_id ( keys( %{$reported} ) ) {
+	eval {
+		my $report = decode_json( read_file( $config->{storage} . '/analyses/' . $task_id . '/reports/lite.json' ) );
+		if ( defined( $report->{malscores} ) ) {
+			push( @{ $ag_stats->{malscores} }, $report->{malscores} );
+		}
+
+		my $sig_int = 0;
+		while ( defined( $report->{signatures}[$sig_int] ) ) {
+			if ( defined( $report->{signatures}[$sig_int]{confidence} ) ) {
+				push( @{ $ag_stats->{confidences} }, $report->{signatures}[$sig_int]{confidence} );
+			}
+
+			if ( defined( $report->{signatures}[$sig_int]{severity} ) ) {
+				push( @{ $ag_stats->{severity} }, $report->{signatures}[$sig_int]{severity} );
+			}
+
+			if ( defined( $report->{signatures}[$sig_int]{weight} ) ) {
+				push( @{ $ag_stats->{weight} }, $report->{signatures}[$sig_int]{weight} );
+			}
+
+			$sig_int++;
+		}
+	};
 }
 
 # compute the aggregate stats
