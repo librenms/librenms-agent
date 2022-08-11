@@ -208,7 +208,7 @@ my $ag_stats = {
 	registry_keys_modified => [],
 	crash_issues           => [],
 	anti_issues            => [],
-	malscores              => [],
+	malscore               => [],
 	severity               => [],
 	confidence             => [],
 	weight                 => [],
@@ -610,8 +610,8 @@ if ($@) {
 foreach my $task_id ( keys( %{$reported} ) ) {
 	eval {
 		my $report = decode_json( read_file( $config->{storage} . '/analyses/' . $task_id . '/reports/lite.json' ) );
-		if ( defined( $report->{malscores} ) ) {
-			push( @{ $ag_stats->{malscores} }, $report->{malscores} );
+		if ( defined( $report->{malscore} ) ) {
+			push( @{ $ag_stats->{malscore} }, $report->{malscore} );
 		}
 
 		my $sig_int = 0;
