@@ -452,7 +452,7 @@ eval {
 			if ( !defined($running_processes) ) {
 				$running_processes = 0;
 			}
-			if ($task_status eq 'reported') {
+			if ( $task_status eq 'reported' ) {
 				$return_json->{data}->{running_processes} += $running_processes;
 				push( @{ $ag_stats->{running_processes} }, $running_processes );
 			}
@@ -460,7 +460,7 @@ eval {
 			if ( !defined($api_calls) ) {
 				$api_calls = 0;
 			}
-			if ($task_status eq 'reported') {
+			if ( $task_status eq 'reported' ) {
 				$return_json->{data}->{api_calls} += $api_calls;
 				push( @{ $ag_stats->{api_calls} }, $api_calls );
 			}
@@ -468,7 +468,7 @@ eval {
 			if ( !defined($domains) ) {
 				$domains = 0;
 			}
-			if ($task_status eq 'reported') {
+			if ( $task_status eq 'reported' ) {
 				$return_json->{data}->{domains} += $domains;
 				push( @{ $ag_stats->{domains} }, $domains );
 			}
@@ -476,23 +476,23 @@ eval {
 			if ( !defined($signatures_alert) ) {
 				$signatures_alert = 0;
 			}
-			if ($task_status eq 'reported') {
+			if ( $task_status eq 'reported' ) {
 				$return_json->{data}->{signatures_alert} += $signatures_alert;
 				push( @{ $ag_stats->{signatures_alert} }, $signatures_alert );
 			}
 
 			if ( !defined($signatures_total) ) {
-				$signatures_total=0;
+				$signatures_total = 0;
 			}
-			if ($task_status eq 'reported') {
+			if ( $task_status eq 'reported' ) {
 				$return_json->{data}->{signatures_total} += $signatures_total;
 				push( @{ $ag_stats->{signatures_total} }, $signatures_total );
 			}
 
 			if ( !defined($files_written) ) {
-				$files_written=0;
+				$files_written = 0;
 			}
-			if ($task_status eq 'reported') {
+			if ( $task_status eq 'reported' ) {
 				$return_json->{data}->{files_written} += $files_written;
 				push( @{ $ag_stats->{files_written} }, $files_written );
 			}
@@ -500,7 +500,7 @@ eval {
 			if ( !defined($registry_keys_modified) ) {
 				$registry_keys_modified = 0;
 			}
-			if ($task_status eq 'reported') {
+			if ( $task_status eq 'reported' ) {
 				$return_json->{data}->{registry_keys_modified} += $registry_keys_modified;
 				push( @{ $ag_stats->{registry_keys_modified} }, $registry_keys_modified );
 			}
@@ -508,7 +508,7 @@ eval {
 			if ( !defined($crash_issues) ) {
 				$crash_issues = 0;
 			}
-			if ($task_status eq 'reported') {
+			if ( $task_status eq 'reported' ) {
 				$return_json->{data}->{crash_issues} += $crash_issues;
 				push( @{ $ag_stats->{crash_issues} }, $crash_issues );
 			}
@@ -516,7 +516,7 @@ eval {
 			if ( !defined($anti_issues) ) {
 				$anti_issues = 0;
 			}
-			if ($task_status eq 'reported') {
+			if ( $task_status eq 'reported' ) {
 				$return_json->{data}->{anti_issues} += $anti_issues;
 				push( @{ $ag_stats->{anti_issues} }, $anti_issues );
 			}
@@ -524,7 +524,7 @@ eval {
 			if ( !defined($dropped_files) ) {
 				$dropped_files = 0;
 			}
-			if ($task_status eq 'reported') {
+			if ( $task_status eq 'reported' ) {
 				$return_json->{data}->{dropped_files} += $dropped_files;
 				push( @{ $ag_stats->{dropped_files} }, $dropped_files );
 			}
@@ -564,7 +564,10 @@ eval {
 					files_written          => [$files_written],
 					registry_keys_modified => [$registry_keys_modified],
 					crash_issues           => [$crash_issues],
-					anti_issues            => [$anti_issues]
+					anti_issues            => [$anti_issues],
+					malscore               => [],
+					confidence             => [],
+					severity               => [],
 				};
 			}
 			else {
@@ -609,23 +612,28 @@ if ($@) {
 # put together the stats for the reported items
 foreach my $task_id ( keys( %{$reported} ) ) {
 	eval {
-		my $report = decode_json( read_file( $config->{storage} . '/analyses/' . $task_id . '/reports/lite.json' ) );
+		my $report  = decode_json( read_file( $config->{storage} . '/analyses/' . $task_id . '/reports/lite.json' ) );
+		my $package = $report->{info}{package};
 		if ( defined( $report->{malscore} ) ) {
-			push( @{ $ag_stats->{malscore} }, $report->{malscore} );
+			push( @{ $ag_stats->{malscore} },  $report->{malscore} );
+			push( @{ $pkg_stats->{$package}{malscore} }, $report->{malscore} );
 		}
 
 		my $sig_int = 0;
 		while ( defined( $report->{signatures}[$sig_int] ) ) {
 			if ( defined( $report->{signatures}[$sig_int]{confidence} ) ) {
-				push( @{ $ag_stats->{confidences} }, $report->{signatures}[$sig_int]{confidence} );
+				push( @{ $ag_stats->{confidence} }, $report->{signatures}[$sig_int]{confidence} );
+				push( @{ $pkg_stats->{$package}{confidence} }, $report->{signatures}[$sig_int]{confidence} );
 			}
 
 			if ( defined( $report->{signatures}[$sig_int]{severity} ) ) {
 				push( @{ $ag_stats->{severity} }, $report->{signatures}[$sig_int]{severity} );
+				push( @{ $pkg_stats->{$package}{severity} }, $report->{signatures}[$sig_int]{severity} );
 			}
 
 			if ( defined( $report->{signatures}[$sig_int]{weight} ) ) {
 				push( @{ $ag_stats->{weight} }, $report->{signatures}[$sig_int]{weight} );
+				push( @{ $pkg_stats->{$package}{weight} }, $report->{signatures}[$sig_int]{weight} );
 			}
 
 			$sig_int++;
