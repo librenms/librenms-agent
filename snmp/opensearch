@@ -153,6 +153,7 @@ $to_return->{data}{c_act_shards}       = $health_json->{active_shards};
 $to_return->{data}{c_rel_shards}       = $health_json->{relocating_shards};
 $to_return->{data}{c_init_shards}      = $health_json->{initializing_shards};
 $to_return->{data}{c_delayed_shards}   = $health_json->{delayed_unassigned_shards};
+$to_return->{data}{c_unass_shards}     = $health_json->{unassigned_shards};
 $to_return->{data}{c_pending_tasks}    = $health_json->{number_of_pending_tasks};
 $to_return->{data}{c_in_fl_fetch}      = $health_json->{number_of_in_flight_fetch};
 $to_return->{data}{c_task_max_in_time} = $health_json->{task_max_waiting_in_queue_millis};
