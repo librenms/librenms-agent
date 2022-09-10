@@ -20,7 +20,9 @@ list_devices() {
 
 # Outputs either 0, 100, or the value of the file referenced
 maybe_get() {
-    if [ -f "${1}" ] && [ "$(cat "${1}")" != 'none' ]; then
+    if [[ $(cat "${1}") =~ " / " ]]; then
+        echo "100 * $(cat ${1})" | bc
+    elif [ -f "${1}" ] && [ "$(cat "${1}")" != 'none' ]; then
         cat "${1}"
     else
         echo 0
