@@ -21,13 +21,13 @@
 #         }
 #         ```
 #     4. Restart snmpd and activate the app for desired host.
-
+# TODO:
+#     1. If CyberPower ends up building support to collect data from multiple PSUs on a
+#        single computer, then this script will be updated to support that.
 
 import json
-import os
 import re
 import subprocess
-
 
 CONFIG_FILE = "/etc/snmp/pwrstatd.json"
 KEY_TO_VARIABLE_MAP = {
@@ -57,14 +57,14 @@ def value_sanitizer(key, value):
     """
     if key == "Firmware Number":
         return str(value)
-    elif (
-        key == "Rating Voltage"
-        or key == "Rating Power"
-        or key == "Utility Voltage"
-        or key == "Output Voltage"
-        or key == "Battery Capacity"
-        or key == "Remaining Runtime"
-        or key == "Load"
+    elif key in (
+        "Rating Voltage",
+        "Rating Power",
+        "Utility Voltage",
+        "Output Voltage",
+        "Battery Capacity",
+        "Remaining Runtime",
+        "Load",
     ):
         return int(value.split(" ")[0])
     else:
@@ -80,78 +80,70 @@ def main():
     Outputs:
         None
     """
-    config_file = None
     pwrstat_cmd = PWRSTAT_CMD
     output_data = {"errorString": "", "error": 0, "version": 1, "data": []}
     psu_data = {
-        "mruntime": 0,
-        "pcapacity": 0,
-        "pload": 0,
-        "sn": "",
-        "voutput": 0,
-        "vrating": 0,
-        "vutility": 0,
-        "wload": 0,
-        "wrating": 0,
+        "mruntime": None,
+        "pcapacity": None,
+        "pload": None,
+        "sn": None,
+        "voutput": None,
+        "vrating": None,
+        "vutility": None,
+        "wload": None,
+        "wrating": None,
     }
 
     # Load configuration file if it exists
-    if os.path.isfile(CONFIG_FILE):
+    try:
         with open(CONFIG_FILE, "r") as json_file:
-            try:
-                config_file = json.load(json_file)
-            except json.decoder.JSONDecodeError as e:
-                output_data["error"] = 1
-                output_data["errorString"] = "Config file Error: '%s'" % e
-    if not output_data["error"] and config_file:
-        try:
+            config_file = json.load(json_file)
             if "pwrstat_cmd" in config_file.keys():
                 pwrstat_cmd = config_file["pwrstat_cmd"]
-        except KeyError as e:
-            output_data["error"] = 1
-            output_data["errorString"] = "Config file Error: '%s'" % e
-
-    # Execute pwrstat command and error handling
-    pwrstat_process = subprocess.Popen(
-        pwrstat_cmd + " " + PWRSTAT_ARGS,
-        shell=True,
-        stdin=None,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    poutput, perror = pwrstat_process.communicate()
-    if perror:
+    except FileNotFoundError:
+        pass
+    except (KeyError, PermissionError, OSError, json.decoder.JSONDecodeError) as err:
         output_data["error"] = 1
-        output_data["errorString"] = "Command Execution Error: '%s'" % perror
+        output_data["errorString"] = "Config file Error: '%s'" % err
 
-    # Parse command output
-    for line in poutput.decode("utf-8").split("\n"):
-        if not len(line):
-            continue
-
-        line = line.strip()
-        regex_search = re.search(REGEX_PATTERN, line)
-        if not regex_search:
-            continue
-
-        try:
-            key = regex_search.groups()[0]
-            value = regex_search.groups()[1]
-        except IndexError as e:
-            output_data["error"] = 1
-            output_data["errorString"] = "Command Output Parsing Error: '%s'" % e
-            continue
-
-        if key not in KEY_TO_VARIABLE_MAP.keys():
-            continue
-
-        psu_data[KEY_TO_VARIABLE_MAP[key]] = value_sanitizer(key, value)
-
-    if psu_data["wrating"] != 0:
-        # int to float hacks in-place for python2 backwards compatibility
-        psu_data["pload"] = int(
-            float(psu_data["wload"]) / float(psu_data["wrating"]) * 100
+    try:
+        # Execute pwrstat command
+        pwrstat_process = subprocess.Popen(
+            [pwrstat_cmd, PWRSTAT_ARGS],
+            stdin=None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
         )
+        poutput, perror = pwrstat_process.communicate()
+
+        if perror:
+            raise OSError(perror.decode("utf-8"))
+
+        # Parse pwrstat command output and collect data.
+        for line in poutput.decode("utf-8").split("\n"):
+            regex_search = re.search(REGEX_PATTERN, line.strip())
+            if not regex_search:
+                continue
+
+            try:
+                key = regex_search.groups()[0]
+                value = regex_search.groups()[1]
+                if key in KEY_TO_VARIABLE_MAP.keys():
+                    psu_data[KEY_TO_VARIABLE_MAP[key]] = value_sanitizer(key, value)
+            except IndexError as err:
+                output_data["error"] = 1
+                output_data["errorString"] = "Command Output Parsing Error: '%s'" % err
+                continue
+
+        # Manually calculate percentage load on PSU
+        if psu_data["wrating"]:
+            # int to float hacks in-place for python2 backwards compatibility
+            psu_data["pload"] = int(
+                float(psu_data["wload"]) / float(psu_data["wrating"]) * 100
+            )
+    except (subprocess.CalledProcessError, OSError) as err:
+        output_data["error"] = 1
+        output_data["errorString"] = "Command Execution Error: '%s'" % err
 
     output_data["data"].append(psu_data)
     print(json.dumps(output_data))
