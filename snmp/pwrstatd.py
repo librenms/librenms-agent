@@ -98,7 +98,7 @@ def main():
     try:
         with open(CONFIG_FILE, "r") as json_file:
             config_file = json.load(json_file)
-            if "pwrstat_cmd" in config_file.keys():
+            if "pwrstat_cmd" in config_file:
                 pwrstat_cmd = config_file["pwrstat_cmd"]
     except FileNotFoundError:
         pass
