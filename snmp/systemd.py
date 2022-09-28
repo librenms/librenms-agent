@@ -150,11 +150,9 @@ def unit_parser(line, systemctl_data):
                     systemctl_data[state_type][sub_state_type] = {}
                 systemctl_data[state_type][sub_state_type][sub_state_value] = (
                     1
-                    if sub_state_value
-                    not in systemctl_data[state_type][sub_state_type]
+                    if sub_state_value not in systemctl_data[state_type][sub_state_type]
                     else (
-                        systemctl_data[state_type][sub_state_type][sub_state_value]
-                        + 1
+                        systemctl_data[state_type][sub_state_type][sub_state_value] + 1
                     )
                 )
                 systemctl_data[state_type][sub_state_type]["total"] = (
