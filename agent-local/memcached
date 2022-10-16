@@ -7,7 +7,6 @@ $stats = $m->getStats();
 if(is_array($stats))
 {
   echo("<<<app-memcached>>>\n");
-  echo(serialize($m->getStats()));
+  echo(json_encode($m->getStats()));
   echo("\n");
 }
-?>
