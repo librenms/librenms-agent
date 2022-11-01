@@ -40,11 +40,10 @@
 import json
 import subprocess
 import sys
-
 from datetime import datetime
 from itertools import chain
-from pathvalidate import sanitize_filename
 
+from pathvalidate import sanitize_filename
 
 CONFIG_FILE = "/etc/snmp/wireguard.json"
 WG_ARGS = ["show", "all", "dump"]
