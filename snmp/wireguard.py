@@ -43,8 +43,6 @@ import sys
 from datetime import datetime
 from itertools import chain
 
-from pathvalidate import sanitize_filename
-
 CONFIG_FILE = "/etc/snmp/wireguard.json"
 WG_ARGS = ["show", "all", "dump"]
 WG_CMD = "/usr/bin/wg"
@@ -114,7 +112,7 @@ def config_file_validator(interface_clients_dict):
     for interface, public_key_to_arbitrary_name in interface_clients_dict.items():
         rev_dict = {}
         for public_key, arbitrary_name in public_key_to_arbitrary_name.items():
-            rev_dict.setdefault(sanitize_filename(str(arbitrary_name)), set()).add(
+            rev_dict.setdefault(str(arbitrary_name), set()).add(
                 public_key
             )
 
