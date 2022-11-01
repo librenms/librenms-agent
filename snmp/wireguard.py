@@ -112,9 +112,7 @@ def config_file_validator(interface_clients_dict):
     for interface, public_key_to_arbitrary_name in interface_clients_dict.items():
         rev_dict = {}
         for public_key, arbitrary_name in public_key_to_arbitrary_name.items():
-            rev_dict.setdefault(str(arbitrary_name), set()).add(
-                public_key
-            )
+            rev_dict.setdefault(str(arbitrary_name), set()).add(public_key)
 
         # Verify the arbitrary names set in the wireguard.json file are unique.
         result = set(
