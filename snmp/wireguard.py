@@ -27,9 +27,9 @@
 #             "public_key_to_arbitrary_name": {
 #                 "wg0": {
 #                     "z1iSIymFEFi/PS8rR19AFBle7O4tWowMWuFzHO7oRlE=": "client1",
-#                     "XqWJRE21Fw1ke47mH1yPg/lyWqCCfjkIXiS6JobuhTI=": "server.domain.com",
+#                     "XqWJRE21Fw1ke47mH1yPg/lyWqCCfjkIXiS6JobuhTI=": "server.domain.com"
 #                 }
-#             },
+#             }
 #         }
 #         ```
 #     4. Restart snmpd and activate the app for desired host.
@@ -185,7 +185,7 @@ def output_parser(line, interface_clients_dict):
         return {}
 
     # Perform in-place replacement of publickeys with arbitrary names.
-    friendly_name = interface_clients_dict[interface][public_key]
+    friendly_name = str(interface_clients_dict[interface][public_key])
 
     # Calculate minutes since last handshake here
     last_handshake_timestamp = datetime.fromtimestamp(timestamp) if timestamp else 0
