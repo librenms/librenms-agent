@@ -22,19 +22,53 @@
 #OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 #THE POSSIBILITY OF SUCH DAMAGE.
 
-#set the user here to use
-#be sure to set up the user in .pgpass for the user snmpd is running as
+# Location of optional config file.
+CONFIG_FILE="/etc/snmp/postgres.config"
+
+# Default DBuser is pgsql.  Be sure to set up the user in .pgpass for the user snmpd
+# is running as.  You can either update the variable below, or add "DBuser=<username>"
+# to the /etc/snmp/postgres.config file without quotes and replacing <username>.
 DBuser=pgsql
 
 # You may want to disable totalling for the postgres DB as that can make the total graphs artificially noisy.
 # 1 = don't total stats for the DB postgres
 # 0 = include postgres in the totals
+# To set this to 0, you can either update the variable below, or add "ignorePG=0" to
+# the /etc/snmp/postgres.config file (without quotes).
 ignorePG=1;
+
+# Hostname to connect to.  By default this is blank and check_postgres.ph will connect
+# to the Unix socket.  You can either update the variable below, or add "DBhost=<hostname>"
+# to the  /etc/snmp/postgres.config file without quotes and replacing <hostname>.
+DBhost=""
+
+# Load configuration from config file if the file exists.
+if [ -f "$CONFIG_FILE" ]; then
+    saved_IFS=$IFS
+    IFS="="
+
+    while read -r key value; do
+        if [ "$key" = "DBuser" ]; then
+            DBuser=$value
+        elif [ "$key" = "ignorePG" ]; then
+            ignorePG=$value
+        elif [ "$key" = "DBhost" ]; then
+            DBhost=$value
+        fi
+    done < $CONFIG_FILE
+
+    IFS=$saved_IFS
+fi
 
 #make sure the paths are right for your system
 cpg='/usr/bin/env check_postgres.pl'
 
-$cpg -u $DBuser --action dbstats | awk -F ' ' '
+cpg_command="$cpg -u $DBuser --action dbstats"
+if [ "$DBhost" != "" ]; then
+    cpg_command="$cpg_command -H $DBhost"
+fi
+
+$cpg_command | awk -F ' ' '
 
 BEGIN{
 	backends=0;
