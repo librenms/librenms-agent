@@ -24,7 +24,7 @@ do
 	fi
 done
 
-for value in "ups\.status:[A-Z ]{0,}OL" "ups\.status:[A-Z ]{0,}OB" "ups\.status:[A-Z ]{0,}LB" "ups\.status:[A-Z ]{0,}HB" "ups\.status:[A-Z ]{0,}RB" "ups\.status:[A-Z ]{0,}CHRG" "ups\.status:[A-Z ]{0,}DISCHRG" "ups\.status:[A-Z ]{0,}BYPASS" "ups\.status:[A-Z ]{0,}CAL" "ups\.status:[A-Z ]{0,}OFF" "ups\.status:[A-Z ]{0,}OVER" "ups\.status:[A-Z ]{0,}TRIM" "ups\.status:[A-Z ]{0,}BOOST" "ups\.status:[A-Z ]{0,}FSD"
+for value in "ups\.status:[A-Z ]{0,}OL" "ups\.status:[A-Z ]{0,}OB" "ups\.status:[A-Z ]{0,}LB" "ups\.status:[A-Z ]{0,}HB" "ups\.status:[A-Z ]{0,}RB" "ups\.status:[A-Z ]{0,}CHRG" "ups\.status:[A-Z ]{0,}DISCHRG" "ups\.status:[A-Z ]{0,}BYPASS" "ups\.status:[A-Z ]{0,}CAL" "ups\.status:[A-Z ]{0,}OFF" "ups\.status:[A-Z ]{0,}OVER" "ups\.status:[A-Z ]{0,}TRIM" "ups\.status:[A-Z ]{0,}BOOST" "ups\.status:[A-Z ]{0,}FSD" "ups\.alarm:[A-Z ]"
 do
     UNKNOWN=$(echo "$TMP" | grep -Eo "ups\.status:")
     if [ -z "$UNKNOWN" ]; then
@@ -38,3 +38,4 @@ do
         fi
     fi
 done
+
