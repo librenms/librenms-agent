@@ -16,7 +16,8 @@ fi
 
 # Calculate result. Sum just for debug, and have to return integer
 # => If not integer (e.g. 2.67e+07), LibreNMS will drop the exponent (result, 2.67 bits/sec!)
-ratelist=$(/usr/sbin/iw dev "$1" station dump | /bin/grep "$2 bitrate" | /usr/bin/cut -f 2 -s -d" ")
+ratelist=$(/usr/sbin/iw dev "$1" station dump 2>/dev/null | /bin/grep "$2 bitrate" | /usr/bin/cut -f 2 -s -d" ")
+result=0
 if [ "$3" = "sum" ]; then
   result=$(/bin/echo "$ratelist" | /usr/bin/awk -F ':' '{sum += $2} END {printf "%d\n", 1000000*sum}')
 elif [ "$3" = "avg" ]; then
