@@ -10,7 +10,7 @@
 #     1. Copy this script to /etc/snmp/ and make it executable:
 #         chmod +x /etc/snmp/systemd.py
 #     2. Edit your snmpd.conf and include:
-#         extend systemdd /etc/snmp/systemd.py
+#         extend systemd /etc/snmp/systemd.py
 #     3. (Optional) Create a /etc/snmp/systemd.json file and specify:
 #           a.) "systemctl_cmd" - String path to the systemctl binary ["/usr/bin/systemctl"]
 #           b.) "include_inactive_units" - True/False string to include inactive units in
