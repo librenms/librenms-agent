@@ -20,7 +20,7 @@ for line in data.decode().split("\n"):
 
 dataorder = ["Active", "Reading", "Writing", "Waiting", "Requests"]
 
-print("<<<nginx>>>\n")
+print("<<<nginx>>>")
 
 for param in dataorder:
     if param == "Active":
