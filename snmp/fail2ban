@@ -122,39 +122,37 @@ sub stats{
 	elsif ($? & 127) {
         $toReturn{errorString}= sprintf "fail2ban-client died with signal %d, %s coredump\n",
             ($? & 127),  ($? & 128) ? 'with' : 'without';
-    }
-    else {
-		$toReturn{error}=$? >> 8;
-		$toReturn{errorString}="fail2ban-client exited with ".$toReturn{error};
-    }
+        }
 
 	if ( $toReturn{error} == 0 ){
-		
-		my @jailsOutputA=split(/\n/, $jailsOutput);
-		my ( $jailsS )=grep( /Jail\ list/, @jailsOutputA );
-		$jailsS=~s/.*\://;
-		$jailsS=~s/\s//g;
-		my @jails=split(/\,/, $jailsS);
-		
-		#process jails
-		my $int=0;
-		while(defined($jails[$int])){
-			
-			#get the total for this jail
-			my $jailStatusOutput=`$f2bc status $jails[$int]`;
-			my @jailStatusOutputA=split(/\n/, $jailStatusOutput);
-			my ( $jailTotal )=grep(/Currently\ banned\:/, @jailStatusOutputA);
-			$jailTotal=~s/.*\://;
-			$jailTotal=~s/\s//g;
-			
-			#tally the total and add this jail to the list
-			$toReturn{data}{total} = $toReturn{data}{total} + $jailTotal;
-			$toReturn{data}{jails}{ $jails[$int] } = $jailTotal;
-			
-			$int++;
-		}
-		
-	}
+
+	    my @jailsOutputA=split(/\n/, $jailsOutput);
+	    my ( $jailsS )=grep( /Jail\ list/, @jailsOutputA );
+	    $jailsS=~s/.*\://;
+	    $jailsS=~s/\s//g;
+            my @jails=split(/\,/, $jailsS);
+
+	    #process jails
+	    my $int=0;
+            while(defined($jails[$int])){
+
+		#get the total for this jail
+		my $jailStatusOutput=`$f2bc status $jails[$int]`;
+		my @jailStatusOutputA=split(/\n/, $jailStatusOutput);
+		my ( $jailTotal )=grep(/Currently\ banned\:/, @jailStatusOutputA);
+		$jailTotal=~s/.*\://;
+		$jailTotal=~s/\s//g;
+
+		#tally the total and add this jail to the list
+		$toReturn{data}{total} = $toReturn{data}{total} + $jailTotal;
+		$toReturn{data}{jails}{ $jails[$int] } = $jailTotal;
+
+                $int++;
+	    }
+	}  else {
+	    $toReturn{error}=$? >> 8;
+	    $toReturn{errorString}="fail2ban-client exited with ".$toReturn{error};
+        }
 	
 	my $j=JSON->new;
 	$j->canonical(1);
