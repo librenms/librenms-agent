@@ -234,11 +234,12 @@ def main():
         # Parse each line and import the resultant dictionary into output_data.  We update the
         # interface key with new clients as they are found and instantiate new interface keys as
         # they are found.
-        for intf, intf_data in output_parser(line, interface_clients_dict).items():
-            if intf not in output_data["data"]:
-                output_data["data"][intf] = {}
-            for client, client_data in intf_data.items():
-                output_data["data"][intf][client] = client_data
+        if len(line.strip().split()) == 9:
+            for intf, intf_data in output_parser(line, interface_clients_dict).items():
+                if intf not in output_data["data"]:
+                    output_data["data"][intf] = {}
+                for client, client_data in intf_data.items():
+                    output_data["data"][intf][client] = client_data
 
     print(json.dumps(output_data))
 
