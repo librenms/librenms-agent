@@ -89,11 +89,11 @@ def config_file_parser():
             interface_clients_dict = config_file["public_key_to_arbitrary_name"]
             wg_cmd = [config_file["wg_cmd"]] if "wg_cmd" in config_file else [WG_CMD]
     except (
-            FileNotFoundError,
-            KeyError,
-            PermissionError,
-            OSError,
-            json.decoder.JSONDecodeError,
+        FileNotFoundError,
+        KeyError,
+        PermissionError,
+        OSError,
+        json.decoder.JSONDecodeError,
     ) as err:
         error_handler("Config File Error", err)
 
@@ -242,7 +242,7 @@ def main():
             # interface key with new clients as they are found and instantiate new interface keys as
             # they are found.
             for friendly_name, client_data in output_parser(
-                    line, interface_clients_dict, interface
+                line, interface_clients_dict, interface
             ).items():
                 output_data["data"][interface][friendly_name] = client_data
 
