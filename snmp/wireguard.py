@@ -14,10 +14,14 @@
 #         extend wireguard /etc/snmp/wireguard.py
 #     3. Create a /etc/snmp/wireguard.json file and specify:
 #           a.) (optional) "wg_cmd" - String path to the wg binary ["/usr/bin/wg"]
-#           b.) "public_key_to_arbitrary_name" - A dictionary to convert between the publickey
-#                                                assigned to the client (specified in the wireguard
-#                                                interface conf file) to an arbitrary, friendly
-#                                                name.  The friendly names MUST be unique within
+#           b.) "public_key_to_arbitrary_name" - Two nested dictionaries where the key for the outer
+#                                                dictionary is the interface name, and the value for
+#                                                the outer dictionary is the inner dictionary.  The
+#                                                inner dictionary is composed of key values
+#                                                corresponding to the clients' public keys
+#                                                (specified in the wireguard interface config file)
+#                                                and values corresponding to arbitrary friendly
+#                                                names.  The friendly names MUST be unique within
 #                                                each interface.  Also note that the interface name
 #                                                and friendly names are used in the RRD filename,
 #                                                so using special characters is highly discouraged.
@@ -44,8 +48,8 @@ from datetime import datetime
 from itertools import chain
 
 CONFIG_FILE = "/etc/snmp/wireguard.json"
-WG_ARGS = ["show", "all", "dump"]
 WG_CMD = "/usr/bin/wg"
+WG_ARGS_SHOW_INTFS = ["show", "interfaces"]
 
 
 def error_handler(error_name, err):
@@ -75,7 +79,7 @@ def config_file_parser():
     Inputs:
         None
     Outputs:
-        wg_cmd: The full wg command to execute.
+        wg_cmd: The final wg binary to execute.
         interface_clients_dict: Dictionary mapping of interface names to public_key->client names.
     """
     # Load configuration file if it exists
@@ -93,8 +97,6 @@ def config_file_parser():
     ) as err:
         error_handler("Config File Error", err)
 
-    # Create and return full wg command.
-    wg_cmd.extend(WG_ARGS)
     return wg_cmd, interface_clients_dict
 
 
@@ -132,19 +134,19 @@ def config_file_validator(interface_clients_dict):
         error_handler("Config File Error", err)
 
 
-def command_executor(wg_cmd):
+def command_executor(wg_cmd_full):
     """
     command_executor(): Execute the wg command and return the output.
 
     Inputs:
-        wg_cmd: The full wg command to execute.
+        wg_cmd_full: The full wg command to execute.
     Outputs:
         poutput: The stdout of the executed command (empty byte-string if error).
     """
     try:
         # Execute wg command
         poutput = subprocess.check_output(
-            wg_cmd,
+            wg_cmd_full,
             stdin=None,
             stderr=subprocess.PIPE,
         )
@@ -153,7 +155,7 @@ def command_executor(wg_cmd):
     return poutput
 
 
-def output_parser(line, interface_clients_dict):
+def output_parser(line, interface_clients_dict, interface):
     """
     output_parser(): Parses a line from the wg command for the client's public key, traffic inbound
                      and outbound, wireguard interface, and last handshake timestamp.
@@ -161,18 +163,18 @@ def output_parser(line, interface_clients_dict):
     Inputs:
         line: The wireguard client status line from the wg command stdout.
         interface_clients_dict: Dictionary mapping of interface to public_key->client names.
+        interface: The wireguard interface we are parsing.
     Outputs:
-        wireguard_data: A dictionary of a peer's server interface, public key, bytes sent and
-                        received, and minutes since last handshake
+        wireguard_data: A dictionary of a peer's public key, bytes sent and received, and minutes
+                        since last handshake.
     """
     line_parsed = line.strip().split()
 
     try:
-        interface = str(line_parsed[0])
-        public_key = str(line_parsed[1])
-        timestamp = int(line_parsed[5])
-        bytes_rcvd = int(line_parsed[6])
-        bytes_sent = int(line_parsed[7])
+        public_key = str(line_parsed[0])
+        timestamp = int(line_parsed[4])
+        bytes_rcvd = int(line_parsed[5])
+        bytes_sent = int(line_parsed[6])
     except (IndexError, ValueError) as err:
         error_handler("Command Output Parsing Error", err)
 
@@ -196,12 +198,10 @@ def output_parser(line, interface_clients_dict):
     )
 
     wireguard_data = {
-        interface: {
-            friendly_name: {
-                "minutes_since_last_handshake": minutes_since_last_handshake,
-                "bytes_rcvd": bytes_rcvd,
-                "bytes_sent": bytes_sent,
-            }
+        friendly_name: {
+            "minutes_since_last_handshake": minutes_since_last_handshake,
+            "bytes_rcvd": bytes_rcvd,
+            "bytes_sent": bytes_sent,
         }
     }
 
@@ -226,19 +226,25 @@ def main():
     # Verify contents of the config file are valid.
     config_file_validator(interface_clients_dict)
 
-    # Execute wg command and parse output. We skip the first line ("[1:]") since that's the
-    # wireguard server's public key declaration.
-    for line in command_executor(wg_cmd).decode("utf-8").split("\n")[1:]:
-        if not line:
-            continue
-        # Parse each line and import the resultant dictionary into output_data.  We update the
-        # interface key with new clients as they are found and instantiate new interface keys as
-        # they are found.
-        for intf, intf_data in output_parser(line, interface_clients_dict).items():
-            if intf not in output_data["data"]:
-                output_data["data"][intf] = {}
-            for client, client_data in intf_data.items():
-                output_data["data"][intf][client] = client_data
+    # Get list of interfaces
+    wg_cmd_show_intfs = wg_cmd + WG_ARGS_SHOW_INTFS
+    wg_intfs = command_executor(wg_cmd_show_intfs).decode("utf-8").strip().split(" ")
+
+    # Execute wg command on each discovered interface and parse output. We skip the first line
+    # ("[1:]") since that's the wireguard server's public key declaration.
+    for interface in wg_intfs:
+        wg_cmd_dump = wg_cmd + ["show"] + [interface] + ["dump"]
+        output_data["data"][interface] = {}
+        for line in command_executor(wg_cmd_dump).decode("utf-8").split("\n")[1:]:
+            if not line:
+                continue
+            # Parse each line and import the resultant dictionary into output_data.  We update the
+            # interface key with new clients as they are found and instantiate new interface keys as
+            # they are found.
+            for friendly_name, client_data in output_parser(
+                line, interface_clients_dict, interface
+            ).items():
+                output_data["data"][interface][friendly_name] = client_data
 
     print(json.dumps(output_data))
 
