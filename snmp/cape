@@ -326,12 +326,29 @@ while ( $process_logs && defined( $logs[$process_loop] ) ) {
 	my $current_entry = '';
 	while ( defined($bw) && defined( my $log_line = $bw->readline ) && $continue ) {
 		$current_entry = $log_line . $current_entry;
-		if ( $current_entry
-			=~ /^20[0-9][0-9]\-[01][0-9]\-[0-3][0-9]\ [0-2][0-9]\:[0-5][0-9]\:[0-5][0-9]\,[0-9]+\ \[[a-z-A-Z\.0-9\_\-]+\]\ [a-zA-Z]+\:/
+		if (
+			(
+				$current_entry
+				=~ /^20[0-9][0-9]\-[01][0-9]\-[0-3][0-9]\ [0-2][0-9]\:[0-5][0-9]\:[0-5][0-9]\,[0-9]+\ \[[a-z-A-Z\.0-9\_\-]+\]\ [a-zA-Z]+\:/
+			)
+			|| ( $current_entry
+				=~ /^20[0-9][0-9]\-[01][0-9]\-[0-3][0-9]\ [0-2][0-9]\:[0-5][0-9]\:[0-5][0-9]\,[0-9]+\ \[[a-z-A-Z\.0-9\_\-]+\]\ \[[a-z-A-Z\.0-9\_\-]+\]\ [a-zA-Z]+\:/
+			)
 			)
 		{
+			my ( $date, $time, $log_task_id, $lib, $level, $entry );
+
 			# parse it and blank it for when we get to the next one.
-			my ( $date, $time, $lib, $level, $entry ) = split( /[\ \t]+/, $current_entry, 5 );
+			if ( $current_entry
+				=~ /^20[0-9][0-9]\-[01][0-9]\-[0-3][0-9]\ [0-2][0-9]\:[0-5][0-9]\:[0-5][0-9]\,[0-9]+\ \[[a-z-A-Z\.0-9\_\-]+\]\ [a-zA-Z]+\:/
+				)
+			{
+				( $date, $time, $lib, $level, $entry ) = split( /[\ \t]+/, $current_entry, 5 );
+			}
+			else {
+				( $date, $time, $log_task_id, $lib, $level, $entry ) = split( /[\ \t]+/, $current_entry, 6 );
+				$entry = $log_task_id . ': ' . $entry;
+			}
 			$current_entry = '';
 
 			# chomp off the seconds place after the ,
