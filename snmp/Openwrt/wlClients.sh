@@ -25,7 +25,7 @@ fi
 count=0
 for interface in $interfaces
 do
-	new=$(/usr/sbin/iw dev "$interface" station dump | /bin/grep Station | /usr/bin/cut -f 2 -s -d" " | /usr/bin/wc -l)
+	new=$(/usr/sbin/iw dev "$interface" station dump 2>/dev/null | /bin/grep Station | /usr/bin/cut -f 2 -s -d" " | /usr/bin/wc -l)
   	count=$(( $count + $new ))
 done
 

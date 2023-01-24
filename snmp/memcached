@@ -1,0 +1,22 @@
+#!/usr/bin/php
+<?php
+
+if (! class_exists('Memcached')) {
+    echo json_encode(array(
+        'data' => false,
+        'error' => 99,
+        'errorString' => 'php-memcached extension is not available, it must be installed and enabled.',
+        'version' => '1.1'
+    ));
+    exit;
+}
+
+$m = new Memcached();
+$m->addServer('localhost', 11211);
+
+echo json_encode(array(
+    'data' => $m->getStats(),
+    'error' => $m->getLastErrorCode(),
+    'errorString' => $m->getLastErrorMessage(),
+    'version' => '1.1',
+));
