@@ -36,7 +36,7 @@ Supported command line options are as below.
 
 Depends can be installed via...
 
-    apt-get install libfile-readbackwards-perl libjson-perl libconfig-tiny-perl libdbi-perl libfile-slurp-perl libstatistics-lite-perl
+    apt-get install libfile-readbackwards-perl libjson-perl libconfig-tiny-perl libdbi-perl libfile-slurp-perl libstatistics-lite-perl libdbi-perl libdbd-pg-perl
 
 The defeault setttings are...
 
