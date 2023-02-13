@@ -94,6 +94,7 @@ my $to_return = {
 		out_requests       => 0,
 		crunches           => 0,
 		blocks             => 0,
+		block_percent      => 0,
 		fast_redirs        => 0,
 		con_timeouts       => 0,
 		con_failures       => 0,
@@ -139,7 +140,12 @@ my $to_return = {
 		resp_503           => 0,
 		resp_504           => 0,
 		resp_5xx_other     => 0,
-
+		unique_bdomains    => 0,
+		unique_bdomains_np => 0,
+		unique_domains     => 0,
+		unique_domains_np  => 0,
+		ubd_np_per         => 0,
+		ubd_per            => 0,
 	},
 };
 
@@ -159,6 +165,14 @@ if ($@) {
 
 my $read_file = 1;
 
+# holds a list of blocked domains found
+my $unique_bdomains    = {};
+my $unique_bdomains_np = {};
+
+# holds a list of domains found
+my $unique_domains    = {};
+my $unique_domains_np = {};
+
 # read all log lines in reverse
 my $lines    = '';
 my $log_line = '';
@@ -166,16 +180,19 @@ while ( defined( $log_line = $bw->readline )
 	&& $read_file )
 {
 	my $log_t;
+
 	# get the timestamp on non-CLF style log lines
 	if ( $log_line =~ /^(?<timestamp>\d\d\d\d\-\d\d\-\d\d\ \d\d\:\d\d\:\d\d)/ ) {
 		$log_t = Time::Piece->strptime( $+{timestamp}, '%Y-%m-%d %H:%M:%S' );
 	}
+
 	# get the timestamp on CLF style log lines
 	elsif ( $log_line =~ /\[(?<timestamp>\d\d\/[A-Za-z]+\/\d\d\d\d\:\d\d\:\d\d\:\d\d)\]/ ) {
 		$log_t = Time::Piece->strptime( $+{timestamp}, '%d/%b/%Y:%H:%M:%S' );
 	}
 
 	if ( defined($log_t) ) {
+
 		# if we have gone beyond where we want to go to, then stop...
 		# otherwise add it
 		if ( $log_t->epoch < $till ) {
@@ -183,8 +200,28 @@ while ( defined( $log_line = $bw->readline )
 		}
 		else {
 			$lines = $log_line . $lines;
+
+			if ( $log_line =~ /^\d\d\d\d\-\d\d\-\d\d\ \d\d\:\d\d\:\d\d.*Crunch\:\ Blocked\:\ / ) {
+				my $log_line_tmp = $log_line;
+				$log_line_tmp =~ s/.*Crunch\:\ Blocked\:\ //;
+				$unique_bdomains->{$log_line_tmp} = 1;
+				$log_line =~ s/\:\d+$//;
+				$unique_bdomains_np->{$log_line_tmp} = 1;
+			}
+			if ( $log_line =~ /^\d\d\d\d\-\d\d\-\d\d\ \d\d\:\d\d\:\d\d.*Connect\:\ to\ / ) {
+				my $log_line_tmp = $log_line;
+				$log_line_tmp =~ s/.*Connect\:\ to\ //;
+
+				# if it has a space, it is a line displaying the stating of the connect
+				if ( $log_line_tmp !~ /\ / ) {
+					$unique_domains->{$log_line_tmp} = 1;
+					$log_line =~ s/\:\d+$//;
+					$unique_domains_np->{$log_line_tmp} = 1;
+				}
+			}
 		}
 	}
+
 	# if we don't have log_t, just add the line and lot the log parser figure out what it is
 	else {
 		$lines = $log_line . $lines;
@@ -384,6 +421,25 @@ foreach my $line (@stdout_split) {
 	else {
 		$multiline_mode = '';
 	}
+}
+
+my @keys_tmp = keys( %{$unique_bdomains} );
+$to_return->{data}{unique_bdomains}    = @keys_tmp;
+@keys_tmp                              = keys( %{$unique_bdomains_np} );
+$to_return->{data}{unique_bdomains_np} = @keys_tmp;
+@keys_tmp                              = keys( %{$unique_domains} );
+$to_return->{data}{unique_domains}     = @keys_tmp;
+@keys_tmp                              = keys( %{$unique_domains_np} );
+$to_return->{data}{unique_domains_np}  = @keys_tmp;
+
+if ( $to_return->{data}{unique_domains} > 0 && $to_return->{data}{unique_bdomains} > 0 ) {
+	$to_return->{data}{ubd_per}    = $to_return->{data}{unique_bdomains} / $to_return->{data}{unique_domains};
+	$to_return->{data}{ubd_np_per} = $to_return->{data}{unique_bdomains_np} / $to_return->{data}{unique_domains_np};
+}
+
+# percentage of requests blocked
+if ( $to_return->{data}{blocks} > 0 && $to_return->{data}{client_requests} > 0 ) {
+	$to_return->{data}{block_percent} = $to_return->{data}{blocks} / $to_return->{data}{client_requests};
 }
 
 print $json->encode($to_return);
