@@ -1,0 +1,449 @@
+#!/usr/bin/env perl
+
+#Copyright (c) 2023, Zane C. Bowers-Hadley
+#All rights reserved.
+#
+#Redistribution and use in source and binary forms, with or without modification,
+#are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+#THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+#WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+#IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+#DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+#LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+#THE POSSIBILITY OF SUCH DAMAGE.
+
+=for comment
+
+Add this to snmpd.conf as below and restart snmpd.
+
+    extend privoxy /etc/snmp/extends/privoxy
+
+Supported command line options are as below.
+
+    -f          Logfile.
+                Default: /var/log/privoxy/logfile
+    -c          gzip+base64 compression
+    -p          Pretty print.
+
+The last is only really relevant to the usage with SNMP.
+
+=cut
+
+use strict;
+use warnings;
+use Getopt::Std;
+use File::ReadBackwards;
+use JSON;
+use Time::Piece;
+use IPC::Run3;
+
+# get the current time
+my $t    = localtime;
+my $till = $t->epoch;
+$till = $till - 300;
+
+# needed as strptime will always assume UTC, resulting in localtime and it being off
+if ( $t->tzoffset =~ /^-/ ) {
+	my $offset = $t->tzoffset;
+	$offset =~ s/^\-//;
+	$till = $till - $offset;
+}
+else {
+	my $offset = $t->tzoffset;
+	$offset =~ s/^\+//;
+	$till = $till + $offset;
+}
+
+my $logfile = '/var/log/privoxy/logfile';
+my $compress;
+
+#gets the options
+my %opts;
+getopts( 'f:cp', \%opts );
+if ( defined( $opts{f} ) ) {
+	$logfile = $opts{f};
+}
+if ( defined( $opts{c} ) ) {
+	$compress = 1;
+}
+
+my $json = JSON->new->allow_nonref->canonical(1);
+if ( $opts{p} ) {
+	$json->pretty();
+}
+
+# initiate what will be returned
+my $to_return = {
+	error       => 0,
+	errorString => '',
+	version     => 1,
+	data        => {
+		client_requests    => 0,
+		client_cons        => 0,
+		out_requests       => 0,
+		crunches           => 0,
+		blocks             => 0,
+		block_percent      => 0,
+		fast_redirs        => 0,
+		con_timeouts       => 0,
+		con_failures       => 0,
+		ska_offers         => 0,
+		nog_conns          => 0,
+		reused_server_cons => 0,
+		empty_resps        => 0,
+		empty_resps_new    => 0,
+		empty_resps_reuse  => 0,
+		imp_accounted      => 0,
+		req_get            => 0,
+		req_head           => 0,
+		req_post           => 0,
+		req_put            => 0,
+		req_delete         => 0,
+		req_connect        => 0,
+		req_options        => 0,
+		req_trace          => 0,
+		req_patch          => 0,
+		ver_1_0            => 0,
+		ver_1_1            => 0,
+		ver_2              => 0,
+		ver_3              => 0,
+		max_reqs           => 0,
+		bytes_to_client    => 0,
+		resp_1xx           => 0,
+		resp_2xx           => 0,
+		resp_200           => 0,
+		resp_2xx_other     => 0,
+		resp_3xx           => 0,
+		resp_301           => 0,
+		resp_302           => 0,
+		resp_303           => 0,
+		resp_3xx_other     => 0,
+		resp_4xx           => 0,
+		resp_403           => 0,
+		resp_404           => 0,
+		resp_451           => 0,
+		resp_4xx_other     => 0,
+		resp_5xx           => 0,
+		resp_500           => 0,
+		resp_502           => 0,
+		resp_503           => 0,
+		resp_504           => 0,
+		resp_5xx_other     => 0,
+		unique_bdomains    => 0,
+		unique_bdomains_np => 0,
+		unique_domains     => 0,
+		unique_domains_np  => 0,
+		ubd_np_per         => 0,
+		ubd_per            => 0,
+	},
+};
+
+my $bw;
+eval { $bw = File::ReadBackwards->new($logfile)
+		or die "can't read " . $logfile . "... $!"; };
+if ($@) {
+	$to_return->{error}       = 1;
+	$to_return->{errorString} = $@;
+	$to_return->{data}        = {};
+	print $json->encode($to_return);
+	if ( !$opts{p} ) {
+		print "\n";
+	}
+	exit 0;
+}
+
+my $read_file = 1;
+
+# holds a list of blocked domains found
+my $unique_bdomains    = {};
+my $unique_bdomains_np = {};
+
+# holds a list of domains found
+my $unique_domains    = {};
+my $unique_domains_np = {};
+
+# read all log lines in reverse
+my $lines    = '';
+my $log_line = '';
+while ( defined( $log_line = $bw->readline )
+	&& $read_file )
+{
+	my $log_t;
+
+	# get the timestamp on non-CLF style log lines
+	if ( $log_line =~ /^(?<timestamp>\d\d\d\d\-\d\d\-\d\d\ \d\d\:\d\d\:\d\d)/ ) {
+		$log_t = Time::Piece->strptime( $+{timestamp}, '%Y-%m-%d %H:%M:%S' );
+	}
+
+	# get the timestamp on CLF style log lines
+	elsif ( $log_line =~ /\[(?<timestamp>\d\d\/[A-Za-z]+\/\d\d\d\d\:\d\d\:\d\d\:\d\d)\]/ ) {
+		$log_t = Time::Piece->strptime( $+{timestamp}, '%d/%b/%Y:%H:%M:%S' );
+	}
+
+	if ( defined($log_t) ) {
+
+		# if we have gone beyond where we want to go to, then stop...
+		# otherwise add it
+		if ( $log_t->epoch < $till ) {
+			$read_file = 0;
+		}
+		else {
+			$lines = $log_line . $lines;
+
+			if ( $log_line =~ /^\d\d\d\d\-\d\d\-\d\d\ \d\d\:\d\d\:\d\d.*Crunch\:\ Blocked\:\ / ) {
+				my $log_line_tmp = $log_line;
+				$log_line_tmp =~ s/.*Crunch\:\ Blocked\:\ //;
+				$unique_bdomains->{$log_line_tmp} = 1;
+				$log_line =~ s/\:\d+$//;
+				$unique_bdomains_np->{$log_line_tmp} = 1;
+			}
+			if ( $log_line =~ /^\d\d\d\d\-\d\d\-\d\d\ \d\d\:\d\d\:\d\d.*Connect\:\ to\ / ) {
+				my $log_line_tmp = $log_line;
+				$log_line_tmp =~ s/.*Connect\:\ to\ //;
+
+				# if it has a space, it is a line displaying the stating of the connect
+				if ( $log_line_tmp !~ /\ / ) {
+					$unique_domains->{$log_line_tmp} = 1;
+					$log_line =~ s/\:\d+$//;
+					$unique_domains_np->{$log_line_tmp} = 1;
+				}
+			}
+		}
+	}
+
+	# if we don't have log_t, just add the line and lot the log parser figure out what it is
+	else {
+		$lines = $log_line . $lines;
+	}
+}
+
+my $stdout;
+my $stderr;
+my @cmd = ( 'privoxy-log-parser.pl', '--statistics', '--show-complete-request-distribution' );
+run3( \@cmd, \$lines, \$stdout, \$stderr );
+
+my @stdout_split = split( /\n/, $stdout );
+
+my $multiline_mode;
+foreach my $line (@stdout_split) {
+
+	# needed as some lines have white space on the end that makes parsing annoying
+	$line =~ s/\ +$//;
+
+	# start processing lines based on the start of the line
+	if ( $line =~ /^Client\ requests\ total\:/ ) {
+		$multiline_mode = '';
+		$line =~ s/.*\:\ //;
+		$to_return->{data}{client_requests} = $line;
+	}
+	elsif ( $line =~ /^Crunches\:/ ) {
+		$multiline_mode = '';
+		$line =~ s/.*\:\ //;
+		$line =~ s/\ .*$//;
+		$to_return->{data}{crunches} = $line;
+	}
+	elsif ( $line =~ /^Blocks:/ ) {
+		$multiline_mode = '';
+		$line =~ s/.*\:\ //;
+		$line =~ s/\ .*$//;
+		$to_return->{data}{blocks} = $line;
+	}
+	elsif ( $line =~ /^Fast\ redirections\:/ ) {
+		$multiline_mode = '';
+		$line =~ s/.*\:\ //;
+		$line =~ s/\ .*$//;
+		$to_return->{data}{fast_redirs} = $line;
+	}
+	elsif ( $line =~ /^Connection\ timeouts\:/ ) {
+		$multiline_mode = '';
+		$line =~ s/.*\:\ //;
+		$line =~ s/\ .*$//;
+		$to_return->{data}{con_timeouts} = $line;
+	}
+	elsif ( $line =~ /^Connection\ failures\:/ ) {
+		$multiline_mode = '';
+		$line =~ s/.*\:\ //;
+		$line =~ s/\ .*$//;
+		$to_return->{data}{con_failures} = $line;
+	}
+	elsif ( $line =~ /^Outgoing\ requests\:/ ) {
+		$multiline_mode = '';
+		$line =~ s/.*\:\ //;
+		$line =~ s/\ .*$//;
+		$to_return->{data}{out_requests} = $line;
+	}
+	elsif ( $line =~ /^Server keep-alive offers\:/ ) {
+		$multiline_mode = '';
+		$line =~ s/.*\:\ //;
+		$line =~ s/\ .*$//;
+		$to_return->{data}{ska_offers} = $line;
+	}
+	elsif ( $line =~ /^New\ outgoing\ connections\:/ ) {
+		$multiline_mode = '';
+		$line =~ s/.*\:\ \-//;
+		$line =~ s/\ .*$//;
+		$to_return->{data}{nog_conns} = $line;
+	}
+	elsif ( $line =~ /^Reused\ server\ connections\:/ ) {
+		$multiline_mode = '';
+		$line =~ s/.*connections\:\ //;
+		$line =~ s/\ .*$//;
+		$to_return->{data}{reused_server_cons} = $line;
+	}
+	elsif ( $line =~ /^Empty\ responses\:/ ) {
+		$multiline_mode = '';
+		$line =~ s/.*\:\ //;
+		$line =~ s/\ .*$//;
+		$to_return->{data}{empty_resps} = $line;
+	}
+	elsif ( $line =~ /^Empty\ responses\ on\ new\ connections\:/ ) {
+		$multiline_mode = '';
+		$line =~ s/.*\:\ //;
+		$line =~ s/\ .*$//;
+		$to_return->{data}{empty_resps_new} = $line;
+	}
+	elsif ( $line =~ /^Empty\ responses\ on\ reused\ connections\:/ ) {
+		$multiline_mode = '';
+		$line =~ s/.*\:\ //;
+		$line =~ s/\ .*$//;
+		$to_return->{data}{empty_resps_reuse} = $line;
+	}
+	elsif ( $line =~ /^Client\ connections\:/ ) {
+		$multiline_mode = '';
+		$line =~ s/.*\:\ //;
+		$line =~ s/\ .*$//;
+		$to_return->{data}{client_cons} = $line;
+	}
+	elsif ( $line =~ /^Bytes\ of\ content\ transferred\ to\ the\ client\:/ ) {
+		$multiline_mode = '';
+		$line =~ s/.*\:\ //;
+		$line =~ s/\ .*$//;
+		$to_return->{data}{bytes_to_client} = $line;
+	}
+	elsif ( $line =~ /^Improperly\ accounted\ requests\:/ ) {
+		$multiline_mode = '';
+		$line =~ s/.*\:\ \~//;
+		$line =~ s/\ .*$//;
+		$to_return->{data}{imp_accounted} = $line;
+	}
+
+	# match various multi line modes starts
+	elsif ( $line =~ /^Client\ requests\ per\ connection\ distribution\:/ ) {
+		$multiline_mode = 'requests per con';
+	}
+	elsif ( $line =~ /^Method\ distribution\:/ ) {
+		$multiline_mode = 'method';
+	}
+	elsif ( $line =~ /^Client HTTP versions:/ ) {
+		$multiline_mode = 'version';
+	}
+	elsif ( $line
+		=~ /^HTTP\ status\ codes\ according\ to\ \'debug\ 512\' \(status\ codes\ sent\ by\ the\ server\ may\ differ\)\:/
+		)
+	{
+		$multiline_mode = 'response';
+	}
+
+	# if it starts with a space, it is a multiline mode item
+	elsif ( $line =~ /^\ / ) {
+		if ( $multiline_mode eq 'requsts per con' ) {
+			$line =~ s/.*\:\ //;
+			if ( $line > $to_return->{data}{max_reqs} ) {
+				$to_return->{data}{max_reqs} = $line;
+			}
+		}
+		elsif ( $multiline_mode eq 'method' ) {
+			$line =~ s/^ +//;
+			my ( $count, $method ) = split( /\ \:\ /, $line );
+			$method = lc($method);
+			if ( defined( $to_return->{data}{ 'req_' . $method } ) ) {
+				$to_return->{data}{ 'req_' . $method } = $count;
+			}
+		}
+		elsif ( $multiline_mode eq 'version' ) {
+			$line =~ s/^ +//;
+			my ( $count, $version ) = split( /\ \:\ /, $line );
+			$version = lc($version);
+			$version =~ s/http\//ver_/;
+			$version =~ s/\./_/g;
+			if ( defined( $to_return->{data}{$version} ) ) {
+				$to_return->{data}{$version} = $count;
+			}
+		}
+		elsif ( $multiline_mode eq 'response' ) {
+			$line =~ s/^ +//;
+			my ( $count, $response ) = split( /\ \:\ /, $line );
+			if ( defined( $to_return->{data}{ 'resp_' . $response } ) ) {
+
+				$to_return->{data}{ 'resp_' . $response } = $count;
+			}
+			elsif ( $response =~ /^2\d\d/ ) {
+				$to_return->{data}{resp_2xx_other} = $to_return->{data}{resp_2xx_other} + $count;
+			}
+			elsif ( $response =~ /^3\d\d/ ) {
+				$to_return->{data}{resp_3xx_other} = $to_return->{data}{resp_3xx_other} + $count;
+			}
+			elsif ( $response =~ /^4\d\d/ ) {
+				$to_return->{data}{resp_4xx_other} = $to_return->{data}{resp_4xx_other} + $count;
+			}
+			elsif ( $response =~ /^5\d\d/ ) {
+				$to_return->{data}{resp_3xx_other} = $to_return->{data}{resp_5xx_other} + $count;
+			}
+
+			if ( $response =~ /^1\d\d/ ) {
+				$to_return->{data}{resp_1xx} = $to_return->{data}{resp_1xx} + $count;
+			}
+			elsif ( $response =~ /^2\d\d/ ) {
+				$to_return->{data}{resp_2xx} = $to_return->{data}{resp_2xx} + $count;
+			}
+			elsif ( $response =~ /^3\d\d/ ) {
+				$to_return->{data}{resp_3xx} = $to_return->{data}{resp_3xx} + $count;
+			}
+			elsif ( $response =~ /^4\d\d/ ) {
+				$to_return->{data}{resp_4xx} = $to_return->{data}{resp_4xx} + $count;
+			}
+			elsif ( $response =~ /^5\d\d/ ) {
+				$to_return->{data}{resp_5xx} = $to_return->{data}{resp_5xx} + $count;
+			}
+		}
+	}
+	else {
+		$multiline_mode = '';
+	}
+}
+
+my @keys_tmp = keys( %{$unique_bdomains} );
+$to_return->{data}{unique_bdomains}    = @keys_tmp;
+@keys_tmp                              = keys( %{$unique_bdomains_np} );
+$to_return->{data}{unique_bdomains_np} = @keys_tmp;
+@keys_tmp                              = keys( %{$unique_domains} );
+$to_return->{data}{unique_domains}     = @keys_tmp;
+@keys_tmp                              = keys( %{$unique_domains_np} );
+$to_return->{data}{unique_domains_np}  = @keys_tmp;
+
+if ( $to_return->{data}{unique_domains} > 0 && $to_return->{data}{unique_bdomains} > 0 ) {
+	$to_return->{data}{ubd_per}    = $to_return->{data}{unique_bdomains} / $to_return->{data}{unique_domains};
+	$to_return->{data}{ubd_np_per} = $to_return->{data}{unique_bdomains_np} / $to_return->{data}{unique_domains_np};
+}
+
+# percentage of requests blocked
+if ( $to_return->{data}{blocks} > 0 && $to_return->{data}{client_requests} > 0 ) {
+	$to_return->{data}{block_percent} = $to_return->{data}{blocks} / $to_return->{data}{client_requests};
+}
+
+print $json->encode($to_return);
+if ( !$opts{p} ) {
+	print "\n";
+}
+exit 0;
