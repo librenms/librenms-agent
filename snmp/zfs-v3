@@ -18,7 +18,7 @@ Pretty print the JSON.
 
 =cut
 
-#Copyright (c) 2017, Zane C. Bowers-Hadley
+#Copyright (c) 2023, Zane C. Bowers-Hadley
 #All rights reserved.
 #
 #Redistribution and use in source and binary forms, with or without modification,
@@ -123,10 +123,10 @@ while ( defined( $pools[$pools_int] ) ) {
 		$newPool{scrubq_read_a}, $newPool{trimq_write_p},  $newPool{trimq_write_a},
 	) = split( /\,/, $iostat );
 
-	my @pool_keys=keys(%newPool);
+	my @pool_keys = keys(%newPool);
 	foreach my $item (@pool_keys) {
-		if ( $item ne 'altroot' && $newPool{$item} eq '-') {
-			$newPool{$item}=0;
+		if ( $item ne 'altroot' && $newPool{$item} eq '-' ) {
+			$newPool{$item} = 0;
 		}
 	}
 
@@ -137,33 +137,10 @@ while ( defined( $pools[$pools_int] ) ) {
 $tojson{pools} = \@toShoveIntoJSON;
 
 #
-my $target_size_percent;
-my $arc_size_percent;
-my $target_size_adaptive_ratio;
-my $min_size_percent;
-my $mfu_size;
-my $recently_used_percent;
-my $frequently_used_percent;
-my $arc_hits;
-my $arc_misses;
-my $demand_data_hits;
-my $demand_data_misses;
-my $demand_metadata_hits;
-my $demand_metadata_misses;
-my $mfu_ghost_hits;
-my $mfu_hits;
-my $mru_ghost_hits;
-my $mru_hits;
-my $prefetch_data_hits;
-my $prefetch_data_misses;
-my $prefetch_metadata_hits;
-my $prefetch_metadata_misses;
-
-#
 # OS specific bits
 #
+my $stats_stuff;
 if ( $^O eq 'freebsd' ) {
-	my $sysctls;
 	my @to_pull      = ( 'kstat.zfs', 'vfs.zfs', );
 	my @sysctls_pull = `/sbin/sysctl -q @to_pull`;
 	foreach my $stat (@sysctls_pull) {
@@ -174,84 +151,83 @@ if ( $^O eq 'freebsd' ) {
 		# the data so it is trying to "split" the data.
 		if ( length $val ) {
 			$val =~ s/^ //;
-			$sysctls->{$var} = $val;
+			$var =~ s/^.*\.arcstats\.//;
+			$stats_stuff->{$var} = $val;
 		}
 	}
 
-	# does not seem to exist for me, but some of these don't seem to be created till needed
-	if ( !defined( $sysctls->{"kstat.zfs.misc.arcstats.recycle_miss"} ) ) {
-		$sysctls->{"kstat.zfs.misc.arcstats.recycle_miss"} = 0;
-	}
+}
+elsif ( $^O eq 'linux' ) {
+	my $arcstats_raw = read_file('/proc/spl/kstat/zfs/arcstats');
+
+}
+
+# does not seem to exist for me, but some of these don't seem to be created till needed
+if ( !defined( $stats_stuff->{"recycle_miss"} ) ) {
+	$stats_stuff->{"recycle_miss"} = 0;
+}
 
 ##
 ## ARC misc
 ##
-	$tojson{deleted}      = $sysctls->{"kstat.zfs.misc.arcstats.deleted"};
-	$tojson{evict_skip}   = $sysctls->{"kstat.zfs.misc.arcstats.evict_skip"};
-	$tojson{mutex_skip}   = $sysctls->{'kstat.zfs.misc.arcstats.mutex_miss'};
-	$tojson{recycle_miss} = $sysctls->{"kstat.zfs.misc.arcstats.recycle_miss"};
+$tojson{deleted}      = $stats_stuff->{"deleted"};
+$tojson{evict_skip}   = $stats_stuff->{"evict_skip"};
+$tojson{mutex_skip}   = $stats_stuff->{'mutex_miss'};
+$tojson{recycle_miss} = $stats_stuff->{"recycle_miss"};
 
 ##
 ## ARC size
 ##
-	$target_size_percent = $sysctls->{"kstat.zfs.misc.arcstats.c"} / $sysctls->{"kstat.zfs.misc.arcstats.c_max"} * 100;
-	$arc_size_percent = $sysctls->{"kstat.zfs.misc.arcstats.size"} / $sysctls->{"kstat.zfs.misc.arcstats.c_max"} * 100;
-	$target_size_adaptive_ratio = $sysctls->{"kstat.zfs.misc.arcstats.c"} / $sysctls->{"kstat.zfs.misc.arcstats.c_max"};
-	$min_size_percent = $sysctls->{"kstat.zfs.misc.arcstats.c_min"} / $sysctls->{"kstat.zfs.misc.arcstats.c_max"} * 100;
+my $target_size_percent        = $stats_stuff->{"c"} / $stats_stuff->{"c_max"} * 100;
+my $arc_size_percent           = $stats_stuff->{"size"} / $stats_stuff->{"c_max"} * 100;
+my $target_size_adaptive_ratio = $stats_stuff->{"c"} / $stats_stuff->{"c_max"};
+my $min_size_percent           = $stats_stuff->{"c_min"} / $stats_stuff->{"c_max"} * 100;
 
-	$tojson{arc_size}         = $sysctls->{"kstat.zfs.misc.arcstats.size"};
-	$tojson{target_size_max}  = $sysctls->{"kstat.zfs.misc.arcstats.c_max"};
-	$tojson{target_size_min}  = $sysctls->{"kstat.zfs.misc.arcstats.c_min"};
-	$tojson{target_size}      = $sysctls->{"kstat.zfs.misc.arcstats.c"};
-	$tojson{target_size_per}  = $target_size_percent;
-	$tojson{arc_size_per}     = $arc_size_percent;
-	$tojson{target_size_arat} = $target_size_adaptive_ratio;
-	$tojson{min_size_per}     = $min_size_percent;
+$tojson{arc_size}         = $stats_stuff->{"size"};
+$tojson{target_size_max}  = $stats_stuff->{"c_max"};
+$tojson{target_size_min}  = $stats_stuff->{"c_min"};
+$tojson{target_size}      = $stats_stuff->{"c"};
+$tojson{target_size_per}  = $target_size_percent;
+$tojson{arc_size_per}     = $arc_size_percent;
+$tojson{target_size_arat} = $target_size_adaptive_ratio;
+$tojson{min_size_per}     = $min_size_percent;
 
 ##
 ## ARC size breakdown
 ##
-	if ( $sysctls->{"kstat.zfs.misc.arcstats.size"} >= $sysctls->{"kstat.zfs.misc.arcstats.c"} ) {
-		$mfu_size = $sysctls->{"kstat.zfs.misc.arcstats.size"} - $sysctls->{"kstat.zfs.misc.arcstats.p"};
-		$recently_used_percent
-			= $sysctls->{"kstat.zfs.misc.arcstats.p"} / $sysctls->{"kstat.zfs.misc.arcstats.size"} * 100;
-		$frequently_used_percent = $mfu_size / $sysctls->{"kstat.zfs.misc.arcstats.size"} * 100;
-	}
-	else {
-		$mfu_size = $sysctls->{"kstat.zfs.misc.arcstats.c"} - $sysctls->{"kstat.zfs.misc.arcstats.p"};
-		$recently_used_percent
-			= $sysctls->{"kstat.zfs.misc.arcstats.p"} / $sysctls->{"kstat.zfs.misc.arcstats.c"} * 100;
-		$frequently_used_percent = $mfu_size / $sysctls->{"kstat.zfs.misc.arcstats.c"} * 100;
-	}
+my $mfu_size;
+my $recently_used_percent;
+my $frequently_used_percent;
+if ( $stats_stuff->{"size"} >= $stats_stuff->{"c"} ) {
+	$mfu_size                = $stats_stuff->{"size"} - $stats_stuff->{"p"};
+	$recently_used_percent   = $stats_stuff->{"p"} / $stats_stuff->{"size"} * 100;
+	$frequently_used_percent = $mfu_size / $stats_stuff->{"size"} * 100;
+}
+else {
+	$mfu_size                = $stats_stuff->{"c"} - $stats_stuff->{"p"};
+	$recently_used_percent   = $stats_stuff->{"p"} / $stats_stuff->{"c"} * 100;
+	$frequently_used_percent = $mfu_size / $stats_stuff->{"c"} * 100;
+}
 
-	$tojson{p} = $sysctls->{"kstat.zfs.misc.arcstats.p"};
+$tojson{p} = $stats_stuff->{"p"};
 
 ##
 ## ARC efficiency
 ##
-	$arc_hits                 = $sysctls->{"kstat.zfs.misc.arcstats.hits"};
-	$arc_misses               = $sysctls->{"kstat.zfs.misc.arcstats.misses"};
-	$demand_data_hits         = $sysctls->{"kstat.zfs.misc.arcstats.demand_data_hits"};
-	$demand_data_misses       = $sysctls->{"kstat.zfs.misc.arcstats.demand_data_misses"};
-	$demand_metadata_hits     = $sysctls->{"kstat.zfs.misc.arcstats.demand_metadata_hits"};
-	$demand_metadata_misses   = $sysctls->{"kstat.zfs.misc.arcstats.demand_metadata_misses"};
-	$mfu_ghost_hits           = $sysctls->{"kstat.zfs.misc.arcstats.mfu_ghost_hits"};
-	$mfu_hits                 = $sysctls->{"kstat.zfs.misc.arcstats.mfu_hits"};
-	$mru_ghost_hits           = $sysctls->{"kstat.zfs.misc.arcstats.mru_ghost_hits"};
-	$mru_hits                 = $sysctls->{"kstat.zfs.misc.arcstats.mru_hits"};
-	$prefetch_data_hits       = $sysctls->{"kstat.zfs.misc.arcstats.prefetch_data_hits"};
-	$prefetch_data_misses     = $sysctls->{"kstat.zfs.misc.arcstats.prefetch_data_misses"};
-	$prefetch_metadata_hits   = $sysctls->{"kstat.zfs.misc.arcstats.prefetch_metadata_hits"};
-	$prefetch_metadata_misses = $sysctls->{"kstat.zfs.misc.arcstats.prefetch_metadata_misses"};
-
-}
-elsif ( $^O eq 'linux' ) {
-
-}
-
-$tojson{mfu_size}      = $mfu_size;
-$tojson{rec_used_per}  = $recently_used_percent;
-$tojson{freq_used_per} = $frequently_used_percent;
+my $arc_hits                 = $stats_stuff->{"hits"};
+my $arc_misses               = $stats_stuff->{"misses"};
+my $demand_data_hits         = $stats_stuff->{"demand_data_hits"};
+my $demand_data_misses       = $stats_stuff->{"demand_data_misses"};
+my $demand_metadata_hits     = $stats_stuff->{"demand_metadata_hits"};
+my $demand_metadata_misses   = $stats_stuff->{"demand_metadata_misses"};
+my $mfu_ghost_hits           = $stats_stuff->{"mfu_ghost_hits"};
+my $mfu_hits                 = $stats_stuff->{"mfu_hits"};
+my $mru_ghost_hits           = $stats_stuff->{"mru_ghost_hits"};
+my $mru_hits                 = $stats_stuff->{"mru_hits"};
+my $prefetch_data_hits       = $stats_stuff->{"prefetch_data_hits"};
+my $prefetch_data_misses     = $stats_stuff->{"prefetch_data_misses"};
+my $prefetch_metadata_hits   = $stats_stuff->{"prefetch_metadata_hits"};
+my $prefetch_metadata_misses = $stats_stuff->{"prefetch_metadata_misses"};
 
 ##
 ## ARC efficiency, common
@@ -340,6 +316,10 @@ $tojson{demand_misses_per}   = $demand_misses_percent;
 $tojson{pre_misses_per}      = $prefetch_misses_percent;
 $tojson{meta_misses_per}     = $metadata_misses_percent;
 $tojson{pre_meta_misses_per} = $prefetch_metadata_misses_percent;
+
+$tojson{mfu_size}      = $mfu_size;
+$tojson{rec_used_per}  = $recently_used_percent;
+$tojson{freq_used_per} = $frequently_used_percent;
 
 ##
 ## print the results
