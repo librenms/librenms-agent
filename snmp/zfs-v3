@@ -159,7 +159,6 @@ if ( $^O eq 'freebsd' ) {
 }
 elsif ( $^O eq 'linux' ) {
 	my @arcstats_lines = read_file('/proc/spl/kstat/zfs/arcstats');
-
 	foreach my $line (@arcstats_lines) {
 		chomp($line);
 		my ($stat, $int, $value)=split(/[\t\ ]+/, $line, 3);
@@ -325,6 +324,14 @@ $tojson{pre_meta_misses_per} = $prefetch_metadata_misses_percent;
 $tojson{mfu_size}      = $mfu_size;
 $tojson{rec_used_per}  = $recently_used_percent;
 $tojson{freq_used_per} = $frequently_used_percent;
+
+##
+## pull in the l2 stats
+##
+my @l2_keys=grep(/l2\_/, keys( %{ $stats_stuff } ));
+foreach my $item (@l2_keys) {
+	$tojson{$item}=$stats_stuff->{$item};
+}
 
 ##
 ## print the results
