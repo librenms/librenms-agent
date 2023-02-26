@@ -302,7 +302,7 @@ $tojson{pre_meta_misses_per} = $prefetch_metadata_misses_percent;
 
 my %head_hash;
 $head_hash{'data'}        = \%tojson;
-$head_hash{'version'}     = 2;
+$head_hash{'version'}     = 3;
 $head_hash{'error'}       = 0;
 $head_hash{'errorString'} = '';
 
