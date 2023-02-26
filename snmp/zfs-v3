@@ -139,7 +139,7 @@ $tojson{pools} = \@toShoveIntoJSON;
 #
 # OS specific bits
 #
-my $stats_stuff;
+my $stats_stuff={};
 if ( $^O eq 'freebsd' ) {
 	my @to_pull      = ( 'kstat.zfs', 'vfs.zfs', );
 	my @sysctls_pull = `/sbin/sysctl -q @to_pull`;
@@ -158,8 +158,13 @@ if ( $^O eq 'freebsd' ) {
 
 }
 elsif ( $^O eq 'linux' ) {
-	my $arcstats_raw = read_file('/proc/spl/kstat/zfs/arcstats');
+	my @arcstats_lines = read_file('/proc/spl/kstat/zfs/arcstats');
 
+	foreach my $line (@arcstats_lines) {
+		chomp($line);
+		my ($stat, $int, $value)=split(/[\t\ ]+/, $line, 3);
+		$stats_stuff->{$stat}=$value;
+	}
 }
 
 # does not seem to exist for me, but some of these don't seem to be created till needed
