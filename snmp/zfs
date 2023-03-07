@@ -14,7 +14,7 @@ Pretty print the JSON.
 
 =head1 SNMPD SETUP EXAMPLES
 
-    extend zfs /etc/snmp/zfs-freebsd
+    extend zfs /etc/snmp/zfs
 
 =cut
 
@@ -71,14 +71,22 @@ getopts( 'p', \%opts );
 my $zpool_output = `/sbin/zpool list -pH`;
 my @pools        = split( /\n/, $zpool_output );
 my $pools_int    = 0;
+$tojson{online} = 0;
+$tojson{degraded} = 0;
+$tojson{offline} = 0;
+$tojson{faulted} = 0;
+$tojson{health} = 1;
+$tojson{unavail} = 0;
+$tojson{removed} = 0;
+$tojson{unknown} = 0;
 my @toShoveIntoJSON;
 while ( defined( $pools[$pools_int] ) ) {
 	my %newPool;
 
 	my $pool = $pools[$pools_int];
 	chomp($pool);
-	$pool =~ s/\t/,/g;
-	$pool =~ s/\,\-\,\-\,/\,0\,0\,/g;
+	$pool =~ s/[\t\ ]+/,/g;
+	$pool =~ s/\,\-\,/\,0\,/g;
 	$pool =~ s/\%//g;
 	$pool =~ s/\,([0-1\.]*)x\,/,$1,/;
 
@@ -90,15 +98,36 @@ while ( defined( $pools[$pools_int] ) ) {
 
 	if ( $newPool{health} eq 'ONLINE' ) {
 		$newPool{health} = 0;
+		$tojson{online}++;
 	}
 	elsif ( $newPool{health} eq 'DEGRADED' ) {
 		$newPool{health} = 1;
+		$tojson{health}=0;
+		$tojson{degraded}++;
 	}
 	elsif ( $newPool{health} eq 'OFFLINE' ) {
 		$newPool{health} = 2;
+		$tojson{offline}++;
 	}
-	else {
+	elsif ( $newPool{health} eq 'FAULTED' ) {
 		$newPool{health} = 3;
+		$tojson{health}=0;
+		$tojson{faulted}++;
+	}
+	elsif ( $newPool{health} eq 'UNAVAIL' ) {
+		$newPool{health} = 4;
+		$tojson{health}=0;
+		$tojson{unavail}++;
+	}
+	elsif ( $newPool{health} eq 'REMOVED' ) {
+		$newPool{health} = 5;
+		$tojson{health}=0;
+		$tojson{removed}++;
+	}
+	else{
+		$newPool{health} = 6;
+		$tojson{health}=0;
+		$tojson{unknown}++;
 	}
 
 	if ( $newPool{expandsz} eq '-' ) {
