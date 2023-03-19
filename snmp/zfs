@@ -53,7 +53,7 @@ use File::Slurp;
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 
 sub main::VERSION_MESSAGE {
-	print "FreeBSD ZFS v2 stats extend 0.0.1\n";
+	print "FreeBSD ZFS v3 stats extend 0.0.1\n";
 }
 
 sub main::HELP_MESSAGE {
@@ -71,15 +71,16 @@ getopts( 'p', \%opts );
 my $zpool_output = `/sbin/zpool list -pH`;
 my @pools        = split( /\n/, $zpool_output );
 my $pools_int    = 0;
-$tojson{online} = 0;
+$tojson{online}   = 0;
 $tojson{degraded} = 0;
-$tojson{offline} = 0;
-$tojson{faulted} = 0;
-$tojson{health} = 1;
-$tojson{unavail} = 0;
-$tojson{removed} = 0;
-$tojson{unknown} = 0;
+$tojson{offline}  = 0;
+$tojson{faulted}  = 0;
+$tojson{health}   = 1;
+$tojson{unavail}  = 0;
+$tojson{removed}  = 0;
+$tojson{unknown}  = 0;
 my @toShoveIntoJSON;
+
 while ( defined( $pools[$pools_int] ) ) {
 	my %newPool;
 
@@ -102,7 +103,7 @@ while ( defined( $pools[$pools_int] ) ) {
 	}
 	elsif ( $newPool{health} eq 'DEGRADED' ) {
 		$newPool{health} = 1;
-		$tojson{health}=0;
+		$tojson{health}  = 0;
 		$tojson{degraded}++;
 	}
 	elsif ( $newPool{health} eq 'OFFLINE' ) {
@@ -111,22 +112,22 @@ while ( defined( $pools[$pools_int] ) ) {
 	}
 	elsif ( $newPool{health} eq 'FAULTED' ) {
 		$newPool{health} = 3;
-		$tojson{health}=0;
+		$tojson{health}  = 0;
 		$tojson{faulted}++;
 	}
 	elsif ( $newPool{health} eq 'UNAVAIL' ) {
 		$newPool{health} = 4;
-		$tojson{health}=0;
+		$tojson{health}  = 0;
 		$tojson{unavail}++;
 	}
 	elsif ( $newPool{health} eq 'REMOVED' ) {
 		$newPool{health} = 5;
-		$tojson{health}=0;
+		$tojson{health}  = 0;
 		$tojson{removed}++;
 	}
-	else{
+	else {
 		$newPool{health} = 6;
-		$tojson{health}=0;
+		$tojson{health}  = 0;
 		$tojson{unknown}++;
 	}
 
@@ -168,7 +169,7 @@ $tojson{pools} = \@toShoveIntoJSON;
 #
 # OS specific bits
 #
-my $stats_stuff={};
+my $stats_stuff = {};
 if ( $^O eq 'freebsd' ) {
 	my @to_pull      = ( 'kstat.zfs', 'vfs.zfs', );
 	my @sysctls_pull = `/sbin/sysctl -q @to_pull`;
@@ -190,8 +191,8 @@ elsif ( $^O eq 'linux' ) {
 	my @arcstats_lines = read_file('/proc/spl/kstat/zfs/arcstats');
 	foreach my $line (@arcstats_lines) {
 		chomp($line);
-		my ($stat, $int, $value)=split(/[\t\ ]+/, $line, 3);
-		$stats_stuff->{$stat}=$value;
+		my ( $stat, $int, $value ) = split( /[\t\ ]+/, $line, 3 );
+		$stats_stuff->{$stat} = $value;
 	}
 }
 
@@ -357,10 +358,12 @@ $tojson{freq_used_per} = $frequently_used_percent;
 ##
 ## pull in the l2 stats
 ##
-my @l2_keys=grep(/l2\_/, keys( %{ $stats_stuff } ));
+my @l2_keys = grep( /l2\_/, keys( %{$stats_stuff} ) );
 foreach my $item (@l2_keys) {
-	$tojson{$item}=$stats_stuff->{$item};
+	$tojson{$item} = $stats_stuff->{$item};
 }
+$tojson{l2_errors}       = $tojson{l2_writes_error} + $tojson{l2_cksum_bad} + $tojson{l2_io_error};
+$tojson{l2_access_total} = $tojson{l2_hits} + $tojson{l2_misses};
 
 ##
 ## print the results
