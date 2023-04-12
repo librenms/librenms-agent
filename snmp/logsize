@@ -1,0 +1,507 @@
+#!/usr/bin/env perl
+
+use warnings;
+use strict;
+use File::Find::Rule;
+use JSON;
+use Getopt::Std;
+use TOML;
+use Time::Piece;
+use MIME::Base64;
+use Gzip::Faster;
+use File::Slurp;
+
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
+
+sub main::VERSION_MESSAGE {
+	print "LibreNMS logsize extend 0.0.1\n";
+}
+
+sub main::HELP_MESSAGE {
+	print '
+
+-f <config>      Path to the config file.
+                 Default :: /usr/local/etc/logsize.conf
+
+-b               Gzip+Base64 compress the output.
+';
+}
+
+my $return_json = {
+	error       => 0,
+	errorString => '',
+	version     => 1,
+	data        => {
+		sets        => {},
+		failed_sets => {},
+	},
+};
+
+#gets the options
+my %opts = ();
+getopts( 'f:b', \%opts );
+if ( !defined( $opts{f} ) ) {
+	$opts{f} = '/usr/local/etc/logsize.conf';
+}
+
+# if the config does not exist or is not readable, no point in continuing
+if ( !-f $opts{f} ) {
+	$return_json->{errpr}       = 1;
+	$return_json->{errorString} = $opts{f} . ' is not a file or does not eixst';
+	print encode_json($return_json) . "\n";
+	exit 1;
+}
+elsif ( !-r $opts{f} ) {
+	$return_json->{errpr}       = 2;
+	$return_json->{errorString} = $opts{f} . ' is not readable';
+	print encode_json($return_json) . "\n";
+	exit 2;
+}
+
+# reads in the config
+my $config;
+my $err;
+eval {
+	my $raw_toml = read_file( $opts{f} );
+	( $config, $err ) = from_toml($raw_toml);
+};
+if ($@) {
+	$return_json->{errpr}       = 3;
+	$return_json->{errorString} = $opts{f} . ' errored reading or parsing... ' . $@;
+	print encode_json($return_json) . "\n";
+	exit 3;
+}
+elsif ( !$config ) {
+	$return_json->{errpr}       = 4;
+	$return_json->{errorString} = $opts{f} . ' errored  parsing... ' . $err;
+	print encode_json($return_json) . "\n";
+	exit 4;
+}
+
+# can't do anything if there are no sets
+if ( !defined( $config->{sets} ) ) {
+	$return_json->{errpr}       = 5;
+	$return_json->{errorString} = $opts{f} . ' does not contain any defined sets';
+	print encode_json($return_json) . "\n";
+	exit 5;
+}
+
+# set the default cache dir
+if ( !defined( $config->{cache_dir} ) ) {
+	$config->{cache_dir} = '/var/cache/logsize_extend/';
+}
+
+# make sure we have something we can use for log end
+if ( !defined( $config->{log_end} ) ) {
+	$config->{log_end} = [ '*.log', '*.today' ];
+}
+else {
+	if ( ref( $config->{log_end} ) ne 'ARRAY' ) {
+		$return_json->{errpr}       = 8;
+		$return_json->{errorString} = 'The cache_dir, "' . $config->{cache_dir} . '", is not a ';
+		print encode_json($return_json) . "\n";
+		exit 8;
+	}
+
+}
+
+# how long to keep a file in the cache
+if ( !defined( $config->{max_age} ) ) {
+	$config->{max_age} = 30;
+}
+
+# if it exists, make sure it is a directory
+if ( -e $config->{cache_dir} && !-d $config->{cache_dir} ) {
+	$return_json->{errpr}       = 6;
+	$return_json->{errorString} = 'The cache_dir, "' . $config->{cache_dir} . '", is not a ';
+	print encode_json($return_json) . "\n";
+	exit 6;
+}
+elsif ( !-e $config->{cache_dir} ) {
+	eval { mkdir( $config->{cache_dir} ) or die('failed'); };
+	if ($@) {
+		$return_json->{errpr}       = 7;
+		$return_json->{errorString} = 'The cache_dir, "' . $config->{cache_dir} . '", could not be created. ';
+		print encode_json($return_json) . "\n";
+		exit 7;
+	}
+}
+
+##
+## load the cache now
+##
+
+# gets time objects for now and a day ago
+my $t          = localtime;
+my $t_minus_1d = localtime;
+my $t_minus_2d = localtime;
+my $t_minus_3d = localtime;
+my $t_minus_4d = localtime;
+my $t_minus_5d = localtime;
+my $t_minus_6d = localtime;
+my $t_minus_7d = localtime;
+$t_minus_1d -= 86400;
+$t_minus_2d -= ( 86400 * 2 );
+$t_minus_3d -= ( 86400 * 3 );
+$t_minus_4d -= ( 86400 * 4 );
+$t_minus_5d -= ( 86400 * 5 );
+$t_minus_6d -= ( 86400 * 6 );
+$t_minus_7d -= ( 86400 * 7 );
+
+my $today_name       = $t->strftime('%F');
+my $today_cache_file = $config->{cache_dir} . '/' . $today_name;
+
+my $today_minus_1d_name = $t_minus_1d->strftime('%F');
+my $today_minus_1d_file = $config->{cache_dir} . '/' . $today_minus_1d_name;
+
+my $today_minus_2d_name = $t_minus_2d->strftime('%F');
+my $today_minus_2d_file = $config->{cache_dir} . '/' . $today_minus_2d_name;
+
+my $today_minus_3d_name = $t_minus_3d->strftime('%F');
+my $today_minus_3d_file = $config->{cache_dir} . '/' . $today_minus_3d_name;
+
+my $today_minus_4d_name = $t_minus_4d->strftime('%F');
+my $today_minus_4d_file = $config->{cache_dir} . '/' . $today_minus_4d_name;
+
+my $today_minus_5d_name = $t_minus_5d->strftime('%F');
+my $today_minus_5d_file = $config->{cache_dir} . '/' . $today_minus_5d_name;
+
+my $today_minus_6d_name = $t_minus_6d->strftime('%F');
+my $today_minus_6d_file = $config->{cache_dir} . '/' . $today_minus_6d_name;
+
+my $today_minus_7d_name = $t_minus_7d->strftime('%F');
+my $today_minus_7d_file = $config->{cache_dir} . '/' . $today_minus_7d_name;
+
+my $today_cache = { sets => {} };
+
+my $today_minus_1d_cache;
+eval { $today_minus_1d_cache = decode_json( read_file($today_minus_1d_file) ); };
+if ($@) {
+	$today_minus_1d_cache = { sets => {} };
+}
+
+my $today_minus_2d_cache;
+eval { $today_minus_2d_cache = decode_json( read_file($today_minus_2d_file) ); };
+if ($@) {
+	$today_minus_2d_cache = { sets => {} };
+}
+
+my $today_minus_3d_cache;
+eval { $today_minus_3d_cache = decode_json( read_file($today_minus_3d_file) ); };
+if ($@) {
+	$today_minus_3d_cache = { sets => {} };
+}
+
+my $today_minus_4d_cache;
+eval { $today_minus_4d_cache = decode_json( read_file($today_minus_4d_file) ); };
+if ($@) {
+	$today_minus_4d_cache = { sets => {} };
+}
+
+my $today_minus_5d_cache;
+eval { $today_minus_5d_cache = decode_json( read_file($today_minus_5d_file) ); };
+if ($@) {
+	$today_minus_5d_cache = { sets => {} };
+}
+
+my $today_minus_6d_cache;
+eval { $today_minus_6d_cache = decode_json( read_file($today_minus_6d_file) ); };
+if ($@) {
+	$today_minus_6d_cache = { sets => {} };
+}
+
+my $today_minus_7d_cache;
+eval { $today_minus_7d_cache = decode_json( read_file($today_minus_7d_file) ); };
+if ($@) {
+	$today_minus_7d_cache = { sets => {} };
+}
+
+##
+## process each set
+##
+my @sets       = keys( %{ $config->{sets} } );
+my $found_sets = 0;
+foreach my $set (@sets) {
+
+	# if any set fails, add it to the list of failed sets
+	eval {
+		if ( ref( $config->{sets}{$set} ) ne 'HASH' ) {
+			die( 'set "' . $set . '" is a ' . ref( $config->{sets}{$set} ) . ' and not a HASH' );
+		}
+		if ( !defined( $config->{sets}{$set}{dir} ) ) {
+			die( 'set "' . $set . '" has no directory specified' );
+		}
+
+		if ( !defined( $config->{sets}{$set}{log_end} ) ) {
+			$config->{sets}{$set}{log_end} = $config->{log_end};
+		}
+
+		my @files = File::Find::Rule->canonpath()->maxdepth(1)->file()->name( @{ $config->{sets}{$set}{log_end} } )
+			->in( $config->{sets}{$set}{dir} );
+
+		$return_json->{data}{sets}{$set} = {
+			dir     => $config->{sets}{$set}{dir},
+			log_end => $config->{sets}{$set}{log_end},
+			files   => {},
+		};
+
+		$today_cache->{sets}{$set}{files} = {};
+
+		# will later be used for regexp for chomping the start of the full path
+		my $quoted_dir = quotemeta( $config->{sets}{$set}{dir} );
+
+		# check if the applicable sets exist
+		my $d1_set = 1;
+		my $d2_set = 1;
+		my $d3_set = 1;
+		my $d4_set = 1;
+		my $d5_set = 1;
+		my $d6_set = 1;
+		my $d7_set = 1;
+
+		if ( !defined( $today_minus_1d_cache->{sets}{$set} ) ) {
+			$d1_set = 0;
+		}
+		if ( !defined( $today_minus_2d_cache->{sets}{$set} ) ) {
+			$d2_set = 0;
+		}
+		if ( !defined( $today_minus_3d_cache->{sets}{$set} ) ) {
+			$d3_set = 0;
+		}
+		if ( !defined( $today_minus_3d_cache->{sets}{$set} ) ) {
+			$d3_set = 0;
+		}
+		if ( !defined( $today_minus_4d_cache->{sets}{$set} ) ) {
+			$d4_set = 0;
+		}
+		if ( !defined( $today_minus_5d_cache->{sets}{$set} ) ) {
+			$d5_set = 0;
+		}
+		if ( !defined( $today_minus_6d_cache->{sets}{$set} ) ) {
+			$d6_set = 0;
+		}
+		if ( !defined( $today_minus_7d_cache->{sets}{$set} ) ) {
+			$d7_set = 0;
+		}
+
+		foreach my $log (@files) {
+			my ( $dev, $ino, $mode, $nlink, $uid, $gid, $rdev, $size, $atime, $mtime, $ctime, $blksize, $blocks )
+				= stat($log);
+
+			$log =~ s/^$quoted_dir//;
+			$log =~ s/^\///;
+
+			# save the basic info for currently
+			$return_json->{data}{sets}{$set}{files}{$log} = { size => $size };
+			$today_cache->{sets}{$set}{files}{$log} = {
+				dev     => $dev,
+				ino     => $ino,
+				rdev    => $rdev,
+				size    => $size,
+				mode    => $mode,
+				nlink   => $nlink,
+				uid     => $uid,
+				gid     => $gid,
+				atime   => $atime,
+				mtime   => $mtime,
+				ctime   => $ctime,
+				blksize => $blksize,
+				blocks  => $blocks
+			};
+
+			# computes today - 1d stats
+			if (   $d1_set
+				&& defined( $today_minus_1d_cache->{sets}{files}{$log} )
+				&& defined( $today_minus_1d_cache->{sets}{files}{$log}{size} ) )
+			{
+				$return_json->{data}{sets}{$set}{files}{$log}{'1d_size_diff'}
+					= $today_minus_1d_cache->{sets}{files}{$log}{size} - $size;
+				if (   $today_minus_1d_cache->{sets}{files}{$log}{size} > 0
+					&& $size > 0 )
+				{
+					$return_json->{data}{sets}{$set}{files}{$log}{'1d_size_diffp'}
+						= ( $size / $today_minus_1d_cache->{sets}{files}{$log}{size} );
+				}
+				else {
+					$return_json->{data}{sets}{$set}{files}{$log}{'1d_size_diffp'} = 0;
+				}
+			}
+			else {
+				$return_json->{data}{sets}{$set}{files}{$log}{'1d_size_diff'}  = undef;
+				$return_json->{data}{sets}{$set}{files}{$log}{'1d_size_diffp'} = undef;
+			}
+
+			# computes today - 2d stats
+			if (   $d2_set
+				&& defined( $today_minus_2d_cache->{sets}{files}{$log} )
+				&& defined( $today_minus_2d_cache->{sets}{files}{$log}{size} ) )
+			{
+				$return_json->{data}{sets}{$set}{files}{$log}{'2d_size_diff'}
+					= $today_minus_2d_cache->{sets}{files}{$log}{size} - $size;
+				if (   $today_minus_2d_cache->{sets}{files}{$log}{size} > 0
+					&& $size > 0 )
+				{
+					$return_json->{data}{sets}{$set}{files}{$log}{'2d_size_diffp'}
+						= ( $size / $today_minus_2d_cache->{sets}{files}{$log}{size} );
+				}
+				else {
+					$return_json->{data}{sets}{$set}{files}{$log}{'2d_size_diffp'} = 0;
+				}
+			}
+			else {
+				$return_json->{data}{sets}{$set}{files}{$log}{'2d_size_diff'}  = undef;
+				$return_json->{data}{sets}{$set}{files}{$log}{'2d_size_diffp'} = undef;
+			}
+
+			# computes today - 3d stats
+			if (   $d3_set
+				&& defined( $today_minus_3d_cache->{sets}{files}{$log} )
+				&& defined( $today_minus_3d_cache->{sets}{files}{$log}{size} ) )
+			{
+				$return_json->{data}{sets}{$set}{files}{$log}{'3d_size_diff'}
+					= $today_minus_3d_cache->{sets}{files}{$log}{size} - $size;
+				if (   $today_minus_3d_cache->{sets}{files}{$log}{size} > 0
+					&& $size > 0 )
+				{
+					$return_json->{data}{sets}{$set}{files}{$log}{'3d_size_diffp'}
+						= ( $size / $today_minus_3d_cache->{sets}{files}{$log}{size} );
+				}
+				else {
+					$return_json->{data}{sets}{$set}{files}{$log}{'3d_size_diffp'} = 0;
+				}
+			}
+			else {
+				$return_json->{data}{sets}{$set}{files}{$log}{'3d_size_diff'}  = undef;
+				$return_json->{data}{sets}{$set}{files}{$log}{'3d_size_diffp'} = undef;
+			}
+
+			# computes today - 4d stats
+			if (   $d4_set
+				&& defined( $today_minus_4d_cache->{sets}{files}{$log} )
+				&& defined( $today_minus_4d_cache->{sets}{files}{$log}{size} ) )
+			{
+				$return_json->{data}{sets}{$set}{files}{$log}{'4d_size_diff'}
+					= $today_minus_4d_cache->{sets}{files}{$log}{size} - $size;
+				if (   $today_minus_4d_cache->{sets}{files}{$log}{size} > 0
+					&& $size > 0 )
+				{
+					$return_json->{data}{sets}{$set}{files}{$log}{'4d_size_diffp'}
+						= ( $size / $today_minus_4d_cache->{sets}{files}{$log}{size} );
+				}
+				else {
+					$return_json->{data}{sets}{$set}{files}{$log}{'4d_size_diffp'} = 0;
+				}
+			}
+			else {
+				$return_json->{data}{sets}{$set}{files}{$log}{'4d_size_diff'}  = undef;
+				$return_json->{data}{sets}{$set}{files}{$log}{'4d_size_diffp'} = undef;
+			}
+
+			# computes today - 5d stats
+			if (   $d5_set
+				&& defined( $today_minus_5d_cache->{sets}{files}{$log} )
+				&& defined( $today_minus_5d_cache->{sets}{files}{$log}{size} ) )
+			{
+				$return_json->{data}{sets}{$set}{files}{$log}{'5d_size_diff'}
+					= $today_minus_5d_cache->{sets}{files}{$log}{size} - $size;
+				if (   $today_minus_5d_cache->{sets}{files}{$log}{size} > 0
+					&& $size > 0 )
+				{
+					$return_json->{data}{sets}{$set}{files}{$log}{'5d_size_diffp'}
+						= ( $size / $today_minus_5d_cache->{sets}{files}{$log}{size} );
+				}
+				else {
+					$return_json->{data}{sets}{$set}{files}{$log}{'5d_size_diffp'} = 0;
+				}
+			}
+			else {
+				$return_json->{data}{sets}{$set}{files}{$log}{'5d_size_diff'}  = undef;
+				$return_json->{data}{sets}{$set}{files}{$log}{'5d_size_diffp'} = undef;
+			}
+
+			# computes today - 6d stats
+			if (   $d6_set
+				&& defined( $today_minus_6d_cache->{sets}{files}{$log} )
+				&& defined( $today_minus_6d_cache->{sets}{files}{$log}{size} ) )
+			{
+				$return_json->{data}{sets}{$set}{files}{$log}{'6d_size_diff'}
+					= $today_minus_6d_cache->{sets}{files}{$log}{size} - $size;
+				if (   $today_minus_6d_cache->{sets}{files}{$log}{size} > 0
+					&& $size > 0 )
+				{
+					$return_json->{data}{sets}{$set}{files}{$log}{'6d_size_diffp'}
+						= ( $size / $today_minus_6d_cache->{sets}{files}{$log}{size} );
+				}
+				else {
+					$return_json->{data}{sets}{$set}{files}{$log}{'6d_size_diffp'} = 0;
+				}
+			}
+			else {
+				$return_json->{data}{sets}{$set}{files}{$log}{'6d_size_diff'}  = undef;
+				$return_json->{data}{sets}{$set}{files}{$log}{'6d_size_diffp'} = undef;
+			}
+
+			# computes today - 7d stats
+			if (   $d7_set
+				&& defined( $today_minus_7d_cache->{sets}{files}{$log} )
+				&& defined( $today_minus_7d_cache->{sets}{files}{$log}{size} ) )
+			{
+				$return_json->{data}{sets}{$set}{files}{$log}{'7d_size_diff'}
+					= $today_minus_7d_cache->{sets}{files}{$log}{size} - $size;
+				if (   $today_minus_7d_cache->{sets}{files}{$log}{size} > 0
+					&& $size > 0 )
+				{
+					$return_json->{data}{sets}{$set}{files}{$log}{'7d_size_diffp'}
+						= ( $size / $today_minus_7d_cache->{sets}{files}{$log}{size} );
+				}
+				else {
+					$return_json->{data}{sets}{$set}{files}{$log}{'6d_size_diffp'} = 0;
+				}
+			}
+			else {
+				$return_json->{data}{sets}{$set}{files}{$log}{'7d_size_diff'}  = undef;
+				$return_json->{data}{sets}{$set}{files}{$log}{'7d_size_diffp'} = undef;
+			}
+		}
+	};
+
+	# if the above died, add it to a list of failed sets
+	if ($@) {
+		$return_json->{data}{failed_sets}{$set} = $@;
+	}
+
+	$found_sets++;
+}
+
+# if this is not atleast one, then no sets are defined, even if the hash exists
+if ( $found_sets < 1 ) {
+	$return_json->{errpr}       = 8;
+	$return_json->{errorString} = $opts{f} . ' lacks defined log sets';
+	print encode_json($return_json) . "\n";
+	exit 8;
+}
+
+##
+##
+##
+my $return_string = encode_json($return_json) . "\n";
+eval { write_file( $config->{cache_dir} . "/extend_raw", $return_string ); };
+if (!$opts{b}) {
+	print $return_string;
+}else {
+	my $compressed = encode_base64(gzip($return_string));
+	$compressed =~ s/\n//g;
+	$compressed = $compressed . "\n";
+	if (length($compressed) > length($return_string)) {
+		eval { write_file( $config->{cache_dir} . "/extend_return", $return_string ); };
+		print $return_string;
+	}else {
+		eval { write_file( $config->{cache_dir} . "/extend_return", $compressed ); };
+		print $compressed;
+	}
+}
+
+##
+## save the cache
+##
+eval { write_file( $today_cache_file, encode_json($today_cache) . "\n" ); };
