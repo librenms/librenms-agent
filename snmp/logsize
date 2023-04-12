@@ -102,7 +102,11 @@ else {
 		print encode_json($return_json) . "\n";
 		exit 8;
 	}
+}
 
+# set the default log chomp
+if ( !defined( $config->{log_chomp} ) ) {
+	$config->{log_chomp} = '((\-\d+)*\.log|\.today)$';
 }
 
 # how long to keep a file in the cache
@@ -236,6 +240,11 @@ foreach my $set (@sets) {
 			$config->{sets}{$set}{log_end} = $config->{log_end};
 		}
 
+		if ( !defined( $config->{sets}{$set}{log_chomp} ) ) {
+			$config->{sets}{$set}{log_chomp} = $config->{log_chomp};
+		}
+		my $chomp=$config->{sets}{$set}{log_chomp};
+
 		my @files = File::Find::Rule->canonpath()->maxdepth(1)->file()->name( @{ $config->{sets}{$set}{log_end} } )
 			->in( $config->{sets}{$set}{dir} );
 
@@ -290,6 +299,7 @@ foreach my $set (@sets) {
 
 			$log =~ s/^$quoted_dir//;
 			$log =~ s/^\///;
+			$log =~ s/$chomp//;
 
 			# save the basic info for currently
 			$return_json->{data}{sets}{$set}{files}{$log} = { size => $size };
