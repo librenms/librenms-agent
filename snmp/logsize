@@ -243,7 +243,7 @@ foreach my $set (@sets) {
 		if ( !defined( $config->{sets}{$set}{log_chomp} ) ) {
 			$config->{sets}{$set}{log_chomp} = $config->{log_chomp};
 		}
-		my $chomp=$config->{sets}{$set}{log_chomp};
+		my $chomp = $config->{sets}{$set}{log_chomp};
 
 		my @files = File::Find::Rule->canonpath()->maxdepth(1)->file()->name( @{ $config->{sets}{$set}{log_end} } )
 			->in( $config->{sets}{$set}{dir} );
@@ -252,6 +252,7 @@ foreach my $set (@sets) {
 			dir     => $config->{sets}{$set}{dir},
 			log_end => $config->{sets}{$set}{log_end},
 			files   => {},
+			chomp   => $chomp,
 		};
 
 		$today_cache->{sets}{$set}{files} = {};
@@ -496,16 +497,19 @@ if ( $found_sets < 1 ) {
 ##
 my $return_string = encode_json($return_json) . "\n";
 eval { write_file( $config->{cache_dir} . "/extend_raw", $return_string ); };
-if (!$opts{b}) {
+if ( !$opts{b} ) {
+	eval { write_file( $config->{cache_dir} . "/extend_return", $return_string ); };
 	print $return_string;
-}else {
-	my $compressed = encode_base64(gzip($return_string));
+}
+else {
+	my $compressed = encode_base64( gzip($return_string) );
 	$compressed =~ s/\n//g;
 	$compressed = $compressed . "\n";
-	if (length($compressed) > length($return_string)) {
+	if ( length($compressed) > length($return_string) ) {
 		eval { write_file( $config->{cache_dir} . "/extend_return", $return_string ); };
 		print $return_string;
-	}else {
+	}
+	else {
 		eval { write_file( $config->{cache_dir} . "/extend_return", $compressed ); };
 		print $compressed;
 	}
