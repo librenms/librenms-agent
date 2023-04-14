@@ -156,59 +156,33 @@ my $today_name       = $t->strftime('%F');
 my $today_cache_file = $config->{cache_dir} . '/' . $today_name;
 
 my $today_minus_1d_name = $t_minus_1d->strftime('%F');
-my $today_minus_1d_file = $config->{cache_dir} . '/' . $today_minus_1d_name;
-
 my $today_minus_2d_name = $t_minus_2d->strftime('%F');
-my $today_minus_2d_file = $config->{cache_dir} . '/' . $today_minus_2d_name;
-
 my $today_minus_3d_name = $t_minus_3d->strftime('%F');
-my $today_minus_3d_file = $config->{cache_dir} . '/' . $today_minus_3d_name;
-
 my $today_minus_4d_name = $t_minus_4d->strftime('%F');
-my $today_minus_4d_file = $config->{cache_dir} . '/' . $today_minus_4d_name;
-
 my $today_minus_5d_name = $t_minus_5d->strftime('%F');
-my $today_minus_5d_file = $config->{cache_dir} . '/' . $today_minus_5d_name;
-
 my $today_minus_6d_name = $t_minus_6d->strftime('%F');
-my $today_minus_6d_file = $config->{cache_dir} . '/' . $today_minus_6d_name;
-
 my $today_minus_7d_name = $t_minus_7d->strftime('%F');
-my $today_minus_7d_file = $config->{cache_dir} . '/' . $today_minus_7d_name;
+
+my $minus_d_hash = {
+	today_minus_1d_file => $config->{cache_dir} . '/' . $today_minus_1d_name,
+	today_minus_2d_file => $config->{cache_dir} . '/' . $today_minus_2d_name,
+	today_minus_3d_file => $config->{cache_dir} . '/' . $today_minus_3d_name,
+	today_minus_4d_file => $config->{cache_dir} . '/' . $today_minus_4d_name,
+	today_minus_5d_file => $config->{cache_dir} . '/' . $today_minus_5d_name,
+	today_minus_6d_file => $config->{cache_dir} . '/' . $today_minus_6d_name,
+	today_minus_7d_file => $config->{cache_dir} . '/' . $today_minus_7d_name,
+};
 
 my $today_cache = { sets => {} };
 
 my $today_minus_cache = {};
-eval { $today_minus_cache->{'1d'} = decode_json( read_file($today_minus_1d_file) ); };
-if ($@) {
-	$today_minus_cache->{'1d'} = { sets => {} };
+my @minus_d           = ( '1d', '2d', '3d', '4d', '5d', '6d', '7d' );
+foreach my $d (@minus_d) {
+	eval { $today_minus_cache->{$d} = decode_json( read_file($minus_d_hash->{'today_minus_'.$d.'_file'}) ); };
+	if ($@) {
+		$today_minus_cache->{$d} = { sets => {} };
+	}
 }
-eval { $today_minus_cache->{'2d'} = decode_json( read_file($today_minus_2d_file) ); };
-if ($@) {
-	$today_minus_cache->{'2d'} = { sets => {} };
-}
-eval { $today_minus_cache->{'3d'} = decode_json( read_file($today_minus_2d_file) ); };
-if ($@) {
-	$today_minus_cache->{'3d'} = { sets => {} };
-}
-eval { $today_minus_cache->{'4d'} = decode_json( read_file($today_minus_2d_file) ); };
-if ($@) {
-	$today_minus_cache->{'4d'} = { sets => {} };
-}
-eval { $today_minus_cache->{'5d'} = decode_json( read_file($today_minus_2d_file) ); };
-if ($@) {
-	$today_minus_cache->{'25'} = { sets => {} };
-}
-eval { $today_minus_cache->{'6d'} = decode_json( read_file($today_minus_2d_file) ); };
-if ($@) {
-	$today_minus_cache->{'6d'} = { sets => {} };
-}
-eval { $today_minus_cache->{'7d'} = decode_json( read_file($today_minus_2d_file) ); };
-if ($@) {
-	$today_minus_cache->{'7d'} = { sets => {} };
-}
-
-my @minus_d = ( '1d', '2d', '3d', '4d', '5d', '6d', '7d' );
 
 ##
 ## process each set
@@ -262,7 +236,7 @@ foreach my $set (@sets) {
 		};
 		foreach my $d (@minus_d) {
 			if ( !defined( $today_minus_cache->{$d}{sets}{$set} ) ) {
-				$minus_d_use = 0;
+				$minus_d_use->{$d} = 0;
 			}
 		}
 
@@ -299,12 +273,12 @@ foreach my $set (@sets) {
 					&& defined( $today_minus_cache->{$d}{sets}{$set}{files}{$log}{size} ) )
 				{
 					$return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' }
-						= $today_minus_cache->{$d}{sets}{$set}{files}{$log}{size} - $size;
+						= $size - $today_minus_cache->{$d}{sets}{$set}{files}{$log}{size};
 					if (   $today_minus_cache->{$d}{sets}{$set}{files}{$log}{size} > 0
 						&& $size > 0 )
 					{
 						$return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' }
-							= ( $size / $today_minus_cache->{$d}{sets}{$set}{files}{$log}{size} );
+							= sprintf( '%.2f', $size / $today_minus_cache->{$d}{sets}{$set}{files}{$log}{size} );
 					}
 					else {
 						$return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' } = 0;
@@ -315,7 +289,6 @@ foreach my $set (@sets) {
 					$return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' } = undef;
 				}
 			}
-
 		}
 	};
 
