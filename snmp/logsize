@@ -178,47 +178,37 @@ my $today_minus_7d_file = $config->{cache_dir} . '/' . $today_minus_7d_name;
 
 my $today_cache = { sets => {} };
 
-my $today_minus_1d_cache;
-eval { $today_minus_1d_cache = decode_json( read_file($today_minus_1d_file) ); };
+my $today_minus_cache = {};
+eval { $today_minus_cache->{'1d'} = decode_json( read_file($today_minus_1d_file) ); };
 if ($@) {
-	$today_minus_1d_cache = { sets => {} };
+	$today_minus_cache->{'1d'} = { sets => {} };
+}
+eval { $today_minus_cache->{'2d'} = decode_json( read_file($today_minus_2d_file) ); };
+if ($@) {
+	$today_minus_cache->{'2d'} = { sets => {} };
+}
+eval { $today_minus_cache->{'3d'} = decode_json( read_file($today_minus_2d_file) ); };
+if ($@) {
+	$today_minus_cache->{'3d'} = { sets => {} };
+}
+eval { $today_minus_cache->{'4d'} = decode_json( read_file($today_minus_2d_file) ); };
+if ($@) {
+	$today_minus_cache->{'4d'} = { sets => {} };
+}
+eval { $today_minus_cache->{'5d'} = decode_json( read_file($today_minus_2d_file) ); };
+if ($@) {
+	$today_minus_cache->{'25'} = { sets => {} };
+}
+eval { $today_minus_cache->{'6d'} = decode_json( read_file($today_minus_2d_file) ); };
+if ($@) {
+	$today_minus_cache->{'6d'} = { sets => {} };
+}
+eval { $today_minus_cache->{'7d'} = decode_json( read_file($today_minus_2d_file) ); };
+if ($@) {
+	$today_minus_cache->{'7d'} = { sets => {} };
 }
 
-my $today_minus_2d_cache;
-eval { $today_minus_2d_cache = decode_json( read_file($today_minus_2d_file) ); };
-if ($@) {
-	$today_minus_2d_cache = { sets => {} };
-}
-
-my $today_minus_3d_cache;
-eval { $today_minus_3d_cache = decode_json( read_file($today_minus_3d_file) ); };
-if ($@) {
-	$today_minus_3d_cache = { sets => {} };
-}
-
-my $today_minus_4d_cache;
-eval { $today_minus_4d_cache = decode_json( read_file($today_minus_4d_file) ); };
-if ($@) {
-	$today_minus_4d_cache = { sets => {} };
-}
-
-my $today_minus_5d_cache;
-eval { $today_minus_5d_cache = decode_json( read_file($today_minus_5d_file) ); };
-if ($@) {
-	$today_minus_5d_cache = { sets => {} };
-}
-
-my $today_minus_6d_cache;
-eval { $today_minus_6d_cache = decode_json( read_file($today_minus_6d_file) ); };
-if ($@) {
-	$today_minus_6d_cache = { sets => {} };
-}
-
-my $today_minus_7d_cache;
-eval { $today_minus_7d_cache = decode_json( read_file($today_minus_7d_file) ); };
-if ($@) {
-	$today_minus_7d_cache = { sets => {} };
-}
+my @minus_d = ( '1d', '2d', '3d', '4d', '5d', '6d', '7d' );
 
 ##
 ## process each set
@@ -261,37 +251,19 @@ foreach my $set (@sets) {
 		my $quoted_dir = quotemeta( $config->{sets}{$set}{dir} );
 
 		# check if the applicable sets exist
-		my $d1_set = 1;
-		my $d2_set = 1;
-		my $d3_set = 1;
-		my $d4_set = 1;
-		my $d5_set = 1;
-		my $d6_set = 1;
-		my $d7_set = 1;
-
-		if ( !defined( $today_minus_1d_cache->{sets}{$set} ) ) {
-			$d1_set = 0;
-		}
-		if ( !defined( $today_minus_2d_cache->{sets}{$set} ) ) {
-			$d2_set = 0;
-		}
-		if ( !defined( $today_minus_3d_cache->{sets}{$set} ) ) {
-			$d3_set = 0;
-		}
-		if ( !defined( $today_minus_3d_cache->{sets}{$set} ) ) {
-			$d3_set = 0;
-		}
-		if ( !defined( $today_minus_4d_cache->{sets}{$set} ) ) {
-			$d4_set = 0;
-		}
-		if ( !defined( $today_minus_5d_cache->{sets}{$set} ) ) {
-			$d5_set = 0;
-		}
-		if ( !defined( $today_minus_6d_cache->{sets}{$set} ) ) {
-			$d6_set = 0;
-		}
-		if ( !defined( $today_minus_7d_cache->{sets}{$set} ) ) {
-			$d7_set = 0;
+		my $minus_d_use = {
+			'1d' => 1,
+			'2d' => 1,
+			'3d' => 1,
+			'4d' => 1,
+			'5d' => 1,
+			'6d' => 1,
+			'7d' => 1,
+		};
+		foreach my $d (@minus_d) {
+			if ( !defined( $today_minus_cache->{$d}{sets}{$set} ) ) {
+				$minus_d_use = 0;
+			}
 		}
 
 		foreach my $log (@files) {
@@ -320,159 +292,30 @@ foreach my $set (@sets) {
 				blocks  => $blocks
 			};
 
-			# computes today - 1d stats
-			if (   $d1_set
-				&& defined( $today_minus_1d_cache->{sets}{files}{$log} )
-				&& defined( $today_minus_1d_cache->{sets}{files}{$log}{size} ) )
-			{
-				$return_json->{data}{sets}{$set}{files}{$log}{'1d_size_diff'}
-					= $today_minus_1d_cache->{sets}{files}{$log}{size} - $size;
-				if (   $today_minus_1d_cache->{sets}{files}{$log}{size} > 0
-					&& $size > 0 )
+			# computes today minus stats
+			foreach my $d (@minus_d) {
+				if (   $minus_d_use->{$d}
+					&& defined( $today_minus_cache->{$d}{sets}{$set}{files}{$log} )
+					&& defined( $today_minus_cache->{$d}{sets}{$set}{files}{$log}{size} ) )
 				{
-					$return_json->{data}{sets}{$set}{files}{$log}{'1d_size_diffp'}
-						= ( $size / $today_minus_1d_cache->{sets}{files}{$log}{size} );
+					$return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' }
+						= $today_minus_cache->{$d}{sets}{$set}{files}{$log}{size} - $size;
+					if (   $today_minus_cache->{$d}{sets}{$set}{files}{$log}{size} > 0
+						&& $size > 0 )
+					{
+						$return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' }
+							= ( $size / $today_minus_cache->{$d}{sets}{$set}{files}{$log}{size} );
+					}
+					else {
+						$return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' } = 0;
+					}
 				}
 				else {
-					$return_json->{data}{sets}{$set}{files}{$log}{'1d_size_diffp'} = 0;
+					$return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' }  = undef;
+					$return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' } = undef;
 				}
-			}
-			else {
-				$return_json->{data}{sets}{$set}{files}{$log}{'1d_size_diff'}  = undef;
-				$return_json->{data}{sets}{$set}{files}{$log}{'1d_size_diffp'} = undef;
 			}
 
-			# computes today - 2d stats
-			if (   $d2_set
-				&& defined( $today_minus_2d_cache->{sets}{files}{$log} )
-				&& defined( $today_minus_2d_cache->{sets}{files}{$log}{size} ) )
-			{
-				$return_json->{data}{sets}{$set}{files}{$log}{'2d_size_diff'}
-					= $today_minus_2d_cache->{sets}{files}{$log}{size} - $size;
-				if (   $today_minus_2d_cache->{sets}{files}{$log}{size} > 0
-					&& $size > 0 )
-				{
-					$return_json->{data}{sets}{$set}{files}{$log}{'2d_size_diffp'}
-						= ( $size / $today_minus_2d_cache->{sets}{files}{$log}{size} );
-				}
-				else {
-					$return_json->{data}{sets}{$set}{files}{$log}{'2d_size_diffp'} = 0;
-				}
-			}
-			else {
-				$return_json->{data}{sets}{$set}{files}{$log}{'2d_size_diff'}  = undef;
-				$return_json->{data}{sets}{$set}{files}{$log}{'2d_size_diffp'} = undef;
-			}
-
-			# computes today - 3d stats
-			if (   $d3_set
-				&& defined( $today_minus_3d_cache->{sets}{files}{$log} )
-				&& defined( $today_minus_3d_cache->{sets}{files}{$log}{size} ) )
-			{
-				$return_json->{data}{sets}{$set}{files}{$log}{'3d_size_diff'}
-					= $today_minus_3d_cache->{sets}{files}{$log}{size} - $size;
-				if (   $today_minus_3d_cache->{sets}{files}{$log}{size} > 0
-					&& $size > 0 )
-				{
-					$return_json->{data}{sets}{$set}{files}{$log}{'3d_size_diffp'}
-						= ( $size / $today_minus_3d_cache->{sets}{files}{$log}{size} );
-				}
-				else {
-					$return_json->{data}{sets}{$set}{files}{$log}{'3d_size_diffp'} = 0;
-				}
-			}
-			else {
-				$return_json->{data}{sets}{$set}{files}{$log}{'3d_size_diff'}  = undef;
-				$return_json->{data}{sets}{$set}{files}{$log}{'3d_size_diffp'} = undef;
-			}
-
-			# computes today - 4d stats
-			if (   $d4_set
-				&& defined( $today_minus_4d_cache->{sets}{files}{$log} )
-				&& defined( $today_minus_4d_cache->{sets}{files}{$log}{size} ) )
-			{
-				$return_json->{data}{sets}{$set}{files}{$log}{'4d_size_diff'}
-					= $today_minus_4d_cache->{sets}{files}{$log}{size} - $size;
-				if (   $today_minus_4d_cache->{sets}{files}{$log}{size} > 0
-					&& $size > 0 )
-				{
-					$return_json->{data}{sets}{$set}{files}{$log}{'4d_size_diffp'}
-						= ( $size / $today_minus_4d_cache->{sets}{files}{$log}{size} );
-				}
-				else {
-					$return_json->{data}{sets}{$set}{files}{$log}{'4d_size_diffp'} = 0;
-				}
-			}
-			else {
-				$return_json->{data}{sets}{$set}{files}{$log}{'4d_size_diff'}  = undef;
-				$return_json->{data}{sets}{$set}{files}{$log}{'4d_size_diffp'} = undef;
-			}
-
-			# computes today - 5d stats
-			if (   $d5_set
-				&& defined( $today_minus_5d_cache->{sets}{files}{$log} )
-				&& defined( $today_minus_5d_cache->{sets}{files}{$log}{size} ) )
-			{
-				$return_json->{data}{sets}{$set}{files}{$log}{'5d_size_diff'}
-					= $today_minus_5d_cache->{sets}{files}{$log}{size} - $size;
-				if (   $today_minus_5d_cache->{sets}{files}{$log}{size} > 0
-					&& $size > 0 )
-				{
-					$return_json->{data}{sets}{$set}{files}{$log}{'5d_size_diffp'}
-						= ( $size / $today_minus_5d_cache->{sets}{files}{$log}{size} );
-				}
-				else {
-					$return_json->{data}{sets}{$set}{files}{$log}{'5d_size_diffp'} = 0;
-				}
-			}
-			else {
-				$return_json->{data}{sets}{$set}{files}{$log}{'5d_size_diff'}  = undef;
-				$return_json->{data}{sets}{$set}{files}{$log}{'5d_size_diffp'} = undef;
-			}
-
-			# computes today - 6d stats
-			if (   $d6_set
-				&& defined( $today_minus_6d_cache->{sets}{files}{$log} )
-				&& defined( $today_minus_6d_cache->{sets}{files}{$log}{size} ) )
-			{
-				$return_json->{data}{sets}{$set}{files}{$log}{'6d_size_diff'}
-					= $today_minus_6d_cache->{sets}{files}{$log}{size} - $size;
-				if (   $today_minus_6d_cache->{sets}{files}{$log}{size} > 0
-					&& $size > 0 )
-				{
-					$return_json->{data}{sets}{$set}{files}{$log}{'6d_size_diffp'}
-						= ( $size / $today_minus_6d_cache->{sets}{files}{$log}{size} );
-				}
-				else {
-					$return_json->{data}{sets}{$set}{files}{$log}{'6d_size_diffp'} = 0;
-				}
-			}
-			else {
-				$return_json->{data}{sets}{$set}{files}{$log}{'6d_size_diff'}  = undef;
-				$return_json->{data}{sets}{$set}{files}{$log}{'6d_size_diffp'} = undef;
-			}
-
-			# computes today - 7d stats
-			if (   $d7_set
-				&& defined( $today_minus_7d_cache->{sets}{files}{$log} )
-				&& defined( $today_minus_7d_cache->{sets}{files}{$log}{size} ) )
-			{
-				$return_json->{data}{sets}{$set}{files}{$log}{'7d_size_diff'}
-					= $today_minus_7d_cache->{sets}{files}{$log}{size} - $size;
-				if (   $today_minus_7d_cache->{sets}{files}{$log}{size} > 0
-					&& $size > 0 )
-				{
-					$return_json->{data}{sets}{$set}{files}{$log}{'7d_size_diffp'}
-						= ( $size / $today_minus_7d_cache->{sets}{files}{$log}{size} );
-				}
-				else {
-					$return_json->{data}{sets}{$set}{files}{$log}{'6d_size_diffp'} = 0;
-				}
-			}
-			else {
-				$return_json->{data}{sets}{$set}{files}{$log}{'7d_size_diff'}  = undef;
-				$return_json->{data}{sets}{$set}{files}{$log}{'7d_size_diffp'} = undef;
-			}
 		}
 	};
 
