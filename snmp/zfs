@@ -16,6 +16,11 @@ Pretty print the JSON. If used with -b, this switch will be ignored.
 
 Gzip the output and convert to Base64.
 
+=head2 -s
+
+Include the full information for `zpool status $pool` for each pool
+in the return.
+
 =head1 SNMPD SETUP EXAMPLES
 
     extend zfs /etc/snmp/zfs
@@ -81,7 +86,7 @@ my %tojson;
 
 #gets the options
 my %opts = ();
-getopts( 'pb', \%opts );
+getopts( 'pbs', \%opts );
 
 #process each pool and shove them into JSON
 my $zpool_output = `/sbin/zpool list -pH`;
@@ -112,6 +117,10 @@ while ( defined( $pools[$pools_int] ) ) {
 		$newPool{ckpoint}, $newPool{expandsz}, $newPool{frag},  $newPool{cap},
 		$newPool{dedup},   $newPool{health},   $newPool{altroot}
 	) = split( /\,/, $pool );
+
+	if ($opts{s}) {
+		$newPool{status} = `zpool status $newPool{name}`;
+	}
 
 	if ( $newPool{health} eq 'ONLINE' ) {
 		$newPool{health} = 0;
