@@ -178,7 +178,7 @@ my $today_cache = { sets => {} };
 my $today_minus_cache = {};
 my @minus_d           = ( '1d', '2d', '3d', '4d', '5d', '6d', '7d' );
 foreach my $d (@minus_d) {
-	eval { $today_minus_cache->{$d} = decode_json( read_file($minus_d_hash->{'today_minus_'.$d.'_file'}) ); };
+	eval { $today_minus_cache->{$d} = decode_json( read_file( $minus_d_hash->{ 'today_minus_' . $d . '_file' } ) ); };
 	if ($@) {
 		$today_minus_cache->{$d} = { sets => {} };
 	}
@@ -213,10 +213,13 @@ foreach my $set (@sets) {
 			->in( $config->{sets}{$set}{dir} );
 
 		$return_json->{data}{sets}{$set} = {
-			dir     => $config->{sets}{$set}{dir},
-			log_end => $config->{sets}{$set}{log_end},
-			files   => {},
-			chomp   => $chomp,
+			files          => {},
+			max_size       => 0,
+			max_size_diff  => 0,
+			max_size_diffp => 0,
+			min_size       => 0,
+			min_size_diff  => 0,
+			size           => 0,
 		};
 
 		$today_cache->{sets}{$set}{files} = {};
@@ -266,6 +269,14 @@ foreach my $set (@sets) {
 				blocks  => $blocks
 			};
 
+			$return_json->{data}{sets}{$set}{dize} += $size;
+			if ( $size > $return_json->{data}{sets}{$set}{max_size} ) {
+				$return_json->{data}{sets}{$set}{max_dize} = $size;
+			}
+			if ( $size < $return_json->{data}{sets}{$set}{min_size} ) {
+				$return_json->{data}{sets}{$set}{max_dize} = $size;
+			}
+
 			# computes today minus stats
 			foreach my $d (@minus_d) {
 				if (   $minus_d_use->{$d}
@@ -287,6 +298,38 @@ foreach my $set (@sets) {
 				else {
 					$return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' }  = undef;
 					$return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' } = undef;
+				}
+
+				# update size_diff set stats if defined
+				if ( defined( $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' } ) ) {
+					if ( $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' }
+						> $return_json->{data}{sets}{$set}{max_size_diff} )
+					{
+						$return_json->{data}{sets}{$set}{max_size_diff}
+							= $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' };
+					}
+					if ( $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' }
+						< $return_json->{data}{sets}{$set}{min_size_diff} )
+					{
+						$return_json->{data}{sets}{$set}{max_size_diff}
+							= $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' };
+					}
+				}
+
+				# update size_diffp set stats if defined
+				if ( defined( $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' } ) ) {
+					if ( $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' }
+						> $return_json->{data}{sets}{$set}{max_size_diffp} )
+					{
+						$return_json->{data}{sets}{$set}{max_size_diffp}
+							= $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' };
+					}
+					if ( $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' }
+						< $return_json->{data}{sets}{$set}{min_size_diffp} )
+					{
+						$return_json->{data}{sets}{$set}{max_size_diffp}
+							= $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' };
+					}
 				}
 			}
 		}
