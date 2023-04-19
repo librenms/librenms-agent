@@ -219,7 +219,9 @@ foreach my $set (@sets) {
 			max_size_diffp => 0,
 			min_size       => 0,
 			min_size_diff  => 0,
-			size           => 0,
+			min_size_diffp => 0,
+
+			size => 0,
 		};
 
 		$today_cache->{sets}{$set}{files} = {};
@@ -269,12 +271,12 @@ foreach my $set (@sets) {
 				blocks  => $blocks
 			};
 
-			$return_json->{data}{sets}{$set}{dize} += $size;
+			$return_json->{data}{sets}{$set}{size} += $size;
 			if ( $size > $return_json->{data}{sets}{$set}{max_size} ) {
-				$return_json->{data}{sets}{$set}{max_dize} = $size;
+				$return_json->{data}{sets}{$set}{max_size} = $size;
 			}
 			if ( $size < $return_json->{data}{sets}{$set}{min_size} ) {
-				$return_json->{data}{sets}{$set}{max_dize} = $size;
+				$return_json->{data}{sets}{$set}{min_size} = $size;
 			}
 
 			# computes today minus stats
@@ -300,36 +302,36 @@ foreach my $set (@sets) {
 					$return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' } = undef;
 				}
 
-				# update size_diff set stats if defined
-				if ( defined( $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' } ) ) {
-					if ( $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' }
-						> $return_json->{data}{sets}{$set}{max_size_diff} )
-					{
-						$return_json->{data}{sets}{$set}{max_size_diff}
-							= $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' };
-					}
-					if ( $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' }
-						< $return_json->{data}{sets}{$set}{min_size_diff} )
-					{
-						$return_json->{data}{sets}{$set}{max_size_diff}
-							= $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' };
-					}
+				if ( defined( $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' } )
+					&& $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' }
+					> $return_json->{data}{sets}{$set}{max_size_diff} )
+				{
+					$return_json->{data}{sets}{$set}{max_size_diff}
+						= $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' };
 				}
 
-				# update size_diffp set stats if defined
-				if ( defined( $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' } ) ) {
-					if ( $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' }
-						> $return_json->{data}{sets}{$set}{max_size_diffp} )
-					{
-						$return_json->{data}{sets}{$set}{max_size_diffp}
-							= $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' };
-					}
-					if ( $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' }
-						< $return_json->{data}{sets}{$set}{min_size_diffp} )
-					{
-						$return_json->{data}{sets}{$set}{max_size_diffp}
-							= $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' };
-					}
+				if ( defined( $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' } )
+					&& $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' }
+					< $return_json->{data}{sets}{$set}{min_size_diff} )
+				{
+					$return_json->{data}{sets}{$set}{min_size_diff}
+						= $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' };
+				}
+
+				if ( defined( $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' } )
+					&& $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' }
+					> $return_json->{data}{sets}{$set}{max_size_diffp} )
+				{
+					$return_json->{data}{sets}{$set}{max_size_diffp}
+						= $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' };
+				}
+
+				if ( defined( $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' } )
+					&& $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' }
+					< $return_json->{data}{sets}{$set}{min_size_diffp} )
+				{
+					$return_json->{data}{sets}{$set}{min_size_diffp}
+						= $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' };
 				}
 			}
 		}
