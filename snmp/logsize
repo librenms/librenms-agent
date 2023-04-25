@@ -32,8 +32,15 @@ my $return_json = {
 	errorString => '',
 	version     => 1,
 	data        => {
-		sets        => {},
-		failed_sets => {},
+		sets           => {},
+		failed_sets    => {},
+		max_size       => undef,
+		max_size_diff  => undef,
+		max_size_diffp => undef,
+		min_size       => undef,
+		min_size_diff  => undef,
+		min_size_diffp => undef,
+		size           => 0,
 	},
 };
 
@@ -334,6 +341,58 @@ foreach my $set (@sets) {
 						= $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' };
 				}
 			}
+		}
+
+		$return_json->{data}{size} += $return_json->{data}{sets}{$set}{size};
+
+		if (
+			!defined( $return_json->{data}{min_size_diffp} )
+			|| ( defined( $return_json->{data}{sets}{$set}{min_size_diffp} )
+				&& $return_json->{data}{sets}{$set}{min_size_diffp} < $return_json->{data}{min_size_diffp} )
+			)
+		{
+			$return_json->{data}{min_size_diffp} = $return_json->{data}{sets}{$set}{min_size_diffp};
+		}
+		if (
+			!defined( $return_json->{data}{min_size_diff} )
+			|| ( defined( $return_json->{data}{sets}{$set}{min_size_diff} )
+				&& $return_json->{data}{sets}{$set}{min_size_diff} < $return_json->{data}{min_size_diff} )
+			)
+		{
+			$return_json->{data}{min_size_diff} = $return_json->{data}{sets}{$set}{min_size_diff};
+		}
+
+		if (
+			!defined( $return_json->{data}{max_size_diffp} )
+			|| ( defined( $return_json->{data}{sets}{$set}{max_size_diffp} )
+				&& $return_json->{data}{sets}{$set}{max_size_diffp} > $return_json->{data}{max_size_diffp} )
+			)
+		{
+			$return_json->{data}{max_size_diffp} = $return_json->{data}{sets}{$set}{max_size_diffp};
+		}
+		if (
+			!defined( $return_json->{data}{max_size_diff} )
+			|| ( defined( $return_json->{data}{sets}{$set}{max_size_diff} )
+				&& $return_json->{data}{sets}{$set}{max_size_diff} > $return_json->{data}{max_size_diff} )
+			)
+		{
+			$return_json->{data}{max_size_diff} = $return_json->{data}{sets}{$set}{max_size_diff};
+		}
+		if (
+			!defined( $return_json->{data}{max_size} )
+			|| ( defined( $return_json->{data}{sets}{$set}{max_size} )
+				&& $return_json->{data}{sets}{$set}{max_size} > $return_json->{data}{max_size} )
+			)
+		{
+			$return_json->{data}{max_size} = $return_json->{data}{sets}{$set}{max_size};
+		}
+		if (
+			!defined( $return_json->{data}{min_size} )
+			|| ( defined( $return_json->{data}{sets}{$set}{min_size} )
+				&& $return_json->{data}{sets}{$set}{min_size} > $return_json->{data}{min_size} )
+			)
+		{
+			$return_json->{data}{min_size} = $return_json->{data}{sets}{$set}{min_size};
 		}
 	};
 
