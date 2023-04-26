@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 
-#Copyright (c) 2022, Zane C. Bowers-Hadley
+#Copyright (c) 2023, Zane C. Bowers-Hadley
 #All rights reserved.
 #
 #Redistribution and use in source and binary forms, with or without modification,
@@ -159,7 +159,7 @@ $to_return->{data}{c_in_fl_fetch}      = $health_json->{number_of_in_flight_fetc
 $to_return->{data}{c_task_max_in_time} = $health_json->{task_max_waiting_in_queue_millis};
 $to_return->{data}{c_act_shards_perc}  = $health_json->{active_shards_percent_as_number};
 
-# status color to int, nagious style
+# status color to int, nagios style
 # green / ok = 0
 # yellow / warning = 1
 # red / critical = 2
@@ -194,7 +194,9 @@ $to_return->{data}{ti_del_time}       = $stats_json->{_all}{total}{indexing}{del
 $to_return->{data}{ti_noop_up_total}  = $stats_json->{_all}{total}{indexing}{noop_update_total};
 $to_return->{data}{ti_throttled_time} = $stats_json->{_all}{total}{indexing}{throttle_time_in_millis};
 
-if ( $stats_json->{_all}{total}{indexing}{is_throttled} eq 'true' ) {
+if ( defined( $stats_json->{_all}{total}{indexing}{is_throttled} )
+	&& $stats_json->{_all}{total}{indexing}{is_throttled} eq 'true' )
+{
 	$to_return->{data}{ti_throttled} = 1;
 }
 else {
