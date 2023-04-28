@@ -352,6 +352,7 @@ foreach my $set (@sets) {
 			if ( $config->{no_minus_d} ) {
 				foreach my $d2 (@minus_d) {
 					delete $return_json->{data}{sets}{$set}{files}{$log}{ $d2 . '_size_diff' };
+					delete $return_json->{data}{sets}{$set}{files}{$log}{ $d2 . '_size_diffp' };
 				}
 			}
 		}
