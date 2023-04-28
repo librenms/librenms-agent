@@ -35,6 +35,7 @@ CMD_APK=' version'
 ################################################################
 # Don't change anything unless you know what are you doing     #
 ################################################################
+echo '<<<app-os-updates>>>'
 if command -v zypper &>/dev/null ; then
     # OpenSUSE
     # shellcheck disable=SC2086
