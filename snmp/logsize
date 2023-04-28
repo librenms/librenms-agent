@@ -121,6 +121,12 @@ if ( !defined( $config->{max_age} ) ) {
 	$config->{max_age} = 30;
 }
 
+# if no_minus_d is defined, default to it being disabled
+if ( !defined( $config->{no_minus_d} ) ) {
+	$config->{no_minus_d} = 0;
+}
+$return_json->{data}{no_minus_d} = $config->{no_minus_d};
+
 # if it exists, make sure it is a directory
 if ( -e $config->{cache_dir} && !-d $config->{cache_dir} ) {
 	$return_json->{error}       = 6;
@@ -339,6 +345,13 @@ foreach my $set (@sets) {
 				{
 					$return_json->{data}{sets}{$set}{min_size_diffp}
 						= $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' };
+				}
+			}
+
+			# remove minus d values if not needed now that they are no longer needed
+			if ( $config->{no_minus_d} ) {
+				foreach my $d2 (@minus_d) {
+					delete $return_json->{data}{sets}{$set}{files}{$log}{ $d2 . '_size_diff' };
 				}
 			}
 		}
