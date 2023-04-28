@@ -10,11 +10,30 @@ For more information, see L<https://docs.librenms.org/#Extensions/Applications/#
 
 =head2 -p
 
-Pretty print the JSON.
+Pretty print the JSON. If used with -b, this switch will be ignored.
+
+=head2 -b
+
+Gzip the output and convert to Base64.
+
+=head2 -s
+
+Include the full information for `zpool status $pool` for each pool
+in the return.
 
 =head1 SNMPD SETUP EXAMPLES
 
     extend zfs /etc/snmp/zfs
+
+=head1 REQUIREMENTS
+
+The requirements may be installed via CPAN like below for Linux.
+
+    apt-get install cpanminus zlib1g-dev
+
+Or on FreeBSD via pkg...
+
+    pkg install p5-JSON p5-File-Slurp p5-MIME-Base64 p5-Gzip-Faster
 
 =cut
 
@@ -49,6 +68,8 @@ use warnings;
 use JSON;
 use Getopt::Std;
 use File::Slurp;
+use MIME::Base64;
+use Gzip::Faster;
 
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 
@@ -65,7 +86,7 @@ my %tojson;
 
 #gets the options
 my %opts = ();
-getopts( 'p', \%opts );
+getopts( 'pbs', \%opts );
 
 #process each pool and shove them into JSON
 my $zpool_output = `/sbin/zpool list -pH`;
@@ -96,6 +117,10 @@ while ( defined( $pools[$pools_int] ) ) {
 		$newPool{ckpoint}, $newPool{expandsz}, $newPool{frag},  $newPool{cap},
 		$newPool{dedup},   $newPool{health},   $newPool{altroot}
 	) = split( /\,/, $pool );
+
+	if ($opts{s}) {
+		$newPool{status} = `zpool status $newPool{name}`;
+	}
 
 	if ( $newPool{health} eq 'ONLINE' ) {
 		$newPool{health} = 0;
@@ -377,14 +402,28 @@ $head_hash{'errorString'} = '';
 
 my $j = JSON->new;
 
-if ( $opts{p} ) {
+if ( $opts{p}  && ! $opts{b} ) {
 	$j->pretty(1);
 }
 
-print $j->encode( \%head_hash );
+my $return_string = $j->encode( \%head_hash );
 
-if ( !$opts{p} ) {
-	print "\n";
+if ( !$opts{p} && ! $opts{b}  ) {
+	print $return_string."\n";
+	exit 0;
+}elsif (!$opts{b}) {
+	print $return_string;
+	exit 0;
+}
+
+my $compressed = encode_base64( gzip($return_string) );
+$compressed =~ s/\n//g;
+$compressed = $compressed . "\n";
+if ( length($compressed) > length($return_string) ) {
+	print $return_string."\n";
+}
+else {
+	print $compressed;
 }
 
 exit 0;
