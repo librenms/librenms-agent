@@ -100,7 +100,7 @@ if ( !defined( $config->{cache_dir} ) ) {
 
 # make sure we have something we can use for log end
 if ( !defined( $config->{log_end} ) ) {
-	$config->{log_end} = [ '*.log', '*.today', '*.json' ];
+	$config->{log_end} = [ '*.log', '*.today', '*.json', '*log' ];
 }
 else {
 	if ( ref( $config->{log_end} ) ne 'ARRAY' ) {
@@ -113,7 +113,7 @@ else {
 
 # set the default log chomp
 if ( !defined( $config->{log_chomp} ) ) {
-	$config->{log_chomp} = '((\-\d+)*\.log|\.today|\.json)$';
+	$config->{log_chomp} = '((\-\d+)*\.log|\.today|\.json|log)$';
 }
 
 # how long to keep a file in the cache
