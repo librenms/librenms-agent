@@ -123,7 +123,7 @@ if ( !defined( $config->{max_age} ) ) {
 
 # if no_minus_d is defined, default to it being disabled
 if ( !defined( $config->{no_minus_d} ) ) {
-	$config->{no_minus_d} = 0;
+	$config->{no_minus_d} = 1;
 }
 $return_json->{data}{no_minus_d} = $config->{no_minus_d};
 
