@@ -12,11 +12,11 @@
 #    and/or other materials provided with the distribution.
 #
 #THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
 #WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
 #IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
-#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, 
-#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, 
+#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
 #DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
 #LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
 #OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
@@ -91,27 +91,27 @@ BEGIN{
 	db="";
     ignorePG='$ignorePG';
 	toAdd=1;
-}  
+}
 {
-	gsub(/dbname\:/, "");
-	gsub(/backends\:/, ""); 
-	gsub(/commits\:/, ""); 
-	gsub(/rollbacks\:/, ""); 
-	gsub(/idxscan\:/, ""); 
-	gsub(/idxtupread\:/, ""); 
-	gsub(/idxtupfetch\:/, ""); 
-	gsub(/idxblksread\:/, ""); 
-	gsub(/idxblkshit\:/, ""); 
-	gsub(/seqscan\:/, ""); 
-	gsub(/seqtupread\:/, ""); 
-	gsub(/ret\:/, "");
-	gsub(/fetch\:/, "");
-	gsub(/ins\:/, "");
-	gsub(/upd\:/, "");
-	gsub(/del\:/, ""); 
+	gsub(/dbname:/, "");
+	gsub(/backends:/, "");
+	gsub(/commits:/, "");
+	gsub(/rollbacks:/, "");
+	gsub(/idxscan:/, "");
+	gsub(/idxtupread:/, "");
+	gsub(/idxtupfetch:/, "");
+	gsub(/idxblksread:/, "");
+	gsub(/idxblkshit:/, "");
+	gsub(/seqscan:/, "");
+	gsub(/seqtupread:/, "");
+	gsub(/ret:/, "");
+	gsub(/fetch:/, "");
+	gsub(/ins:/, "");
+	gsub(/upd:/, "");
+	gsub(/del:/, "");
 	#must be processed last or they step on other gsub
-	gsub(/read\:/, "");
-	gsub(/hit\:/, "");
+	gsub(/read:/, "");
+	gsub(/hit:/, "");
 
 	if ( $18 == "postgres" ){
 	  if ( ignorePG == 1 ){ toAdd=0 }
