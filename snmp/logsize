@@ -322,7 +322,7 @@ $return_json->{data}{mean}   = mean(@set_sizes);
 $return_json->{data}{median} = median(@set_sizes);
 $return_json->{data}{mode}   = mode(@set_sizes);
 $return_json->{data}{min}    = min(@set_sizes);
-$return_json->{data}{sum}    = sum(@set_sizes);
+$return_json->{data}{size}   = sum(@set_sizes);
 
 # if this is not atleast one, then no sets are defined, even if the hash exists
 if ( $found_sets < 1 ) {
