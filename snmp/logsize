@@ -10,6 +10,7 @@ use Time::Piece;
 use MIME::Base64;
 use Gzip::Faster;
 use File::Slurp;
+use Statistics::Lite qw(:all);
 
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 
@@ -32,17 +33,21 @@ my $return_json = {
 	errorString => '',
 	version     => 1,
 	data        => {
-		sets           => {},
-		failed_sets    => {},
-		max_size       => undef,
-		max_size_diff  => undef,
-		max_size_diffp => undef,
-		min_size       => undef,
-		min_size_diff  => undef,
-		min_size_diffp => undef,
-		size           => 0,
+		sets        => {},
+		failed_sets => {},
+		max         => undef,
+		mean        => undef,
+		median      => undef,
+		mode        => undef,
+		min         => undef,
+		size        => 0,
 	},
 };
+
+# get current time and time stamp of today
+my $t               = localtime;
+my $today_name      = $t->strftime('%F');
+my $today_name_alt1 = $t->strftime('%Y%m%d');
 
 #gets the options
 my %opts = ();
@@ -57,8 +62,7 @@ if ( !-f $opts{f} ) {
 	$return_json->{errorString} = $opts{f} . ' is not a file or does not eixst';
 	print encode_json($return_json) . "\n";
 	exit 1;
-}
-elsif ( !-r $opts{f} ) {
+} elsif ( !-r $opts{f} ) {
 	$return_json->{error}       = 2;
 	$return_json->{errorString} = $opts{f} . ' is not readable';
 	print encode_json($return_json) . "\n";
@@ -77,8 +81,7 @@ if ($@) {
 	$return_json->{errorString} = $opts{f} . ' errored reading or parsing... ' . $@;
 	print encode_json($return_json) . "\n";
 	exit 3;
-}
-elsif ( !$config ) {
+} elsif ( !$config ) {
 	$return_json->{error}       = 4;
 	$return_json->{errorString} = $opts{f} . ' errored  parsing... ' . $err;
 	print encode_json($return_json) . "\n";
@@ -100,9 +103,8 @@ if ( !defined( $config->{cache_dir} ) ) {
 
 # make sure we have something we can use for log end
 if ( !defined( $config->{log_end} ) ) {
-	$config->{log_end} = [ '*.log', '*.today', '*.json', '*log' ];
-}
-else {
+	$config->{log_end} = [ '*.log', '*.today', '*.json', '*log', '*-' . $today_name, '*-' . $today_name_alt1 ];
+} else {
 	if ( ref( $config->{log_end} ) ne 'ARRAY' ) {
 		$return_json->{error}       = 8;
 		$return_json->{errorString} = 'The cache_dir, "' . $config->{cache_dir} . '", is not a ';
@@ -113,7 +115,7 @@ else {
 
 # set the default log chomp
 if ( !defined( $config->{log_chomp} ) ) {
-	$config->{log_chomp} = '((\-\d+)*\.log|\.today|\.json|log)$';
+	$config->{log_chomp} = '((\-\d+)*\.log|\.today|\.json|\-' . $today_name . '|\-' . $today_name_alt1 . ')$';
 }
 
 # how long to keep a file in the cache
@@ -133,8 +135,7 @@ if ( -e $config->{cache_dir} && !-d $config->{cache_dir} ) {
 	$return_json->{errorString} = 'The cache_dir, "' . $config->{cache_dir} . '", is not a ';
 	print encode_json($return_json) . "\n";
 	exit 6;
-}
-elsif ( !-e $config->{cache_dir} ) {
+} elsif ( !-e $config->{cache_dir} ) {
 	eval { mkdir( $config->{cache_dir} ) or die('failed'); };
 	if ($@) {
 		$return_json->{error}       = 7;
@@ -149,7 +150,6 @@ elsif ( !-e $config->{cache_dir} ) {
 ##
 
 # gets time objects for now and a day ago
-my $t          = localtime;
 my $t_minus_1d = localtime;
 my $t_minus_2d = localtime;
 my $t_minus_3d = localtime;
@@ -165,7 +165,6 @@ $t_minus_5d -= ( 86400 * 5 );
 $t_minus_6d -= ( 86400 * 6 );
 $t_minus_7d -= ( 86400 * 7 );
 
-my $today_name       = $t->strftime('%F');
 my $today_cache_file = $config->{cache_dir} . '/' . $today_name;
 
 my $today_minus_1d_name = $t_minus_1d->strftime('%F');
@@ -202,6 +201,7 @@ foreach my $d (@minus_d) {
 ##
 my @sets       = keys( %{ $config->{sets} } );
 my $found_sets = 0;
+my @set_sizes;
 foreach my $set (@sets) {
 
 	# if any set fails, add it to the list of failed sets
@@ -226,14 +226,14 @@ foreach my $set (@sets) {
 			->in( $config->{sets}{$set}{dir} );
 
 		$return_json->{data}{sets}{$set} = {
-			files          => {},
-			max_size       => 0,
-			max_size_diff  => undef,
-			max_size_diffp => undef,
-			min_size       => 999999999999999999999999999999999999999999999999999999999999999999,
-			min_size_diff  => undef,
-			min_size_diffp => undef,
-			size           => 0,
+			files  => {},
+			max    => undef,
+			mean   => undef,
+			median => undef,
+			mode   => undef,
+			min    => undef,
+			size   => 0,
+			unseen => [],
 		};
 
 		$today_cache->{sets}{$set}{files} = {};
@@ -241,22 +241,9 @@ foreach my $set (@sets) {
 		# will later be used for regexp for chomping the start of the full path
 		my $quoted_dir = quotemeta( $config->{sets}{$set}{dir} );
 
-		# check if the applicable sets exist
-		my $minus_d_use = {
-			'1d' => 1,
-			'2d' => 1,
-			'3d' => 1,
-			'4d' => 1,
-			'5d' => 1,
-			'6d' => 1,
-			'7d' => 1,
-		};
-		foreach my $d (@minus_d) {
-			if ( !defined( $today_minus_cache->{$d}{sets}{$set} ) ) {
-				$minus_d_use->{$d} = 0;
-			}
-		}
-
+		my %m_times;
+		my %seen;
+		my %log_sizes;    # make sure we don't have any twice
 		foreach my $log (@files) {
 			my ( $dev, $ino, $mode, $nlink, $uid, $gid, $rdev, $size, $atime, $mtime, $ctime, $blksize, $blocks )
 				= stat($log);
@@ -265,168 +252,60 @@ foreach my $set (@sets) {
 			$log =~ s/^\///;
 			$log =~ s/$chomp//;
 
-			# save the basic info for currently
-			$return_json->{data}{sets}{$set}{files}{$log} = { size => $size };
-			$today_cache->{sets}{$set}{files}{$log} = {
-				dev     => $dev,
-				ino     => $ino,
-				rdev    => $rdev,
-				size    => $size,
-				mode    => $mode,
-				nlink   => $nlink,
-				uid     => $uid,
-				gid     => $gid,
-				atime   => $atime,
-				mtime   => $mtime,
-				ctime   => $ctime,
-				blksize => $blksize,
-				blocks  => $blocks
-			};
+			# if we find a log twice, make sure it is the new one
+			if ( !defined( $m_times{$log} ) || $mtime > $m_times{$log} ) {
+				$seen{$log}                                   = 1;
+				$m_times{$log}                                = $mtime;
+				$log_sizes{$log}                              = $size;
+				$return_json->{data}{sets}{$set}{files}{$log} = $size;
 
-			$return_json->{data}{sets}{$set}{size} += $size;
-			if ( $size > $return_json->{data}{sets}{$set}{max_size} ) {
-				$return_json->{data}{sets}{$set}{max_size} = $size;
+				# save the basic info for currently
+				$today_cache->{sets}{$set}{files}{$log} = {
+					dev     => $dev,
+					ino     => $ino,
+					rdev    => $rdev,
+					size    => $size,
+					mode    => $mode,
+					nlink   => $nlink,
+					uid     => $uid,
+					gid     => $gid,
+					atime   => $atime,
+					mtime   => $mtime,
+					ctime   => $ctime,
+					blksize => $blksize,
+					blocks  => $blocks
+				};
+
+			} ## end if ( !defined( $m_times{$log} ) || $mtime ...)
+		} ## end foreach my $log (@files)
+
+		# compute the stats for log sizes
+		my @size_keys = keys(%log_sizes);
+		my @sizes;
+		foreach my $item (@size_keys) {
+			push( @sizes, $return_json->{data}{sets}{$set}{files}{$item} );
+		}
+		$return_json->{data}{sets}{$set}{max}    = max(@sizes);
+		$return_json->{data}{sets}{$set}{mean}   = mean(@sizes);
+		$return_json->{data}{sets}{$set}{median} = median(@sizes);
+		$return_json->{data}{sets}{$set}{mode}   = mode(@sizes);
+		$return_json->{data}{sets}{$set}{min}    = min(@sizes);
+		$return_json->{data}{sets}{$set}{size}   = sum(@sizes);
+
+		push( @set_sizes, $return_json->{data}{sets}{$set}{size} );
+
+		# looks for missing files and adds them to unseen
+		my %unseen;
+		foreach my $d (@minus_d) {
+			my @old_logs = keys( %{ $today_minus_cache->{$d}{sets}{$set}{files} } );
+			foreach my $item (@old_logs) {
+				if ( !defined( $return_json->{data}{sets}{$set}{files}{$item} ) && !defined( $unseen{$item} ) ) {
+					$unseen{$item} = 1;
+					push( @{ $return_json->{data}{sets}{$set}{unseen} }, $item );
+				}
+
 			}
-			if ( $size < $return_json->{data}{sets}{$set}{min_size} ) {
-				$return_json->{data}{sets}{$set}{min_size} = $size;
-			}
-
-			# computes today minus stats
-			foreach my $d (@minus_d) {
-				if (   $minus_d_use->{$d}
-					&& defined( $today_minus_cache->{$d}{sets}{$set}{files}{$log} )
-					&& defined( $today_minus_cache->{$d}{sets}{$set}{files}{$log}{size} ) )
-				{
-					$return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' }
-						= $size - $today_minus_cache->{$d}{sets}{$set}{files}{$log}{size};
-					if (   $today_minus_cache->{$d}{sets}{$set}{files}{$log}{size} > 0
-						&& $size > 0 )
-					{
-						$return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' }
-							= sprintf( '%.2f', $size / $today_minus_cache->{$d}{sets}{$set}{files}{$log}{size} );
-					}
-					else {
-						$return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' } = 0;
-					}
-				}
-				else {
-					$return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' }  = undef;
-					$return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' } = undef;
-				}
-
-				if (   defined( $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' } )
-					&& defined( $return_json->{data}{sets}{$set}{max_size_diff} )
-					&& $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' }
-					> $return_json->{data}{sets}{$set}{max_size_diff} )
-				{
-					$return_json->{data}{sets}{$set}{max_size_diff}
-						= $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' };
-				}
-				elsif ( defined( $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' } ) ) {
-					$return_json->{data}{sets}{$set}{max_size_diff}
-						= $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' };
-				}
-
-				if (   defined( $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' } )
-					&& defined( $return_json->{data}{sets}{$set}{min_size_diff} )
-					&& $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' }
-					< $return_json->{data}{sets}{$set}{min_size_diff} )
-				{
-					$return_json->{data}{sets}{$set}{min_size_diff}
-						= $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' };
-				}
-				elsif ( defined( $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' } ) ) {
-					$return_json->{data}{sets}{$set}{min_size_diff}
-						= $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diff' };
-				}
-
-				if (   defined( $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' } )
-					&& defined( $return_json->{data}{sets}{$set}{max_size_diffp} )
-					&& $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' }
-					> $return_json->{data}{sets}{$set}{max_size_diffp} )
-				{
-					$return_json->{data}{sets}{$set}{max_size_diffp}
-						= $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' };
-				}
-				elsif ( defined( $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' } ) ) {
-					$return_json->{data}{sets}{$set}{max_size_diffp}
-						= $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' };
-				}
-
-				if (   defined( $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' } )
-					&& defined( $return_json->{data}{sets}{$set}{min_size_diffp} )
-					&& $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' }
-					< $return_json->{data}{sets}{$set}{min_size_diffp} )
-				{
-					$return_json->{data}{sets}{$set}{min_size_diffp}
-						= $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' };
-				}
-				elsif ( defined( $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' } ) ) {
-					$return_json->{data}{sets}{$set}{min_size_diffp}
-						= $return_json->{data}{sets}{$set}{files}{$log}{ $d . '_size_diffp' };
-				}
-			}
-
-			# remove minus d values if not needed now that they are no longer needed
-			if ( $config->{no_minus_d} ) {
-				foreach my $d2 (@minus_d) {
-					delete $return_json->{data}{sets}{$set}{files}{$log}{ $d2 . '_size_diff' };
-					delete $return_json->{data}{sets}{$set}{files}{$log}{ $d2 . '_size_diffp' };
-				}
-			}
-		}
-
-		$return_json->{data}{size} += $return_json->{data}{sets}{$set}{size};
-
-		if (
-			!defined( $return_json->{data}{min_size_diffp} )
-			|| ( defined( $return_json->{data}{sets}{$set}{min_size_diffp} )
-				&& $return_json->{data}{sets}{$set}{min_size_diffp} < $return_json->{data}{min_size_diffp} )
-			)
-		{
-			$return_json->{data}{min_size_diffp} = $return_json->{data}{sets}{$set}{min_size_diffp};
-		}
-		if (
-			!defined( $return_json->{data}{min_size_diff} )
-			|| ( defined( $return_json->{data}{sets}{$set}{min_size_diff} )
-				&& $return_json->{data}{sets}{$set}{min_size_diff} < $return_json->{data}{min_size_diff} )
-			)
-		{
-			$return_json->{data}{min_size_diff} = $return_json->{data}{sets}{$set}{min_size_diff};
-		}
-
-		if (
-			!defined( $return_json->{data}{max_size_diffp} )
-			|| ( defined( $return_json->{data}{sets}{$set}{max_size_diffp} )
-				&& $return_json->{data}{sets}{$set}{max_size_diffp} > $return_json->{data}{max_size_diffp} )
-			)
-		{
-			$return_json->{data}{max_size_diffp} = $return_json->{data}{sets}{$set}{max_size_diffp};
-		}
-		if (
-			!defined( $return_json->{data}{max_size_diff} )
-			|| ( defined( $return_json->{data}{sets}{$set}{max_size_diff} )
-				&& $return_json->{data}{sets}{$set}{max_size_diff} > $return_json->{data}{max_size_diff} )
-			)
-		{
-			$return_json->{data}{max_size_diff} = $return_json->{data}{sets}{$set}{max_size_diff};
-		}
-		if (
-			!defined( $return_json->{data}{max_size} )
-			|| ( defined( $return_json->{data}{sets}{$set}{max_size} )
-				&& $return_json->{data}{sets}{$set}{max_size} > $return_json->{data}{max_size} )
-			)
-		{
-			$return_json->{data}{max_size} = $return_json->{data}{sets}{$set}{max_size};
-		}
-		if (
-			!defined( $return_json->{data}{min_size} )
-			|| ( defined( $return_json->{data}{sets}{$set}{min_size} )
-				&& $return_json->{data}{sets}{$set}{min_size} > $return_json->{data}{min_size} )
-			)
-		{
-			$return_json->{data}{min_size} = $return_json->{data}{sets}{$set}{min_size};
-		}
+		} ## end foreach my $d (@minus_d)
 	};
 
 	# if the above died, add it to a list of failed sets
@@ -435,7 +314,15 @@ foreach my $set (@sets) {
 	}
 
 	$found_sets++;
-}
+} ## end foreach my $set (@sets)
+
+# compute the over all stats
+$return_json->{data}{max}    = max(@set_sizes);
+$return_json->{data}{mean}   = mean(@set_sizes);
+$return_json->{data}{median} = median(@set_sizes);
+$return_json->{data}{mode}   = mode(@set_sizes);
+$return_json->{data}{min}    = min(@set_sizes);
+$return_json->{data}{sum}    = sum(@set_sizes);
 
 # if this is not atleast one, then no sets are defined, even if the hash exists
 if ( $found_sets < 1 ) {
@@ -453,20 +340,18 @@ eval { write_file( $config->{cache_dir} . "/extend_raw", $return_string ); };
 if ( !$opts{b} ) {
 	eval { write_file( $config->{cache_dir} . "/extend_return", $return_string ); };
 	print $return_string;
-}
-else {
+} else {
 	my $compressed = encode_base64( gzip($return_string) );
 	$compressed =~ s/\n//g;
 	$compressed = $compressed . "\n";
 	if ( length($compressed) > length($return_string) ) {
 		eval { write_file( $config->{cache_dir} . "/extend_return", $return_string ); };
 		print $return_string;
-	}
-	else {
+	} else {
 		eval { write_file( $config->{cache_dir} . "/extend_return", $compressed ); };
 		print $compressed;
 	}
-}
+} ## end else [ if ( !$opts{b} ) ]
 
 ##
 ## save the cache
