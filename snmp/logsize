@@ -115,19 +115,13 @@ if ( !defined( $config->{log_end} ) ) {
 
 # set the default log chomp
 if ( !defined( $config->{log_chomp} ) ) {
-	$config->{log_chomp} = '((\-\d+)*\.log|\.today|\.json|\-' . $today_name . '|\-' . $today_name_alt1 . ')$';
+	$config->{log_chomp} = '((\-\d\d\d\d\d\d\d\d)*\.log|\.today|\.json|\-' . $today_name . '|\-' . $today_name_alt1 . ')$';
 }
 
 # how long to keep a file in the cache
 if ( !defined( $config->{max_age} ) ) {
 	$config->{max_age} = 30;
 }
-
-# if no_minus_d is defined, default to it being disabled
-if ( !defined( $config->{no_minus_d} ) ) {
-	$config->{no_minus_d} = 1;
-}
-$return_json->{data}{no_minus_d} = $config->{no_minus_d};
 
 # if it exists, make sure it is a directory
 if ( -e $config->{cache_dir} && !-d $config->{cache_dir} ) {
