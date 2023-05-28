@@ -41,11 +41,7 @@ if os.path.isfile(cachefile) and (time.time() - os.stat(cachefile)[8]) < cacheti
 else:
     # Grab the status URL (fresh data), needs package urllib3
     if username == "" and password == "":
-        data = (
-            urllib.request.urlopen(url)
-            .read()
-            .decode("UTF-8")
-        )
+        data = urllib.request.urlopen(url).read().decode("UTF-8")
     else:
         passman = urllib.request.HTTPPasswordMgrWithDefaultRealm()
         passman.add_password(None, url, username, password)
