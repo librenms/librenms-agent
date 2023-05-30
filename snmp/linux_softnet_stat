@@ -71,7 +71,7 @@ my @lines_split = split( /\n/, $lines_raw );
 # not all linux kernel versions include softnet_backlog_len or index
 my @to_total = (
 	'packet_process', 'packet_drop',      'time_squeeze', 'cpu_collision',
-	'received_rps',   'flow_limit_found', 'softnet_backlog_len'
+	'received_rps',   'flow_limit_count', 'softnet_backlog_len'
 );
 foreach my $line (@lines_split) {
 	my %found;
