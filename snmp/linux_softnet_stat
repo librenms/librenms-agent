@@ -1,0 +1,132 @@
+#!/usr/bin/env perl
+
+=head1 DESCRIPTION
+
+This is a SNMP extend for monitoring /proc/net/softnet_stat on Linux for use with LibreNMS.
+
+For more information, see L<https://docs.librenms.org/#Extensions/Applications/#linux_softnet_stat>.
+
+=head1 SWITCHES
+
+=head2 -p
+
+Pretty print the JSON. If used with -b, this switch will be ignored.
+
+=head2 -b
+
+Gzip the output and convert to Base64.
+
+=cut
+
+use strict;
+use warnings;
+use JSON;
+use Getopt::Std;
+use File::Slurp;
+use MIME::Base64;
+use Gzip::Faster;
+
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
+
+sub main::VERSION_MESSAGE {
+	print "Linux softnet stats extend 0.0.1\n";
+}
+
+sub main::HELP_MESSAGE {
+
+}
+
+#this will be dumped to json at the end
+my %tojson;
+$tojson{totals} = {
+	packet_process      => 0,
+	packet_drop         => 0,
+	time_squeeze        => 0,
+	cpu_collision       => 0,
+	received_rps        => 0,
+	flow_limit_count    => 0,
+	softnet_backlog_len => 0,
+};
+$tojson{cores}      = [];
+$tojson{core_count} = 0;
+
+#gets the options
+my %opts = ();
+getopts( 'pb', \%opts );
+
+my $j = JSON->new;
+
+if ( $opts{p} && !$opts{b} ) {
+	$j->pretty(1);
+	$j->canonical(1);
+}
+
+##
+## read it all in
+##
+
+my $lines_raw   = read_file('/proc/net/softnet_stat');
+my @lines_split = split( /\n/, $lines_raw );
+
+foreach my $line (@lines_split) {
+	my (
+		$packet_process,   $packet_drop,         $time_squeeze, $zero4,         $zero5,
+		$zero6,            $zero7,               $zero8,        $cpu_collision, $received_rps,
+		$flow_limit_count, $softnet_backlog_len, $index
+	) = split( /[\ \t]+/, $line );
+
+	$tojson{totals}{packet_process}      += hex($packet_process);
+	$tojson{totals}{packet_drop}         += hex($packet_drop);
+	$tojson{totals}{time_squeeze}        += hex($time_squeeze);
+	$tojson{totals}{cpu_collision}       += hex($cpu_collision);
+	$tojson{totals}{received_rps}        += hex($received_rps);
+	$tojson{totals}{flow_limit_count}    += hex($flow_limit_count);
+	$tojson{totals}{softnet_backlog_len} += hex($softnet_backlog_len);
+
+	push(
+		@{ $tojson{cores} },
+		{
+			packet_process      => hex($packet_process),
+			packet_drop         => hex($packet_drop),
+			time_squeeze        => hex($time_squeeze),
+			cpu_collision       => hex($cpu_collision),
+			received_rps        => hex($received_rps),
+			flow_limit_count    => hex($flow_limit_count),
+			softnet_backlog_len => hex($softnet_backlog_len),
+			core                => hex($index),
+		}
+	);
+
+	$tojson{core_count}++;
+} ## end foreach my $line (@lines_split)
+
+##
+## print the results
+##
+
+my %head_hash;
+$head_hash{'data'}        = \%tojson;
+$head_hash{'version'}     = 1;
+$head_hash{'error'}       = 0;
+$head_hash{'errorString'} = '';
+
+my $return_string = $j->encode( \%head_hash );
+
+if ( !$opts{p} && !$opts{b} ) {
+	print $return_string. "\n";
+	exit 0;
+} elsif ( !$opts{b} ) {
+	print $return_string;
+	exit 0;
+}
+
+my $compressed = encode_base64( gzip($return_string) );
+$compressed =~ s/\n//g;
+$compressed = $compressed . "\n";
+if ( length($compressed) > length($return_string) ) {
+	print $return_string. "\n";
+} else {
+	print $compressed;
+}
+
+exit 0;
