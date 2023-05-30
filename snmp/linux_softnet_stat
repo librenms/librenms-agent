@@ -68,32 +68,40 @@ if ( $opts{p} && !$opts{b} ) {
 my $lines_raw   = read_file('/proc/net/softnet_stat');
 my @lines_split = split( /\n/, $lines_raw );
 
+# not all linux kernel versions include softnet_backlog_len or index
+my @to_total = (
+	'packet_process', 'packet_drop',      'time_squeeze', 'cpu_collision',
+	'received_rps',   'flow_limit_found', 'softnet_backlog_len'
+);
 foreach my $line (@lines_split) {
-	my (
-		$packet_process,   $packet_drop,         $time_squeeze, $zero4,         $zero5,
-		$zero6,            $zero7,               $zero8,        $cpu_collision, $received_rps,
-		$flow_limit_count, $softnet_backlog_len, $index
+	my %found;
+	(
+		$found{packet_process}, $found{packet_drop},  $found{time_squeeze},     $found{zero4},
+		$found{zero5},          $found{zero6},        $found{zero7},            $found{zero8},
+		$found{cpu_collision},  $found{received_rps}, $found{flow_limit_count}, $found{softnet_backlog_len},
+		$found{index}
 	) = split( /[\ \t]+/, $line );
 
-	$tojson{totals}{packet_process}      += hex($packet_process);
-	$tojson{totals}{packet_drop}         += hex($packet_drop);
-	$tojson{totals}{time_squeeze}        += hex($time_squeeze);
-	$tojson{totals}{cpu_collision}       += hex($cpu_collision);
-	$tojson{totals}{received_rps}        += hex($received_rps);
-	$tojson{totals}{flow_limit_count}    += hex($flow_limit_count);
-	$tojson{totals}{softnet_backlog_len} += hex($softnet_backlog_len);
+	foreach my $item (@to_total) {
+		if ( !defined( $found{$item} ) ) {
+			$found{$item} = 0;
+		} else {
+			$found{$item} = hex($found{$item});
+		}
+		$tojson{totals}{$item} += $found{$item};
+	}
 
 	push(
 		@{ $tojson{cores} },
 		{
-			packet_process      => hex($packet_process),
-			packet_drop         => hex($packet_drop),
-			time_squeeze        => hex($time_squeeze),
-			cpu_collision       => hex($cpu_collision),
-			received_rps        => hex($received_rps),
-			flow_limit_count    => hex($flow_limit_count),
-			softnet_backlog_len => hex($softnet_backlog_len),
-			core                => hex($index),
+			packet_process      => $found{packet_process},
+			packet_drop         => $found{packet_drop},
+			time_squeeze        => $found{time_squeeze},
+			cpu_collision       => $found{cpu_collision},
+			received_rps        => $found{received_rps},
+			flow_limit_count    => $found{flow_limit_count},
+			softnet_backlog_len =>,
+			$found{softnet_backlog_len}, core => $tojson{core_count}
 		}
 	);
 
