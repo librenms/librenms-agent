@@ -53,13 +53,13 @@ $tojson{budget}       = `sysctl net.core.netdev_budget 2> /dev/null`;
 $tojson{budget_usecs} = `sysctl net.core.netdev_budget_usecs 2> /dev/null`;
 chomp( $tojson{budget} );
 chomp( $tojson{budget_usecs} );
-$tojson{budget}       =~ s/.*\=\w*//;
-$tojson{budget_usecs} =~ s/.*\=\w*//;
+$tojson{budget}       =~ s/.*\=[\ \t]*//;
+$tojson{budget_usecs} =~ s/.*\=[\ \t]*//;
 
-if ( $tojson{budget} =~ /^[0-9]+$/ ) {
+if ( $tojson{budget} !~ /^[0-9]+$/ ) {
 	$tojson{budget} = 'unknown';
 }
-if ( $tojson{budget_usecs} =~ /^[0-9]+$/ ) {
+if ( $tojson{budget_usecs} !~ /^[0-9]+$/ ) {
 	$tojson{budget_usecs} = 'unknown';
 }
 
