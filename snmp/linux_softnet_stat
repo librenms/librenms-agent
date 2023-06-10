@@ -1,0 +1,144 @@
+#!/usr/bin/env perl
+
+=head1 DESCRIPTION
+
+This is a SNMP extend for monitoring /proc/net/softnet_stat on Linux for use with LibreNMS.
+
+For more information, see L<https://docs.librenms.org/#Extensions/Applications/#linux_softnet_stat>.
+
+=head1 SWITCHES
+
+=head2 -p
+
+Pretty print the JSON. If used with -b, this switch will be ignored.
+
+=head2 -b
+
+Gzip the output and convert to Base64.
+
+=cut
+
+use strict;
+use warnings;
+use JSON;
+use Getopt::Std;
+use File::Slurp;
+use MIME::Base64;
+use Gzip::Faster;
+
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
+
+sub main::VERSION_MESSAGE {
+	print "Linux softnet stats extend 0.0.1\n";
+}
+
+sub main::HELP_MESSAGE {
+
+}
+
+#this will be dumped to json at the end
+my %tojson;
+$tojson{totals} = {
+	backlog_length => 0,
+	cpu_collision  => 0,
+	flow_limit     => 0,
+	packet_dropped => 0,
+	packets        => 0,
+	received_rps   => 0,
+	time_squeeze   => 0,
+};
+$tojson{cores}        = [];
+$tojson{core_count}   = 0;
+$tojson{budget}       = `sysctl net.core.netdev_budget 2> /dev/null`;
+$tojson{budget_usecs} = `sysctl net.core.netdev_budget_usecs 2> /dev/null`;
+chomp( $tojson{budget} );
+chomp( $tojson{budget_usecs} );
+$tojson{budget}       =~ s/.*\=[\ \t]*//;
+$tojson{budget_usecs} =~ s/.*\=[\ \t]*//;
+
+if ( $tojson{budget} !~ /^[0-9]+$/ ) {
+	$tojson{budget} = 'unknown';
+}
+if ( $tojson{budget_usecs} !~ /^[0-9]+$/ ) {
+	$tojson{budget_usecs} = 'unknown';
+}
+
+#gets the options
+my %opts = ();
+getopts( 'pb', \%opts );
+
+my $j = JSON->new;
+
+if ( $opts{p} && !$opts{b} ) {
+	$j->pretty(1);
+	$j->canonical(1);
+}
+
+##
+## read it all in
+##
+
+my $lines_raw   = read_file('/proc/net/softnet_stat');
+my @lines_split = split( /\n/, $lines_raw );
+
+# not all linux kernel versions include softnet_backlog_len or index
+my @to_total = keys( %{ $tojson{totals} } );
+foreach my $line (@lines_split) {
+	my %found;
+	(
+		$found{packets},       $found{packet_drop},  $found{time_squeeze}, $found{zero4},
+		$found{zero5},         $found{zero6},        $found{zero7},        $found{zero8},
+		$found{cpu_collision}, $found{received_rps}, $found{flow_limit},   $found{backlog_length},
+		$found{index}
+	) = split( /[\ \t]+/, $line );
+
+	push(
+		@{ $tojson{cores} },
+		{
+			core => $tojson{core_count},
+		}
+	);
+
+	foreach my $item (@to_total) {
+		if ( !defined( $found{$item} ) ) {
+			$found{$item} = 0;
+		} else {
+			$found{$item} = hex( $found{$item} );
+		}
+		$tojson{totals}{$item} += $found{$item};
+		$tojson{cores}[ $tojson{core_count} ]{$item} = $found{$item};
+	}
+
+	$tojson{core_count}++;
+} ## end foreach my $line (@lines_split)
+
+##
+## print the results
+##
+
+my %head_hash;
+$head_hash{'data'}        = \%tojson;
+$head_hash{'version'}     = 1;
+$head_hash{'error'}       = 0;
+$head_hash{'errorString'} = '';
+
+my $return_string = $j->encode( \%head_hash );
+
+if ( !$opts{p} && !$opts{b} ) {
+	print $return_string. "\n";
+	exit 0;
+} elsif ( !$opts{b} ) {
+	print $return_string;
+	exit 0;
+}
+
+my $compressed = encode_base64( gzip($return_string) );
+$compressed =~ s/\n//g;
+$compressed = $compressed . "\n";
+if ( length($compressed) > length($return_string) ) {
+	print $return_string. "\n";
+} else {
+	print $compressed;
+}
+
+exit 0;
