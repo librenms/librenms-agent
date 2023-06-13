@@ -32,6 +32,9 @@ CMD_PKG=' audit -q -F'
 BIN_APK='/sbin/apk'
 CMD_APK=' version'
 
+# If using this as a agent and not a extend, uncomment the line below.
+#echo '<<<app-os-updates>>>'
+
 ################################################################
 # Don't change anything unless you know what are you doing     #
 ################################################################
