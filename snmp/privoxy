@@ -291,7 +291,7 @@ foreach my $line (@stdout_split) {
 	}
 	elsif ( $line =~ /^New\ outgoing\ connections\:/ ) {
 		$multiline_mode = '';
-		$line =~ s/.*\:\ \-//;
+		$line =~ s/.*\:\ //;
 		$line =~ s/\ .*$//;
 		$to_return->{data}{nog_conns} = $line;
 	}
