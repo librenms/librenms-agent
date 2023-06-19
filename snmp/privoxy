@@ -47,6 +47,8 @@ use File::ReadBackwards;
 use JSON;
 use Time::Piece;
 use IPC::Run3;
+use MIME::Base64;
+use Gzip::Faster;
 
 # get the current time
 my $t    = localtime;
@@ -58,8 +60,7 @@ if ( $t->tzoffset =~ /^-/ ) {
 	my $offset = $t->tzoffset;
 	$offset =~ s/^\-//;
 	$till = $till - $offset;
-}
-else {
+} else {
 	my $offset = $t->tzoffset;
 	$offset =~ s/^\+//;
 	$till = $till + $offset;
@@ -161,7 +162,7 @@ if ($@) {
 		print "\n";
 	}
 	exit 0;
-}
+} ## end if ($@)
 
 my $read_file = 1;
 
@@ -197,8 +198,7 @@ while ( defined( $log_line = $bw->readline )
 		# otherwise add it
 		if ( $log_t->epoch < $till ) {
 			$read_file = 0;
-		}
-		else {
+		} else {
 			$lines = $log_line . $lines;
 
 			if ( $log_line =~ /^\d\d\d\d\-\d\d\-\d\d\ \d\d\:\d\d\:\d\d.*Crunch\:\ Blocked\:\ / ) {
@@ -218,15 +218,15 @@ while ( defined( $log_line = $bw->readline )
 					$log_line =~ s/\:\d+$//;
 					$unique_domains_np->{$log_line_tmp} = 1;
 				}
-			}
-		}
-	}
+			} ## end if ( $log_line =~ /^\d\d\d\d\-\d\d\-\d\d\ \d\d\:\d\d\:\d\d.*Connect\:\ to\ /)
+		} ## end else [ if ( $log_t->epoch < $till ) ]
+	} ## end if ( defined($log_t) )
 
 	# if we don't have log_t, just add the line and lot the log parser figure out what it is
 	else {
 		$lines = $log_line . $lines;
 	}
-}
+} ## end while ( defined( $log_line = $bw->readline ) ...)
 
 my $stdout;
 my $stderr;
@@ -246,92 +246,77 @@ foreach my $line (@stdout_split) {
 		$multiline_mode = '';
 		$line =~ s/.*\:\ //;
 		$to_return->{data}{client_requests} = $line;
-	}
-	elsif ( $line =~ /^Crunches\:/ ) {
+	} elsif ( $line =~ /^Crunches\:/ ) {
 		$multiline_mode = '';
 		$line =~ s/.*\:\ //;
 		$line =~ s/\ .*$//;
 		$to_return->{data}{crunches} = $line;
-	}
-	elsif ( $line =~ /^Blocks:/ ) {
+	} elsif ( $line =~ /^Blocks:/ ) {
 		$multiline_mode = '';
 		$line =~ s/.*\:\ //;
 		$line =~ s/\ .*$//;
 		$to_return->{data}{blocks} = $line;
-	}
-	elsif ( $line =~ /^Fast\ redirections\:/ ) {
+	} elsif ( $line =~ /^Fast\ redirections\:/ ) {
 		$multiline_mode = '';
 		$line =~ s/.*\:\ //;
 		$line =~ s/\ .*$//;
 		$to_return->{data}{fast_redirs} = $line;
-	}
-	elsif ( $line =~ /^Connection\ timeouts\:/ ) {
+	} elsif ( $line =~ /^Connection\ timeouts\:/ ) {
 		$multiline_mode = '';
 		$line =~ s/.*\:\ //;
 		$line =~ s/\ .*$//;
 		$to_return->{data}{con_timeouts} = $line;
-	}
-	elsif ( $line =~ /^Connection\ failures\:/ ) {
+	} elsif ( $line =~ /^Connection\ failures\:/ ) {
 		$multiline_mode = '';
 		$line =~ s/.*\:\ //;
 		$line =~ s/\ .*$//;
 		$to_return->{data}{con_failures} = $line;
-	}
-	elsif ( $line =~ /^Outgoing\ requests\:/ ) {
+	} elsif ( $line =~ /^Outgoing\ requests\:/ ) {
 		$multiline_mode = '';
 		$line =~ s/.*\:\ //;
 		$line =~ s/\ .*$//;
 		$to_return->{data}{out_requests} = $line;
-	}
-	elsif ( $line =~ /^Server keep-alive offers\:/ ) {
+	} elsif ( $line =~ /^Server keep-alive offers\:/ ) {
 		$multiline_mode = '';
 		$line =~ s/.*\:\ //;
 		$line =~ s/\ .*$//;
 		$to_return->{data}{ska_offers} = $line;
-	}
-	elsif ( $line =~ /^New\ outgoing\ connections\:/ ) {
+	} elsif ( $line =~ /^New\ outgoing\ connections\:/ ) {
 		$multiline_mode = '';
-		$line =~ s/.*\:\ \-//;
+		$line =~ s/.*\:\ //;
 		$line =~ s/\ .*$//;
 		$to_return->{data}{nog_conns} = $line;
-	}
-	elsif ( $line =~ /^Reused\ server\ connections\:/ ) {
+	} elsif ( $line =~ /^Reused\ server\ connections\:/ ) {
 		$multiline_mode = '';
 		$line =~ s/.*connections\:\ //;
 		$line =~ s/\ .*$//;
 		$to_return->{data}{reused_server_cons} = $line;
-	}
-	elsif ( $line =~ /^Empty\ responses\:/ ) {
+	} elsif ( $line =~ /^Empty\ responses\:/ ) {
 		$multiline_mode = '';
 		$line =~ s/.*\:\ //;
 		$line =~ s/\ .*$//;
 		$to_return->{data}{empty_resps} = $line;
-	}
-	elsif ( $line =~ /^Empty\ responses\ on\ new\ connections\:/ ) {
+	} elsif ( $line =~ /^Empty\ responses\ on\ new\ connections\:/ ) {
 		$multiline_mode = '';
 		$line =~ s/.*\:\ //;
 		$line =~ s/\ .*$//;
 		$to_return->{data}{empty_resps_new} = $line;
-	}
-	elsif ( $line =~ /^Empty\ responses\ on\ reused\ connections\:/ ) {
+	} elsif ( $line =~ /^Empty\ responses\ on\ reused\ connections\:/ ) {
 		$multiline_mode = '';
 		$line =~ s/.*\:\ //;
 		$line =~ s/\ .*$//;
 		$to_return->{data}{empty_resps_reuse} = $line;
-	}
-	elsif ( $line =~ /^Client\ connections\:/ ) {
+	} elsif ( $line =~ /^Client\ connections\:/ ) {
 		$multiline_mode = '';
 		$line =~ s/.*\:\ //;
 		$line =~ s/\ .*$//;
 		$to_return->{data}{client_cons} = $line;
-	}
-	elsif ( $line =~ /^Bytes\ of\ content\ transferred\ to\ the\ client\:/ ) {
+	} elsif ( $line =~ /^Bytes\ of\ content\ transferred\ to\ the\ client\:/ ) {
 		$multiline_mode = '';
 		$line =~ s/.*\:\ //;
 		$line =~ s/\ .*$//;
 		$to_return->{data}{bytes_to_client} = $line;
-	}
-	elsif ( $line =~ /^Improperly\ accounted\ requests\:/ ) {
+	} elsif ( $line =~ /^Improperly\ accounted\ requests\:/ ) {
 		$multiline_mode = '';
 		$line =~ s/.*\:\ \~//;
 		$line =~ s/\ .*$//;
@@ -341,14 +326,11 @@ foreach my $line (@stdout_split) {
 	# match various multi line modes starts
 	elsif ( $line =~ /^Client\ requests\ per\ connection\ distribution\:/ ) {
 		$multiline_mode = 'requests per con';
-	}
-	elsif ( $line =~ /^Method\ distribution\:/ ) {
+	} elsif ( $line =~ /^Method\ distribution\:/ ) {
 		$multiline_mode = 'method';
-	}
-	elsif ( $line =~ /^Client HTTP versions:/ ) {
+	} elsif ( $line =~ /^Client HTTP versions:/ ) {
 		$multiline_mode = 'version';
-	}
-	elsif ( $line
+	} elsif ( $line
 		=~ /^HTTP\ status\ codes\ according\ to\ \'debug\ 512\' \(status\ codes\ sent\ by\ the\ server\ may\ differ\)\:/
 		)
 	{
@@ -362,16 +344,14 @@ foreach my $line (@stdout_split) {
 			if ( $line > $to_return->{data}{max_reqs} ) {
 				$to_return->{data}{max_reqs} = $line;
 			}
-		}
-		elsif ( $multiline_mode eq 'method' ) {
+		} elsif ( $multiline_mode eq 'method' ) {
 			$line =~ s/^ +//;
 			my ( $count, $method ) = split( /\ \:\ /, $line );
 			$method = lc($method);
 			if ( defined( $to_return->{data}{ 'req_' . $method } ) ) {
 				$to_return->{data}{ 'req_' . $method } = $count;
 			}
-		}
-		elsif ( $multiline_mode eq 'version' ) {
+		} elsif ( $multiline_mode eq 'version' ) {
 			$line =~ s/^ +//;
 			my ( $count, $version ) = split( /\ \:\ /, $line );
 			$version = lc($version);
@@ -380,48 +360,38 @@ foreach my $line (@stdout_split) {
 			if ( defined( $to_return->{data}{$version} ) ) {
 				$to_return->{data}{$version} = $count;
 			}
-		}
-		elsif ( $multiline_mode eq 'response' ) {
+		} elsif ( $multiline_mode eq 'response' ) {
 			$line =~ s/^ +//;
 			my ( $count, $response ) = split( /\ \:\ /, $line );
 			if ( defined( $to_return->{data}{ 'resp_' . $response } ) ) {
 
 				$to_return->{data}{ 'resp_' . $response } = $count;
-			}
-			elsif ( $response =~ /^2\d\d/ ) {
+			} elsif ( $response =~ /^2\d\d/ ) {
 				$to_return->{data}{resp_2xx_other} = $to_return->{data}{resp_2xx_other} + $count;
-			}
-			elsif ( $response =~ /^3\d\d/ ) {
+			} elsif ( $response =~ /^3\d\d/ ) {
 				$to_return->{data}{resp_3xx_other} = $to_return->{data}{resp_3xx_other} + $count;
-			}
-			elsif ( $response =~ /^4\d\d/ ) {
+			} elsif ( $response =~ /^4\d\d/ ) {
 				$to_return->{data}{resp_4xx_other} = $to_return->{data}{resp_4xx_other} + $count;
-			}
-			elsif ( $response =~ /^5\d\d/ ) {
+			} elsif ( $response =~ /^5\d\d/ ) {
 				$to_return->{data}{resp_3xx_other} = $to_return->{data}{resp_5xx_other} + $count;
 			}
 
 			if ( $response =~ /^1\d\d/ ) {
 				$to_return->{data}{resp_1xx} = $to_return->{data}{resp_1xx} + $count;
-			}
-			elsif ( $response =~ /^2\d\d/ ) {
+			} elsif ( $response =~ /^2\d\d/ ) {
 				$to_return->{data}{resp_2xx} = $to_return->{data}{resp_2xx} + $count;
-			}
-			elsif ( $response =~ /^3\d\d/ ) {
+			} elsif ( $response =~ /^3\d\d/ ) {
 				$to_return->{data}{resp_3xx} = $to_return->{data}{resp_3xx} + $count;
-			}
-			elsif ( $response =~ /^4\d\d/ ) {
+			} elsif ( $response =~ /^4\d\d/ ) {
 				$to_return->{data}{resp_4xx} = $to_return->{data}{resp_4xx} + $count;
-			}
-			elsif ( $response =~ /^5\d\d/ ) {
+			} elsif ( $response =~ /^5\d\d/ ) {
 				$to_return->{data}{resp_5xx} = $to_return->{data}{resp_5xx} + $count;
 			}
-		}
-	}
-	else {
+		} ## end elsif ( $multiline_mode eq 'response' )
+	} else {
 		$multiline_mode = '';
 	}
-}
+} ## end foreach my $line (@stdout_split)
 
 my @keys_tmp = keys( %{$unique_bdomains} );
 $to_return->{data}{unique_bdomains}    = @keys_tmp;
@@ -441,6 +411,20 @@ if ( $to_return->{data}{unique_domains} > 0 && $to_return->{data}{unique_bdomain
 if ( $to_return->{data}{blocks} > 0 && $to_return->{data}{client_requests} > 0 ) {
 	$to_return->{data}{block_percent} = $to_return->{data}{blocks} / $to_return->{data}{client_requests};
 }
+
+if ($compress) {
+	my $return_string = encode_json($to_return);
+	my $compressed    = encode_base64( gzip($return_string) );
+	$compressed =~ s/\n//g;
+	$compressed = $compressed . "\n";
+	if ( length($compressed) > length($return_string) ) {
+		print $return_string. "\n";
+	} else {
+		print $compressed;
+	}
+
+	exit 0;
+} ## end if ($compress)
 
 print $json->encode($to_return);
 if ( !$opts{p} ) {
