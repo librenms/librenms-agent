@@ -213,12 +213,12 @@ if ( defined( $opts{g} ) ) {
 	# it will always be present and the same as sg0
 	# - Zane
 	if ( -e '/dev/sg0' && $^O eq 'linux' ) {
-		my $cciss_vol_status = `which cciss_vol_status 2> /dev/null`;
+		my $output = 'cciss_vol_status -V /dev/sg0';
 		if ( $? != 0 && !$opts{C} ) {
 			$drive_lines
 				= $drive_lines
 				. "# -C not given, but /dev/sg0 exists and cciss_vol_status is not present\n"
-				. "# skipping checking for cciss devices for SMART polling\n";
+				. "# in path or 'ccis_vol_status -V /dev/sg0' is failing\n";
 		} elsif ( $? != 0 && $opts{C} ) {
 			my $drive_count = 0;
 			my $continue    = 1;
@@ -239,11 +239,11 @@ if ( defined( $opts{g} ) ) {
 				$drive_count++;
 			} ## end while ($continue)
 		} else {
-			my $output      = `$cciss_vol_status -V /dev/sg0`;
 			my $drive_count = 0;
 			while ( $output =~ /(?i)\ *Physical drives:(.*)/g ) {
-				$1 =~ s/^\s+|\s+$//g;
-				$drive_count += $1;
+				my $drive_count_line=$1;
+				$drive_count_line =~ s/^\s+|\s+$//g;
+				$drive_count += $drive_count_line;
 			}
 			my $drive_int = 0;
 			while ( $drive_int < $drive_count ) {
