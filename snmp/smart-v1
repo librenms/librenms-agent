@@ -242,7 +242,7 @@ if ( defined( $opts{g} ) ) {
 		} else {
 			my $drive_count = 0;
 			while ( $output =~ /(?i)\ *Physical drives:(.*)/g ) {
-				my $drive_count_line=$1;
+				my $drive_count_line = $1;
 				$drive_count_line =~ s/^\s+|\s+$//g;
 				$drive_count += $drive_count_line;
 			}
@@ -255,12 +255,12 @@ if ( defined( $opts{g} ) ) {
 		} ## end else [ if ( $? != 0 && !$opts{C} ) ]
 	} ## end if ( -e '/dev/sg0' && $^O eq 'linux' )
 
-	my $useSN=1;
-	if ($opts{S}) {
-		$useSN=0;
+	my $useSN = 1;
+	if ( $opts{S} ) {
+		$useSN = 0;
 	}
 
-	print 'useSN='.$useSN."\n" . 'smartctl=' . $smartctl . "\n" . $cache . $drive_lines;
+	print 'useSN=' . $useSN . "\n" . 'smartctl=' . $smartctl . "\n" . $cache . $drive_lines;
 
 	exit 0;
 } ## end if ( defined( $opts{g} ) )
@@ -520,6 +520,8 @@ foreach my $line (@disks) {
 	$IDs{'conveyance'} = scalar @conveyance;
 	my @selective = grep( /[Ss]elective/, @outputA );
 	$IDs{'selective'} = scalar @selective;
+	my @offline = grep( /(\d|[Bb]ackground|[Ff]oreground)+\ +[Oo]ffline/, @outputA );
+	$IDs{'offline'} = scalar @offline;
 
 	# if we have logs, actually grab the log output
 	if (   $IDs{'completed'} > 0
@@ -528,11 +530,14 @@ foreach my $line (@disks) {
 		|| $IDs{'extended'} > 0
 		|| $IDs{'short'} > 0
 		|| $IDs{'conveyance'} > 0
-		|| $IDs{'selective'} > 0 )
+		|| $IDs{'selective'} > 0
+		|| $IDs{'offline'} > 0 )
 	{
+		my @headers = grep( /(Num\ +Test.*LBA| Description .*[Hh]ours)/, @outputA );
+
 		my @log_lines;
-		push( @log_lines, @extended, @short, @conveyance, @selective );
-		$IDs{'selftest_log'} = join( "\n", sort(@log_lines) );
+		push( @log_lines, @extended, @short, @conveyance, @selective, @offline );
+		$IDs{'selftest_log'} = join( "\n", @headers, sort(@log_lines) );
 	} ## end if ( $IDs{'completed'} > 0 || $IDs{'interrupted'...})
 
 	# get the drive serial number, if needed
