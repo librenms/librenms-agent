@@ -97,13 +97,14 @@ sub main::HELP_MESSAGE {
 		. "-c <config>   The config file to use.\n"
 		. "-p            Pretty print the JSON.\n"
 		. "-Z            GZip+Base64 compress the results.\n"
-		. "-C            Enable manual checking for guess and cciss.\n";
+		. "-C            Enable manual checking for guess and cciss.\n"
+		. "-S            Set useSN to 0 when using -g\n";
 
 } ## end sub main::HELP_MESSAGE
 
 #gets the options
 my %opts = ();
-getopts( 'ugc:pZhvC', \%opts );
+getopts( 'ugc:pZhvCS', \%opts );
 
 if ( $opts{h} ) {
 	&HELP_MESSAGE;
@@ -254,7 +255,12 @@ if ( defined( $opts{g} ) ) {
 		} ## end else [ if ( $? != 0 && !$opts{C} ) ]
 	} ## end if ( -e '/dev/sg0' && $^O eq 'linux' )
 
-	print "useSN=1\n" . 'smartctl=' . $smartctl . "\n" . $cache . $drive_lines;
+	my $useSN=1;
+	if ($opts{S}) {
+		$useSN=0;
+	}
+
+	print 'useSN='.$useSN."\n" . 'smartctl=' . $smartctl . "\n" . $cache . $drive_lines;
 
 	exit 0;
 } ## end if ( defined( $opts{g} ) )
