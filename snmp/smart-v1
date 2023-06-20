@@ -85,23 +85,34 @@ my $useSN = 1;
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 
 sub main::VERSION_MESSAGE {
-	print "SMART SNMP extend 0.1.0\n";
+	print "SMART SNMP extend 0.2.0\n";
 }
 
 sub main::HELP_MESSAGE {
+	&VERSION_MESSAGE;
 	print "\n"
 		. "-u   Update '"
 		. $cache . "'\n"
 		. "-g   Guess at the config and print it to STDOUT.\n"
 		. "-c <config>   The config file to use.\n"
 		. "-p            Pretty print the JSON.\n"
-		. "-Z            GZip+Base64 compress the results.\n";
+		. "-Z            GZip+Base64 compress the results.\n"
+		. "-C            Enable manual checking for guess and ccis.\n";
 
 } ## end sub main::HELP_MESSAGE
 
 #gets the options
 my %opts = ();
-getopts( 'ugc:pZ', \%opts );
+getopts( 'ugc:pZhv', \%opts );
+
+if ( $opts{h} ) {
+	&HELP_MESSAGE;
+	exit;
+}
+if ( $opts{v} ) {
+	&VERSION_MESSAGE;
+	exit;
+}
 
 # configure JSON for later usage
 my $json = JSON->new->allow_nonref->canonical(1);
@@ -195,6 +206,53 @@ if ( defined( $opts{g} ) ) {
 		}
 
 	} ## end foreach my $arguments (@argumentsA)
+
+	# handle /dev/sg0 if found
+	#
+	# ignoring /dev/sg1 as on the systems I have to test on,
+	# it will always be present and the same as sg0
+	# - Zane
+	if ( -e '/dev/sg0' && $^O eq 'linux' ) {
+		my $ccis_vol_status = `which ccis_vol_status 2> /dev/null`;
+		if ( $? != 0 && !$opts{C} ) {
+			$drive_lines
+				= $drive_lines
+				. "# -C not given, but /dev/sg0 exists and ccis_vol_status is not present\n"
+				. "# skipping checking for ccis devices for SMART polling\n";
+		} elsif ( $? != 0 && $opts{C} ) {
+			my $drive_count = 0;
+			my $continue    = 1;
+			while ($continue) {
+				my $output = `$smartctl -A /dev/sg0 -d ccis,$drive_count 2> /dev/null`;
+				if ( $? != 0 ) {
+					$continue = 0;
+				} else {
+					$continue = 0;
+					while ( $output =~ /(?i)START OF READ SMART DATA SECTION(.*)/g && !$continue ) {
+						$continue = 1;
+					}
+					if ($continue) {
+						$drive_lines
+							= $drive_lines . 'sg0-' . $drive_count . ' /dev/sg0 -d ccis,' . $drive_count . "\n";
+					}
+				} ## end else [ if ( $? != 0 ) ]
+				$drive_count++;
+			} ## end while ($continue)
+		} else {
+			my $output      = `$ccis_vol_status -V /dev/sg0`;
+			my $drive_count = 0;
+			while ( $output =~ /(?i)\ *Physical drives:(.*)/g ) {
+				$1 =~ s/^\s+|\s+$//g;
+				$drive_count += $1;
+			}
+			my $drive_int = 0;
+			while ( $drive_int < $drive_count ) {
+				$drive_lines = $drive_lines . 'sg0-' . $drive_int . ' /dev/sg0 -d ccis,' . $drive_int . "\n";
+
+				$drive_int++;
+			}
+		} ## end else [ if ( $? != 0 && !$opts{C} ) ]
+	} ## end if ( -e '/dev/sg0' && $^O eq 'linux' )
 
 	print "useSN=1\n" . 'smartctl=' . $smartctl . "\n" . $cache . $drive_lines;
 
@@ -409,7 +467,6 @@ foreach my $line (@disks) {
 
 			# Elements in Grown Defect List.
 			# Marking as 5 Reallocated_Sector_Ct
-
 			if ( $line =~ "Elements in grown defect list:" ) {
 
 				my @lineA = split( /\ /, $line, 10 );
@@ -422,7 +479,6 @@ foreach my $line (@disks) {
 
 			# Current Drive Temperature
 			# Marking as 194 Temperature_Celsius
-
 			if ( $line =~ "Current Drive Temperature:" ) {
 
 				my @lineA = split( /\ /, $line, 10 );
@@ -475,7 +531,7 @@ foreach my $line (@disks) {
 
 	# get the drive serial number, if needed
 	my $disk_id = $name;
-	$output=`$smartctl -i $disk`;
+	$output = `$smartctl -i $disk`;
 	# generally upper case, HP branded drives seem to report with lower case n
 	while ( $output =~ /(?i)Serial Number:(.*)/g ) {
 		$IDs{'serial'} = $1;
@@ -524,7 +580,7 @@ foreach my $line (@disks) {
 	$output = `$smartctl -H $disk`;
 	if ( $output =~ /SMART\ overall\-health\ self\-assessment\ test\ result\:\ PASSED/ ) {
 		$IDs{'health_pass'} = 1;
-	}elsif ($output =~ /SMART\ Health\ Status\:\ OK/) {
+	} elsif ( $output =~ /SMART\ Health\ Status\:\ OK/ ) {
 		$IDs{'health_pass'} = 1;
 	}
 
@@ -538,12 +594,12 @@ if ( !$opts{p} ) {
 	$toReturn = $toReturn . "\n";
 }
 
-if ($opts{Z}) {
+if ( $opts{Z} ) {
 	my $compressed = encode_base64( gzip($toReturn) );
 	$compressed =~ s/\n//g;
 	$compressed = $compressed . "\n";
 	if ( length($compressed) < length($toReturn) ) {
-		$toReturn=$compressed;
+		$toReturn = $compressed;
 	}
 }
 
