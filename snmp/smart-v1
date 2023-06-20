@@ -477,7 +477,7 @@ foreach my $line (@disks) {
 	my $disk_id = $name;
 	$output=`$smartctl -i $disk`;
 	# generally upper case, HP branded drives seem to report with lower case n
-	while ( $output =~ /(?i)Serial [Nn]umber:(.*)/g ) {
+	while ( $output =~ /(?i)Serial Number:(.*)/g ) {
 		$IDs{'serial'} = $1;
 		$IDs{'serial'} =~ s/^\s+|\s+$//g;
 	}
@@ -512,17 +512,19 @@ foreach my $line (@disks) {
 	}
 
 	while ( $output =~ /(?i)Product:(.*)/g ) {
-		$IDs{'vendor'} = $1;
-		$IDs{'vendor'} =~ s/^\s+|\s+$//g;
+		$IDs{'product'} = $1;
+		$IDs{'product'} =~ s/^\s+|\s+$//g;
 	}
 
 	while ( $output =~ /(?i)Revision:(.*)/g ) {
-		$IDs{'vendor'} = $1;
-		$IDs{'vendor'} =~ s/^\s+|\s+$//g;
+		$IDs{'revision'} = $1;
+		$IDs{'revision'} =~ s/^\s+|\s+$//g;
 	}
 
 	$output = `$smartctl -H $disk`;
 	if ( $output =~ /SMART\ overall\-health\ self\-assessment\ test\ result\:\ PASSED/ ) {
+		$IDs{'health_pass'} = 1;
+	}elsif ($output =~ /SMART\ Health\ Status\:\ OK/) {
 		$IDs{'health_pass'} = 1;
 	}
 
