@@ -97,13 +97,13 @@ sub main::HELP_MESSAGE {
 		. "-c <config>   The config file to use.\n"
 		. "-p            Pretty print the JSON.\n"
 		. "-Z            GZip+Base64 compress the results.\n"
-		. "-C            Enable manual checking for guess and ccis.\n";
+		. "-C            Enable manual checking for guess and cciss.\n";
 
 } ## end sub main::HELP_MESSAGE
 
 #gets the options
 my %opts = ();
-getopts( 'ugc:pZhv', \%opts );
+getopts( 'ugc:pZhvC', \%opts );
 
 if ( $opts{h} ) {
 	&HELP_MESSAGE;
@@ -213,17 +213,17 @@ if ( defined( $opts{g} ) ) {
 	# it will always be present and the same as sg0
 	# - Zane
 	if ( -e '/dev/sg0' && $^O eq 'linux' ) {
-		my $ccis_vol_status = `which ccis_vol_status 2> /dev/null`;
+		my $cciss_vol_status = `which cciss_vol_status 2> /dev/null`;
 		if ( $? != 0 && !$opts{C} ) {
 			$drive_lines
 				= $drive_lines
-				. "# -C not given, but /dev/sg0 exists and ccis_vol_status is not present\n"
-				. "# skipping checking for ccis devices for SMART polling\n";
+				. "# -C not given, but /dev/sg0 exists and cciss_vol_status is not present\n"
+				. "# skipping checking for cciss devices for SMART polling\n";
 		} elsif ( $? != 0 && $opts{C} ) {
 			my $drive_count = 0;
 			my $continue    = 1;
 			while ($continue) {
-				my $output = `$smartctl -A /dev/sg0 -d ccis,$drive_count 2> /dev/null`;
+				my $output = `$smartctl -A /dev/sg0 -d cciss,$drive_count 2> /dev/null`;
 				if ( $? != 0 ) {
 					$continue = 0;
 				} else {
@@ -233,13 +233,13 @@ if ( defined( $opts{g} ) ) {
 					}
 					if ($continue) {
 						$drive_lines
-							= $drive_lines . 'sg0-' . $drive_count . ' /dev/sg0 -d ccis,' . $drive_count . "\n";
+							= $drive_lines . 'sg0-' . $drive_count . ' /dev/sg0 -d cciss,' . $drive_count . "\n";
 					}
 				} ## end else [ if ( $? != 0 ) ]
 				$drive_count++;
 			} ## end while ($continue)
 		} else {
-			my $output      = `$ccis_vol_status -V /dev/sg0`;
+			my $output      = `$cciss_vol_status -V /dev/sg0`;
 			my $drive_count = 0;
 			while ( $output =~ /(?i)\ *Physical drives:(.*)/g ) {
 				$1 =~ s/^\s+|\s+$//g;
@@ -247,7 +247,7 @@ if ( defined( $opts{g} ) ) {
 			}
 			my $drive_int = 0;
 			while ( $drive_int < $drive_count ) {
-				$drive_lines = $drive_lines . 'sg0-' . $drive_int . ' /dev/sg0 -d ccis,' . $drive_int . "\n";
+				$drive_lines = $drive_lines . 'sg0-' . $drive_int . ' /dev/sg0 -d cciss,' . $drive_int . "\n";
 
 				$drive_int++;
 			}
