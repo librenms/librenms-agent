@@ -214,7 +214,7 @@ if ( defined( $opts{g} ) ) {
 	# it will always be present and the same as sg0
 	# - Zane
 	if ( -e '/dev/sg0' && $^O eq 'linux' ) {
-		my $output = `cciss_vol_status -V /dev/sg0`;
+		my $output = `cciss_vol_status -V /dev/sg0 2> /dev/null`;
 		if ( $? != 0 && !$opts{C} ) {
 			$drive_lines
 				= $drive_lines
