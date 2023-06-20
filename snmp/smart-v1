@@ -476,7 +476,8 @@ foreach my $line (@disks) {
 	# get the drive serial number, if needed
 	my $disk_id = $name;
 	$output=`$smartctl -i $disk`;
-	while ( $output =~ /(?i)Serial Number:(.*)/g ) {
+	# generally upper case, HP branded drives seem to report with lower case n
+	while ( $output =~ /(?i)Serial [Nn]umber:(.*)/g ) {
 		$IDs{'serial'} = $1;
 		$IDs{'serial'} =~ s/^\s+|\s+$//g;
 	}
@@ -502,6 +503,22 @@ foreach my $line (@disks) {
 	while ( $output =~ /(?i)Firmware Version:(.*)/g ) {
 		$IDs{'fw_version'} = $1;
 		$IDs{'fw_version'} =~ s/^\s+|\s+$//g;
+	}
+
+	# mainly HP drives using this
+	while ( $output =~ /(?i)Vendor:(.*)/g ) {
+		$IDs{'vendor'} = $1;
+		$IDs{'vendor'} =~ s/^\s+|\s+$//g;
+	}
+
+	while ( $output =~ /(?i)Product:(.*)/g ) {
+		$IDs{'vendor'} = $1;
+		$IDs{'vendor'} =~ s/^\s+|\s+$//g;
+	}
+
+	while ( $output =~ /(?i)Revision:(.*)/g ) {
+		$IDs{'vendor'} = $1;
+		$IDs{'vendor'} =~ s/^\s+|\s+$//g;
 	}
 
 	$output = `$smartctl -H $disk`;
