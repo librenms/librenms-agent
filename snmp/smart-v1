@@ -504,7 +504,7 @@ foreach my $line (@disks) {
 	#get the selftest logs
 	$output  = `$smartctl -l selftest $disk`;
 	@outputA = split( /\n/, $output );
-	my @completed = grep( /Completed without error/, @outputA );
+	my @completed = grep( /Completed/, @outputA );
 	$IDs{'completed'} = scalar @completed;
 	my @interrupted = grep( /Interrupted/, @outputA );
 	$IDs{'interrupted'} = scalar @interrupted;
@@ -512,13 +512,13 @@ foreach my $line (@disks) {
 	$IDs{'read_failure'} = scalar @read_failure;
 	my @unknown_failure = grep( /unknown failure/, @outputA );
 	$IDs{'unknown_failure'} = scalar @unknown_failure;
-	my @extended = grep( /Extended/, @outputA );
+	my @extended = grep( /[Ee]xtended|Long/, @outputA );
 	$IDs{'extended'} = scalar @extended;
-	my @short = grep( /Short/, @outputA );
+	my @short = grep( /[Ss]hort/, @outputA );
 	$IDs{'short'} = scalar @short;
-	my @conveyance = grep( /Conveyance/, @outputA );
+	my @conveyance = grep( /[Cc]onveyance/, @outputA );
 	$IDs{'conveyance'} = scalar @conveyance;
-	my @selective = grep( /Selective/, @outputA );
+	my @selective = grep( /[Ss]elective/, @outputA );
 	$IDs{'selective'} = scalar @selective;
 
 	# if we have logs, actually grab the log output
