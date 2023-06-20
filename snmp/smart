@@ -1,5 +1,5 @@
 #!/usr/bin/env perl
-#Copyright (c) 2019, Zane C. Bowers-Hadley
+#Copyright (c) 2023, Zane C. Bowers-Hadley
 #All rights reserved.
 #
 #Redistribution and use in source and binary forms, with or without modification,
@@ -73,47 +73,67 @@ it should be.
 use warnings;
 use strict;
 use Getopt::Std;
+use JSON;
+use MIME::Base64;
+use Gzip::Faster;
 
-my $cache='/var/cache/smart';
-my $smartctl='/usr/bin/env smartctl';
+my $cache    = '/var/cache/smart';
+my $smartctl = '/usr/bin/env smartctl';
 my @disks;
-my $useSN=1;
+my $useSN = 1;
 
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
-sub main::VERSION_MESSAGE {
-        print "SMART SNMP extend 0.1.0\n";
-};
 
-sub main::HELP_MESSAGE {
-	print "\n".
-		"-u   Update '".$cache."'\n".
-		"-g   Guess at the config and print it to STDOUT.\n".
-		"-c <config>   The config file to use.\n";
+sub main::VERSION_MESSAGE {
+	print "SMART SNMP extend 0.1.0\n";
 }
 
+sub main::HELP_MESSAGE {
+	print "\n"
+		. "-u   Update '"
+		. $cache . "'\n"
+		. "-g   Guess at the config and print it to STDOUT.\n"
+		. "-c <config>   The config file to use.\n"
+		. "-p            Pretty print the JSON.\n"
+		. "-Z            GZip+Base64 compress the results.\n";
+
+} ## end sub main::HELP_MESSAGE
+
 #gets the options
-my %opts=();
-getopts('ugc:', \%opts);
+my %opts = ();
+getopts( 'ugc:pZ', \%opts );
+
+# configure JSON for later usage
+my $json = JSON->new->allow_nonref->canonical(1);
+if ( $opts{p} ) {
+	$json->pretty;
+}
+
+my $to_return = {
+	data        => { disks => {} },
+	version     => 1,
+	error       => 0,
+	errorString => '',
+};
 
 # guess if asked
-if ( defined( $opts{g} ) ){
+if ( defined( $opts{g} ) ) {
 
 	#get what path to use for smartctl
-	$smartctl=`which smartctl`;
+	$smartctl = `which smartctl`;
 	chomp($smartctl);
-	if ( $? != 0 ){
+	if ( $? != 0 ) {
 		warn("'which smartctl' failed with a exit code of $?");
 		exit 1;
 	}
 
 	#try to touch the default cache location and warn if it can't be done
-	system('touch '.$cache.'>/dev/null');
-	if ( $? != 0 ){
-		$cache='#Could not touch '.$cache. "You will need to manually set it\n".
-			"cache=?\n";
-	}else{
-		system('rm -f '.$cache.'>/dev/null');
-		$cache='cache='.$cache."\n";
+	system( 'touch ' . $cache . '>/dev/null' );
+	if ( $? != 0 ) {
+		$cache = '#Could not touch ' . $cache . "You will need to manually set it\n" . "cache=?\n";
+	} else {
+		system( 'rm -f ' . $cache . '>/dev/null' );
+		$cache = 'cache=' . $cache . "\n";
 	}
 
 	# used for checking if a disk has been found more than once
@@ -121,341 +141,397 @@ if ( defined( $opts{g} ) ){
 	my @argumentsA;
 
 	#have smartctl scan and see if it finds anythings not get found
-	my $scan_output=`$smartctl --scan-open`;
-	my @scan_outputA=split(/\n/, $scan_output);
+	my $scan_output  = `$smartctl --scan-open`;
+	my @scan_outputA = split( /\n/, $scan_output );
 
 	# remove non-SMART devices sometimes returned
-	@scan_outputA=grep(!/ses[0-9]/, @scan_outputA);  # not a disk, but may or may not have SMART attributes
-	@scan_outputA=grep(!/pass[0-9]/, @scan_outputA); # very likely a duplicate and a disk under another name
-	@scan_outputA=grep(!/cd[0-9]/, @scan_outputA); # CD drive
-	if ( $^O eq 'freebsd' ){
-		@scan_outputA=grep(!/sa[0-9]/, @scan_outputA); # tape drive
-		@scan_outputA=grep(!/ctl[0-9]/, @scan_outputA); # CAM target layer
-	}elsif( $^O eq 'linux' ){
-		@scan_outputA=grep(!/st[0-9]/, @scan_outputA); # SCSI tape drive
-		@scan_outputA=grep(!/ht[0-9]/, @scan_outputA); # ATA tape drive
+	@scan_outputA = grep( !/ses[0-9]/,  @scan_outputA );    # not a disk, but may or may not have SMART attributes
+	@scan_outputA = grep( !/pass[0-9]/, @scan_outputA );    # very likely a duplicate and a disk under another name
+	@scan_outputA = grep( !/cd[0-9]/,   @scan_outputA );    # CD drive
+	if ( $^O eq 'freebsd' ) {
+		@scan_outputA = grep( !/sa[0-9]/,  @scan_outputA );    # tape drive
+		@scan_outputA = grep( !/ctl[0-9]/, @scan_outputA );    # CAM target layer
+	} elsif ( $^O eq 'linux' ) {
+		@scan_outputA = grep( !/st[0-9]/, @scan_outputA );     # SCSI tape drive
+		@scan_outputA = grep( !/ht[0-9]/, @scan_outputA );     # ATA tape drive
 	}
 
 	# make the first pass, figuring out what all we have and trimming comments
-	foreach my $arguments ( @scan_outputA ){
+	foreach my $arguments (@scan_outputA) {
 		my $name = $arguments;
 
-		$arguments =~ s/ \#.*//; # trim the comment out of the argument
-		$name =~ s/ .*//;
-		$name =~ s/\/dev\///;
-		if (defined( $found_disks_names{$name} )){
+		$arguments =~ s/ \#.*//;                               # trim the comment out of the argument
+		$name      =~ s/ .*//;
+		$name      =~ s/\/dev\///;
+		if ( defined( $found_disks_names{$name} ) ) {
 			$found_disks_names{$name}++;
-		}else{
-			$found_disks_names{$name}=0;
+		} else {
+			$found_disks_names{$name} = 0;
 		}
 
 		push( @argumentsA, $arguments );
 
-	}
+	} ## end foreach my $arguments (@scan_outputA)
 
 	# second pass, putting the lines together
 	my %current_disk;
-	my $drive_lines='';
-	foreach my $arguments ( @argumentsA ){
+	my $drive_lines = '';
+	foreach my $arguments (@argumentsA) {
 		my $name = $arguments;
 		$name =~ s/ .*//;
 		$name =~ s/\/dev\///;
 
-		if ( $found_disks_names{$name} == 0 ){
+		if ( $found_disks_names{$name} == 0 ) {
 			# If no other devices, just name it after the base device.
-			$drive_lines=$drive_lines.$name." ".$arguments."\n";
-		}else{
+			$drive_lines = $drive_lines . $name . " " . $arguments . "\n";
+		} else {
 			# if more than one, start at zero and increment, apennding comma number to the base device name
-			if (defined( $current_disk{$name} )){
+			if ( defined( $current_disk{$name} ) ) {
 				$current_disk{$name}++;
-			}else{
-				$current_disk{$name}=0;
+			} else {
+				$current_disk{$name} = 0;
 			}
-			$drive_lines=$drive_lines.$name.",".$current_disk{$name}." ".$arguments."\n";
+			$drive_lines = $drive_lines . $name . "," . $current_disk{$name} . " " . $arguments . "\n";
 		}
 
-	}
+	} ## end foreach my $arguments (@argumentsA)
 
-	print "useSN=1\n".'smartctl='.$smartctl."\n".
-	$cache.
-	$drive_lines;
+	print "useSN=1\n" . 'smartctl=' . $smartctl . "\n" . $cache . $drive_lines;
 
 	exit 0;
-}
+} ## end if ( defined( $opts{g} ) )
 
 #get which config file to use
-my $config=$0.'.config';
-if ( defined( $opts{c} ) ){
-	$config=$opts{c};
+my $config = $0 . '.config';
+if ( defined( $opts{c} ) ) {
+	$config = $opts{c};
 }
 
 #reads the config file, optionally
-my $config_file='';
-open(my $readfh, "<", $config) or die "Can't open '".$config."'";
-read($readfh , $config_file , 1000000);
+my $config_file = '';
+open( my $readfh, "<", $config ) or die "Can't open '" . $config . "'";
+read( $readfh, $config_file, 1000000 );
 close($readfh);
 
 #parse the config file and remove comments and empty lines
-my @configA=split(/\n/, $config_file);
-@configA=grep(!/^$/, @configA);
-@configA=grep(!/^\#/, @configA);
-@configA=grep(!/^[\s\t]*$/, @configA);
-my $configA_int=0;
-while ( defined( $configA[$configA_int] ) ){
-	my $line=$configA[$configA_int];
+my @configA = split( /\n/, $config_file );
+@configA = grep( !/^$/,        @configA );
+@configA = grep( !/^\#/,       @configA );
+@configA = grep( !/^[\s\t]*$/, @configA );
+my $configA_int = 0;
+while ( defined( $configA[$configA_int] ) ) {
+	my $line = $configA[$configA_int];
 	chomp($line);
-	$line=~s/^[\t\s]+//;
-	$line=~s/[\t\s]+$//;
+	$line =~ s/^[\t\s]+//;
+	$line =~ s/[\t\s]+$//;
 
-	my ( $var, $val )=split(/=/, $line, 2);
+	my ( $var, $val ) = split( /=/, $line, 2 );
 
 	my $matched;
-	if ( $var eq 'cache' ){
-		$cache=$val;
-		$matched=1;
+	if ( $var eq 'cache' ) {
+		$cache   = $val;
+		$matched = 1;
 	}
 
-	if ( $var eq 'smartctl' ){
-		$smartctl=$val;
-		$matched=1;
+	if ( $var eq 'smartctl' ) {
+		$smartctl = $val;
+		$matched  = 1;
 	}
 
-	if ( $var eq 'useSN' ){
-		$useSN=$val;
-		$matched=1;
+	if ( $var eq 'useSN' ) {
+		$useSN   = $val;
+		$matched = 1;
 	}
 
-	if ( !defined( $val ) ){
-		push(@disks, $line);
+	if ( !defined($val) ) {
+		push( @disks, $line );
 	}
 
 	$configA_int++;
-}
+} ## end while ( defined( $configA[$configA_int] ) )
 
 #if set to 1, no cache will be written and it will be printed instead
-my $noWrite=0;
+my $noWrite = 0;
 
 # if no -u, it means we are being called from snmped
-if ( ! defined( $opts{u} ) ){
+if ( !defined( $opts{u} ) ) {
 	# if the cache file exists, print it, otherwise assume one is not being used
-	if ( -f $cache ){
-		my $old='';
-		open(my $readfh, "<", $cache) or die "Can't open '".$cache."'";
-		read($readfh , $old , 1000000);
+	if ( -f $cache ) {
+		my $old = '';
+		open( my $readfh, "<", $cache ) or die "Can't open '" . $cache . "'";
+		read( $readfh, $old, 1000000 );
 		close($readfh);
 		print $old;
 		exit 0;
-	}else{
-		$opts{u}=1;
-		$noWrite=1;
+	} else {
+		$opts{u} = 1;
+		$noWrite = 1;
 	}
-}
+} ## end if ( !defined( $opts{u} ) )
 
-my $toReturn='';
-foreach my $line ( @disks ){
+foreach my $line (@disks) {
 	my $disk;
 	my $name;
-	if ( $line =~ /\ / ){
-		($name, $disk)=split(/\ /, $line, 2);
-	}else{
-		$disk=$line;
-		$name=$line;
+	if ( $line =~ /\ / ) {
+		( $name, $disk ) = split( /\ /, $line, 2 );
+	} else {
+		$disk = $line;
+		$name = $line;
 	}
 	my $output;
-	if ( $disk !~ /\// ){
-		$disk = '/dev/'.$disk;
+	if ( $disk !~ /\// ) {
+		$disk = '/dev/' . $disk;
 	}
-	$output=`$smartctl -A $disk`;
-	my %IDs=( '5'=>'null',
-			  '10'=>'null',
-			  '173'=>'null',
-			  '177'=>'null',
-			  '183'=>'null',
-			  '184'=>'null',
-			  '187'=>'null',
-			  '188'=>'null',
-			  '190'=>'null',
-			  '194'=>'null',
-			  '196'=>'null',
-			  '197'=>'null',
-			  '198'=>'null',
-			  '199'=>'null',
-			  '231'=>'null',
-			  '233'=>'null',
-			  '9'=>'null',
+	$output = `$smartctl -A $disk`;
+	my %IDs = (
+		'5'            => 'null',
+		'10'           => 'null',
+		'173'          => 'null',
+		'177'          => 'null',
+		'183'          => 'null',
+		'184'          => 'null',
+		'187'          => 'null',
+		'188'          => 'null',
+		'190'          => 'null',
+		'194'          => 'null',
+		'196'          => 'null',
+		'197'          => 'null',
+		'198'          => 'null',
+		'199'          => 'null',
+		'231'          => 'null',
+		'233'          => 'null',
+		'9'            => 'null',
+		'disk'         => $disk,
+		'serial'       => undef,
+		'selftest_log' => undef,
+		'health_pass'  => 0,
 	);
+	$IDs{'disk'} =~ s/^\/dev\///;
 
-    my @outputA;
+	my @outputA;
 
-	if($output =~ /NVMe Log/)
-    {
-        # we have an NVMe drive with annoyingly different output
-        my %mappings=(
-            'Temperature' => 194,
-            'Power Cycles' => 12,
-            'Power On Hours' => 9,
-            'Percentage Used' => 231,
-        );
-        foreach(split(/\n/, $output ))
-        {
-            if(/:/)
-            {
-                my ($key, $val) = split(/:/);
-                $val =~ s/^\s+|\s+$|\D+//g;
-                if(exists($mappings{$key}))
-                {
-                    if ($mappings{$key} == 231) {
-                        $IDs{$mappings{$key}} = 100-$val;
-                    } else {
-                        $IDs{$mappings{$key}} = $val;
-                    }
-                }
-            }
-        }
+	if ( $output =~ /NVMe Log/ ) {
+		# we have an NVMe drive with annoyingly different output
+		my %mappings = (
+			'Temperature'     => 194,
+			'Power Cycles'    => 12,
+			'Power On Hours'  => 9,
+			'Percentage Used' => 231,
+		);
+		foreach ( split( /\n/, $output ) ) {
+			if (/:/) {
+				my ( $key, $val ) = split(/:/);
+				$val =~ s/^\s+|\s+$|\D+//g;
+				if ( exists( $mappings{$key} ) ) {
+					if ( $mappings{$key} == 231 ) {
+						$IDs{ $mappings{$key} } = 100 - $val;
+					} else {
+						$IDs{ $mappings{$key} } = $val;
+					}
+				}
+			} ## end if (/:/)
+		} ## end foreach ( split( /\n/, $output ) )
 
-    }
-    else
-    {
-    	@outputA=split( /\n/, $output );
-		my $outputAint=0;
-		while ( defined($outputA[$outputAint]) ) {
-			my $line=$outputA[$outputAint];
-			$line=~s/^ +//;
-			$line=~s/  +/ /g;
+	} else {
+		@outputA = split( /\n/, $output );
+		my $outputAint = 0;
+		while ( defined( $outputA[$outputAint] ) ) {
+			my $line = $outputA[$outputAint];
+			$line =~ s/^ +//;
+			$line =~ s/  +/ /g;
 
 			if ( $line =~ /^[0123456789]+ / ) {
-				my @lineA=split(/\ /, $line, 10);
-				my $raw=$lineA[9];
-				my $normalized=$lineA[3];
-				my $id=$lineA[0];
+				my @lineA      = split( /\ /, $line, 10 );
+				my $raw        = $lineA[9];
+				my $normalized = $lineA[3];
+				my $id         = $lineA[0];
 
 				# Crucial SSD
 				# 202, Percent_Lifetime_Remain, same as 231, SSD Life Left
 				if ( $id == 202 ) {
-						$IDs{231}=$raw;
+					$IDs{231} = $raw;
 				}
 
 				# single int raw values
-				if (
-					( $id == 5 ) ||
-					( $id == 10 ) ||
-					( $id == 173 ) ||
-					( $id == 183 ) ||
-					( $id == 184 ) ||
-					( $id == 187 ) ||
-					( $id == 196 ) ||
-					( $id == 197 ) ||
-					( $id == 198 ) ||
-					( $id == 199 )
-					) {
-					my @rawA=split( /\ /, $raw );
-					$IDs{$id}=$rawA[0];
-				}
+				if (   ( $id == 5 )
+					|| ( $id == 10 )
+					|| ( $id == 173 )
+					|| ( $id == 183 )
+					|| ( $id == 184 )
+					|| ( $id == 187 )
+					|| ( $id == 196 )
+					|| ( $id == 197 )
+					|| ( $id == 198 )
+					|| ( $id == 199 ) )
+				{
+					my @rawA = split( /\ /, $raw );
+					$IDs{$id} = $rawA[0];
+				} ## end if ( ( $id == 5 ) || ( $id == 10 ) || ( $id...))
 
 				# single int normalized values
-				if (
-					( $id == 177 ) ||
-					( $id == 231 ) ||
-					( $id == 233 )
-					) {
-					$IDs{$id}=int($normalized);
+				if (   ( $id == 177 )
+					|| ( $id == 231 )
+					|| ( $id == 233 ) )
+				{
+					$IDs{$id} = int($normalized);
 				}
 
 				# 9, power on hours
 				if ( $id == 9 ) {
-					my @runtime=split(/[\ h]/, $raw);
-					$IDs{$id}=$runtime[0];
+					my @runtime = split( /[\ h]/, $raw );
+					$IDs{$id} = $runtime[0];
 				}
 
 				# 188, Command_Timeout
 				if ( $id == 188 ) {
-					my $total=0;
-					my @rawA=split( /\ /, $raw );
-					my $rawAint=0;
+					my $total   = 0;
+					my @rawA    = split( /\ /, $raw );
+					my $rawAint = 0;
 					while ( defined( $rawA[$rawAint] ) ) {
-						$total=$total+$rawA[$rawAint];
+						$total = $total + $rawA[$rawAint];
 						$rawAint++;
 					}
-					$IDs{$id}=$total;
-				}
+					$IDs{$id} = $total;
+				} ## end if ( $id == 188 )
 
 				# 190, airflow temp
 				# 194, temp
-				if (
-					( $id == 190 ) ||
-					( $id == 194 )
-					) {
-					my ( $temp )=split(/\ /, $raw);
-					$IDs{$id}=$temp;
+				if (   ( $id == 190 )
+					|| ( $id == 194 ) )
+				{
+					my ($temp) = split( /\ /, $raw );
+					$IDs{$id} = $temp;
 				}
+			} ## end if ( $line =~ /^[0123456789]+ / )
+
+			# SAS Wrapping
+			# Section by Cameron Munroe (munroenet[at]gmail.com)
+
+			# Elements in Grown Defect List.
+			# Marking as 5 Reallocated_Sector_Ct
+
+			if ( $line =~ "Elements in grown defect list:" ) {
+
+				my @lineA = split( /\ /, $line, 10 );
+				my $raw   = $lineA[5];
+
+				# Reallocated Sector Count ID
+				$IDs{5} = $raw;
+
 			}
 
-    	    # SAS Wrapping
-    	    # Section by Cameron Munroe (munroenet[at]gmail.com)
+			# Current Drive Temperature
+			# Marking as 194 Temperature_Celsius
 
-    	    # Elements in Grown Defect List.
-    	    # Marking as 5 Reallocated_Sector_Ct
+			if ( $line =~ "Current Drive Temperature:" ) {
 
-    	    if ($line =~ "Elements in grown defect list:"){
+				my @lineA = split( /\ /, $line, 10 );
+				my $raw   = $lineA[3];
 
-    	        my @lineA=split(/\ /, $line, 10);
-    	        my $raw=$lineA[5];
+				# Temperature C ID
+				$IDs{194} = $raw;
 
-    	        # Reallocated Sector Count ID
-    	        $IDs{5}=$raw;
+			}
 
-    	    }
-
-    	    # Current Drive Temperature
-    	    # Marking as 194 Temperature_Celsius
-
-    	    if ($line =~ "Current Drive Temperature:"){
-
-    	        my @lineA=split(/\ /, $line, 10);
-    	        my $raw=$lineA[3];
-
-    	        # Temperature C ID
-    	        $IDs{194}=$raw;
-
-    	    }
-
-    	    # End of SAS Wrapper
+			# End of SAS Wrapper
 
 			$outputAint++;
-		}
-	}
+		} ## end while ( defined( $outputA[$outputAint] ) )
+	} ## end else [ if ( $output =~ /NVMe Log/ ) ]
 
 	#get the selftest logs
-	$output=`$smartctl -l selftest $disk`;
-	@outputA=split( /\n/, $output );
-	my $completed=scalar grep(/Completed without error/, @outputA);
-	my $interrupted=scalar grep(/Interrupted/, @outputA);
-	my $read_failure=scalar grep(/read failure/, @outputA);
-	my $unknown_failure=scalar grep(/unknown failure/, @outputA);
-	my $extended=scalar grep(/Extended/, @outputA);
-	my $short=scalar grep(/Short/, @outputA);
-	my $conveyance=scalar grep(/Conveyance/, @outputA);
-	my $selective=scalar grep(/Selective/, @outputA);
+	$output  = `$smartctl -l selftest $disk`;
+	@outputA = split( /\n/, $output );
+	my @completed = grep( /Completed without error/, @outputA );
+	$IDs{'completed'} = scalar @completed;
+	my @interrupted = grep( /Interrupted/, @outputA );
+	$IDs{'interrupted'} = scalar @interrupted;
+	my @read_failure = grep( /read failure/, @outputA );
+	$IDs{'read_failure'} = scalar @read_failure;
+	my @unknown_failure = grep( /unknown failure/, @outputA );
+	$IDs{'unknown_failure'} = scalar @unknown_failure;
+	my @extended = grep( /Extended/, @outputA );
+	$IDs{'extended'} = scalar @extended;
+	my @short = grep( /Short/, @outputA );
+	$IDs{'short'} = scalar @short;
+	my @conveyance = grep( /Conveyance/, @outputA );
+	$IDs{'conveyance'} = scalar @conveyance;
+	my @selective = grep( /Selective/, @outputA );
+	$IDs{'selective'} = scalar @selective;
+
+	# if we have logs, actually grab the log output
+	if (   $IDs{'completed'} > 0
+		|| $IDs{'interrupted'} > 0
+		|| $IDs{'read_failure'} > 0
+		|| $IDs{'extended'} > 0
+		|| $IDs{'short'} > 0
+		|| $IDs{'conveyance'} > 0
+		|| $IDs{'selective'} > 0 )
+	{
+		my @log_lines;
+		push( @log_lines, @extended, @short, @conveyance, @selective );
+		$IDs{'selftest_log'} = join( "\n", sort(@log_lines) );
+	} ## end if ( $IDs{'completed'} > 0 || $IDs{'interrupted'...})
 
 	# get the drive serial number, if needed
-	my $disk_id=$name;
-	if ( $useSN ){
-		while (`$smartctl -i $disk` =~ /(?i)Serial Number:(.*)/g) {
-			$disk_id = $1;
-			$disk_id =~ s/^\s+|\s+$//g;
-		}
+	my $disk_id = $name;
+	$output=`$smartctl -i $disk`;
+	while ( $output =~ /(?i)Serial Number:(.*)/g ) {
+		$IDs{'serial'} = $1;
+		$IDs{'serial'} =~ s/^\s+|\s+$//g;
+	}
+	if ($useSN) {
+		$disk_id = $IDs{'serial'};
 	}
 
-	$toReturn=$toReturn.$disk_id.','.$IDs{'5'}.','.$IDs{'10'}.','.$IDs{'173'}.','.$IDs{'177'}.','.$IDs{'183'}.','.$IDs{'184'}.','.$IDs{'187'}.','.$IDs{'188'}
-	    .','.$IDs{'190'} .','.$IDs{'194'}.','.$IDs{'196'}.','.$IDs{'197'}.','.$IDs{'198'}.','.$IDs{'199'}.','.$IDs{'231'}.','.$IDs{'233'}.','.
-		$completed.','.$interrupted.','.$read_failure.','.$unknown_failure.','.$extended.','.$short.','.$conveyance.','.$selective.','.$IDs{'9'}."\n";
+	while ( $output =~ /(?i)Model Family:(.*)/g ) {
+		$IDs{'model_family'} = $1;
+		$IDs{'model_family'} =~ s/^\s+|\s+$//g;
+	}
 
+	while ( $output =~ /(?i)Device Model:(.*)/g ) {
+		$IDs{'device_model'} = $1;
+		$IDs{'device_model'} =~ s/^\s+|\s+$//g;
+	}
+
+	while ( $output =~ /(?i)Model Number:(.*)/g ) {
+		$IDs{'model_number'} = $1;
+		$IDs{'model_number'} =~ s/^\s+|\s+$//g;
+	}
+
+	while ( $output =~ /(?i)Firmware Version:(.*)/g ) {
+		$IDs{'fw_version'} = $1;
+		$IDs{'fw_version'} =~ s/^\s+|\s+$//g;
+	}
+
+	$output = `$smartctl -H $disk`;
+	if ( $output =~ /SMART\ overall\-health\ self\-assessment\ test\ result\:\ PASSED/ ) {
+		$IDs{'health_pass'} = 1;
+	}
+
+	$to_return->{data}{disks}{$disk_id} = \%IDs;
+
+} ## end foreach my $line (@disks)
+
+my $toReturn = $json->encode($to_return);
+
+if ( !$opts{p} ) {
+	$toReturn = $toReturn . "\n";
 }
 
-if ( ! $noWrite ){
-	open(my $writefh, ">", $cache) or die "Can't open '".$cache."'";
+if ($opts{Z}) {
+	my $compressed = encode_base64( gzip($toReturn) );
+	$compressed =~ s/\n//g;
+	$compressed = $compressed . "\n";
+	if ( length($compressed) < length($toReturn) ) {
+		$toReturn=$compressed;
+	}
+}
+
+if ( !$noWrite ) {
+	open( my $writefh, ">", $cache ) or die "Can't open '" . $cache . "'";
 	print $writefh $toReturn;
 	close($writefh);
-}else{
+} else {
 	print $toReturn;
 }
