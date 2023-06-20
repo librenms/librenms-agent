@@ -512,7 +512,7 @@ foreach my $line (@disks) {
 	$IDs{'read_failure'} = scalar @read_failure;
 	my @unknown_failure = grep( /unknown failure/, @outputA );
 	$IDs{'unknown_failure'} = scalar @unknown_failure;
-	my @extended = grep( /[Ee]xtended|Long/, @outputA );
+	my @extended = grep( /\d.*([Ee]xtended|\ [Ll]ong)/, @outputA );
 	$IDs{'extended'} = scalar @extended;
 	my @short = grep( /[Ss]hort/, @outputA );
 	$IDs{'short'} = scalar @short;
