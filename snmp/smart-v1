@@ -363,6 +363,7 @@ foreach my $line (@disks) {
 		'198'          => 'null',
 		'199'          => 'null',
 		'231'          => 'null',
+		'232'          => 'null',
 		'233'          => 'null',
 		'9'            => 'null',
 		'disk'         => $disk,
@@ -439,22 +440,33 @@ foreach my $line (@disks) {
 				if (   ( $id == 177 )
 					|| ( $id == 230 )
 					|| ( $id == 231 )
+					|| ( $id == 232 )
 					|| ( $id == 233 ) )
 				{
+				 # annoying non-standard disk
 				 # WDC WDS500G2B0A
 				 # 230 Media_Wearout_Indicator 0x0032   100   100   ---    Old_age   Always       -       0x002e000a002e
+				 # 232 Available_Reservd_Space 0x0033   100   100   004    Pre-fail  Always       -       100
+				 # 233 NAND_GB_Written_TLC     0x0032   100   100   ---    Old_age   Always       -       9816
+
 					if (   $id == 230
 						&& $line =~ /Media_Wearout_Indicator/ )
 					{
 						$IDs{233} = int($normalized);
+					} elsif ( $id == 232
+						&& $line =~ /Available_Reservd_Space/ )
+					{
+						$IDs{232} = int($normalized);
 					} else {
 						# only set 233 if it has not been set yet
 						# if it was set already then the above did it and we don't want
 						# to overwrite it
 						if ( $id == 233 && $IDs{233} eq "null" ) {
 							$IDs{$id} = int($normalized);
+						} elsif ( $id != 233 ) {
+							$IDs{$id} = int($normalized);
 						}
-					}
+					} ## end else [ if ( $id == 230 && $line =~ /Media_Wearout_Indicator/)]
 				} ## end if ( ( $id == 177 ) || ( $id == 230 ) || (...))
 
 				# 9, power on hours
@@ -606,13 +618,13 @@ foreach my $line (@disks) {
 	}
 
 	# figure out what to use for the max temp, if there is one
-	if ($IDs{'190'} =~ /^\d+$/) {
-		$IDs{max_temp}=$IDs{'190'};
-	}elsif ($IDs{'194'} =~ /^\d+$/) {
-		$IDs{max_temp}=$IDs{'194'};
+	if ( $IDs{'190'} =~ /^\d+$/ ) {
+		$IDs{max_temp} = $IDs{'190'};
+	} elsif ( $IDs{'194'} =~ /^\d+$/ ) {
+		$IDs{max_temp} = $IDs{'194'};
 	}
-	if ($IDs{'194'} =~ /^\d+$/ && defined($IDs{max_temp}) && $IDs{'194'} > $IDs{max_temp}) {
-		$IDs{max_temp}=$IDs{'194'};
+	if ( $IDs{'194'} =~ /^\d+$/ && defined( $IDs{max_temp} ) && $IDs{'194'} > $IDs{max_temp} ) {
+		$IDs{max_temp} = $IDs{'194'};
 	}
 
 	$output = `$smartctl -H $disk`;
