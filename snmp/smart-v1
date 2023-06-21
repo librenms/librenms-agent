@@ -369,6 +369,7 @@ foreach my $line (@disks) {
 		'serial'       => undef,
 		'selftest_log' => undef,
 		'health_pass'  => 0,
+		max_temp       => 'null',
 	);
 	$IDs{'disk'} =~ s/^\/dev\///;
 
@@ -412,7 +413,9 @@ foreach my $line (@disks) {
 
 				# Crucial SSD
 				# 202, Percent_Lifetime_Remain, same as 231, SSD Life Left
-				if ( $id == 202 ) {
+				if (   $id == 202
+					&& $line =~ /Percent_Lifetime_Remain/ )
+				{
 					$IDs{231} = $raw;
 				}
 
@@ -434,11 +437,25 @@ foreach my $line (@disks) {
 
 				# single int normalized values
 				if (   ( $id == 177 )
+					|| ( $id == 230 )
 					|| ( $id == 231 )
 					|| ( $id == 233 ) )
 				{
-					$IDs{$id} = int($normalized);
-				}
+				 # WDC WDS500G2B0A
+				 # 230 Media_Wearout_Indicator 0x0032   100   100   ---    Old_age   Always       -       0x002e000a002e
+					if (   $id == 230
+						&& $line =~ /Media_Wearout_Indicator/ )
+					{
+						$IDs{233} = int($normalized);
+					} else {
+						# only set 233 if it has not been set yet
+						# if it was set already then the above did it and we don't want
+						# to overwrite it
+						if ( $id == 233 && $IDs{233} eq "null" ) {
+							$IDs{$id} = int($normalized);
+						}
+					}
+				} ## end if ( ( $id == 177 ) || ( $id == 230 ) || (...))
 
 				# 9, power on hours
 				if ( $id == 9 ) {
@@ -586,6 +603,16 @@ foreach my $line (@disks) {
 	while ( $output =~ /(?i)Revision:(.*)/g ) {
 		$IDs{'revision'} = $1;
 		$IDs{'revision'} =~ s/^\s+|\s+$//g;
+	}
+
+	# figure out what to use for the max temp, if there is one
+	if ($IDs{'190'} =~ /^\d+$/) {
+		$IDs{max_temp}=$IDs{'190'};
+	}elsif ($IDs{'194'} =~ /^\d+$/) {
+		$IDs{max_temp}=$IDs{'194'};
+	}
+	if ($IDs{'194'} =~ /^\d+$/ && defined($IDs{max_temp}) && $IDs{'194'} > $IDs{max_temp}) {
+		$IDs{max_temp}=$IDs{'194'};
 	}
 
 	$output = `$smartctl -H $disk`;
