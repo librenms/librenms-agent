@@ -90,21 +90,31 @@ sub main::VERSION_MESSAGE {
 
 sub main::HELP_MESSAGE {
 	&VERSION_MESSAGE;
-	print "\n"
-		. "-u   Update '"
-		. $cache . "'\n"
-		. "-g   Guess at the config and print it to STDOUT.\n"
-		. "-c <config>   The config file to use.\n"
-		. "-p            Pretty print the JSON.\n"
-		. "-Z            GZip+Base64 compress the results.\n"
-		. "-C            Enable manual checking for guess and cciss.\n"
-		. "-S            Set useSN to 0 when using -g\n";
+	print "\n" . "-u   Update '" . $cache . "'\n" . '-g            Guess at the config and print it to STDOUT
+-c <config>   The config file to use.
+-p            Pretty print the JSON.
+-Z            GZip+Base64 compress the results.
+-C            Enable manual checking for guess and cciss.
+-S            Set useSN to 0 when using -g
+-G <modes>    Guess modes to use. This is a comma seperated list.
+              Default :: scan-open,cciss-vol-status
+
+Scan Modes:
+
+- scan :: Use "--scan" with smartctl. "scan-open" will take presidence.
+
+- scan-open :: Call smartctl with "--scan-open".
+
+- cciss-vol-status :: Freebsd/Linux specific and if it sees /dev/sg0(on Linux) or
+    /dev/ciss0(on FreebSD) it will attempt to find drives via cciss-vol-status,
+    falling if that is not found to checking for disks via smrtctl.
+';
 
 } ## end sub main::HELP_MESSAGE
 
 #gets the options
 my %opts = ();
-getopts( 'ugc:pZhvCS', \%opts );
+getopts( 'ugc:pZhvCSG', \%opts );
 
 if ( $opts{h} ) {
 	&HELP_MESSAGE;
@@ -115,10 +125,37 @@ if ( $opts{v} ) {
 	exit;
 }
 
+#
+# figure out what scan modes to use if -g specified
+#
+my $scan_modes = {
+	'scan-open'        => 0,
+	'scan'             => 0,
+	'cciss_vol_status' => 0,
+};
+if ( $opts{g} ) {
+	if ( !defined( $opts{G} ) ) {
+		$opts{G} = 'scan-open,cciss_vol_status';
+	}
+	$opts{G} =~ s/[\ \t]//g;
+	my @scan_modes_split = split( /,/, $opts{G} );
+	foreach my $mode (@scan_modes_split) {
+		if ( !defined $scan_modes->{$mode} ) {
+			die( '"' . $mode . '" is not a recognized scan mode' );
+		}
+		$scan_modes->{$mode} = 1;
+	}
+} ## end if ( $opts{g} )
+
 # configure JSON for later usage
-my $json = JSON->new->allow_nonref->canonical(1);
-if ( $opts{p} ) {
-	$json->pretty;
+# only need to do this if actually running as in -g is not specified
+my $json;
+if ( !$opts{g} ) {
+
+	$json = JSON->new->allow_nonref->canonical(1);
+	if ( $opts{p} ) {
+		$json->pretty;
+	}
 }
 
 my $to_return = {
@@ -148,119 +185,188 @@ if ( defined( $opts{g} ) ) {
 		$cache = 'cache=' . $cache . "\n";
 	}
 
-	# used for checking if a disk has been found more than once
-	my %found_disks_names;
-	my @argumentsA;
-
-	#have smartctl scan and see if it finds anythings not get found
-	my $scan_output  = `$smartctl --scan-open`;
-	my @scan_outputA = split( /\n/, $scan_output );
-
-	# remove non-SMART devices sometimes returned
-	@scan_outputA = grep( !/ses[0-9]/,  @scan_outputA );    # not a disk, but may or may not have SMART attributes
-	@scan_outputA = grep( !/pass[0-9]/, @scan_outputA );    # very likely a duplicate and a disk under another name
-	@scan_outputA = grep( !/cd[0-9]/,   @scan_outputA );    # CD drive
-	if ( $^O eq 'freebsd' ) {
-		@scan_outputA = grep( !/sa[0-9]/,  @scan_outputA );    # tape drive
-		@scan_outputA = grep( !/ctl[0-9]/, @scan_outputA );    # CAM target layer
-	} elsif ( $^O eq 'linux' ) {
-		@scan_outputA = grep( !/st[0-9]/, @scan_outputA );     # SCSI tape drive
-		@scan_outputA = grep( !/ht[0-9]/, @scan_outputA );     # ATA tape drive
-	}
-
-	# make the first pass, figuring out what all we have and trimming comments
-	foreach my $arguments (@scan_outputA) {
-		my $name = $arguments;
-
-		$arguments =~ s/ \#.*//;                               # trim the comment out of the argument
-		$name      =~ s/ .*//;
-		$name      =~ s/\/dev\///;
-		if ( defined( $found_disks_names{$name} ) ) {
-			$found_disks_names{$name}++;
-		} else {
-			$found_disks_names{$name} = 0;
-		}
-
-		push( @argumentsA, $arguments );
-
-	} ## end foreach my $arguments (@scan_outputA)
-
-	# second pass, putting the lines together
-	my %current_disk;
 	my $drive_lines = '';
-	foreach my $arguments (@argumentsA) {
-		my $name = $arguments;
-		$name =~ s/ .*//;
-		$name =~ s/\/dev\///;
 
-		if ( $found_disks_names{$name} == 0 ) {
-			# If no other devices, just name it after the base device.
-			$drive_lines = $drive_lines . $name . " " . $arguments . "\n";
-		} else {
-			# if more than one, start at zero and increment, apennding comma number to the base device name
-			if ( defined( $current_disk{$name} ) ) {
-				$current_disk{$name}++;
-			} else {
-				$current_disk{$name} = 0;
-			}
-			$drive_lines = $drive_lines . $name . "," . $current_disk{$name} . " " . $arguments . "\n";
+	#
+	#
+	# scan-open and scan guess mode handling
+	#
+	#
+	if ( $scan_modes->{'scan-open'} || $scan_modes->{'scan'} ) {
+		# used for checking if a disk has been found more than once
+		my %found_disks_names;
+		my @argumentsA;
+
+		# use scan-open if it is set, overriding scan if it is also set
+		my $mode = 'scan';
+		if ( $scan_modes->{'scan-open'} ) {
+			$mode = 'scan-open';
 		}
 
-	} ## end foreach my $arguments (@argumentsA)
+		#have smartctl scan and see if it finds anythings not get found
+		my $scan_output  = `$smartctl --$mode`;
+		my @scan_outputA = split( /\n/, $scan_output );
 
-	# handle /dev/sg0 if found
-	#
-	# ignoring /dev/sg1 as on the systems I have to test on,
-	# it will always be present and the same as sg0
-	# - Zane
-	if ( -e '/dev/sg0' && $^O eq 'linux' ) {
-		my $output = `cciss_vol_status -V /dev/sg0 2> /dev/null`;
-		if ( $? != 0 && !$opts{C} ) {
-			$drive_lines
-				= $drive_lines
-				. "# -C not given, but /dev/sg0 exists and cciss_vol_status is not present\n"
-				. "# in path or 'ccis_vol_status -V /dev/sg0' is failing\n";
-		} elsif ( $? != 0 && $opts{C} ) {
-			my $drive_count = 0;
-			my $continue    = 1;
-			while ($continue) {
-				my $output = `$smartctl -A /dev/sg0 -d cciss,$drive_count 2> /dev/null`;
-				if ( $? != 0 ) {
-					$continue = 0;
+		# remove non-SMART devices sometimes returned
+		@scan_outputA = grep( !/ses[0-9]/,  @scan_outputA );    # not a disk, but may or may not have SMART attributes
+		@scan_outputA = grep( !/pass[0-9]/, @scan_outputA );    # very likely a duplicate and a disk under another name
+		@scan_outputA = grep( !/cd[0-9]/,   @scan_outputA );    # CD drive
+		if ( $^O eq 'freebsd' ) {
+			@scan_outputA = grep( !/sa[0-9]/,  @scan_outputA );    # tape drive
+			@scan_outputA = grep( !/ctl[0-9]/, @scan_outputA );    # CAM target layer
+		} elsif ( $^O eq 'linux' ) {
+			@scan_outputA = grep( !/st[0-9]/, @scan_outputA );     # SCSI tape drive
+			@scan_outputA = grep( !/ht[0-9]/, @scan_outputA );     # ATA tape drive
+		}
+
+		# make the first pass, figuring out what all we have and trimming comments
+		foreach my $arguments (@scan_outputA) {
+			my $name = $arguments;
+
+			$arguments =~ s/ \#.*//;                               # trim the comment out of the argument
+			$name      =~ s/ .*//;
+			$name      =~ s/\/dev\///;
+			if ( defined( $found_disks_names{$name} ) ) {
+				$found_disks_names{$name}++;
+			} else {
+				$found_disks_names{$name} = 0;
+			}
+
+			push( @argumentsA, $arguments );
+
+		} ## end foreach my $arguments (@scan_outputA)
+
+		# second pass, putting the lines together
+		my %current_disk;
+		foreach my $arguments (@argumentsA) {
+			my $name = $arguments;
+			$name =~ s/ .*//;
+			$name =~ s/\/dev\///;
+
+			if ( $found_disks_names{$name} == 0 ) {
+				# If no other devices, just name it after the base device.
+				$drive_lines = $drive_lines . $name . " " . $arguments . "\n";
+			} else {
+				# if more than one, start at zero and increment, apennding comma number to the base device name
+				if ( defined( $current_disk{$name} ) ) {
+					$current_disk{$name}++;
 				} else {
-					$continue = 0;
-					while ( $output =~ /(?i)START OF READ SMART DATA SECTION(.*)/g && !$continue ) {
-						$continue = 1;
-					}
-					if ($continue) {
-						$drive_lines
-							= $drive_lines . 'sg0-' . $drive_count . ' /dev/sg0 -d cciss,' . $drive_count . "\n";
-					}
-				} ## end else [ if ( $? != 0 ) ]
-				$drive_count++;
-			} ## end while ($continue)
-		} else {
-			my $drive_count = 0;
-			while ( $output =~ /(?i)\ *Physical drives:(.*)/g ) {
-				my $drive_count_line = $1;
-				$drive_count_line =~ s/^\s+|\s+$//g;
-				$drive_count += $drive_count_line;
+					$current_disk{$name} = 0;
+				}
+				$drive_lines = $drive_lines . $name . "," . $current_disk{$name} . " " . $arguments . "\n";
 			}
-			my $drive_int = 0;
-			while ( $drive_int < $drive_count ) {
-				$drive_lines = $drive_lines . 'sg0-' . $drive_int . ' /dev/sg0 -d cciss,' . $drive_int . "\n";
 
-				$drive_int++;
-			}
-		} ## end else [ if ( $? != 0 && !$opts{C} ) ]
-	} ## end if ( -e '/dev/sg0' && $^O eq 'linux' )
+		} ## end foreach my $arguments (@argumentsA)
+	} ## end if ( $scan_modes->{'scan-open'} || $scan_modes...)
+
+	#
+	#
+	# scan mode handler for cciss_vol_status
+	# /dev/sg* devices for cciss on Linux
+	# /dev/ccis* devices for cciss on FreeBSD
+	#
+	#
+	if ( $scan_modes->{'cciss_vol_status'} && ( $^O eq 'linux' || $^O eq 'freebsd' ) ) {
+		my $cciss;
+		if ( $^O eq 'freebsd' ) {
+			$cciss = '/dev/ciss';
+		} elsif ( $^O eq 'linux' ) {
+			$cciss = '/dev/sg';
+		}
+
+		my $sg_process = 1;
+		if ( -e '/dev/' . $cciss . '0' ) {
+			my $device = '/dev/' . $cciss . '0';
+			my $output = `cciss_vol_status -V $device 2> /dev/null`;
+			if ( $? != 0 && !$opts{C} ) {
+				$sg_process = 0;
+				$drive_lines
+					= $drive_lines
+					. "# -C not given, but "
+					. $device
+					. " exists and cciss_vol_status is not present\n"
+					. "# in path or 'ccis_vol_status -V "
+					. $device
+					. "' is failing\n";
+			} ## end if ( $? != 0 && !$opts{C} )
+		} ## end if ( -e '/dev/' . $cciss . '0' )
+		my $sg_int     = 0;
+		my $seen_lines = {};
+		my $device     = '/dev/' . $cciss . $sg_int;
+		while ( -e $device && $sg_process ) {
+			my $output = `cciss_vol_status -V $device 2> /dev/null`;
+			if ( $? != 0 && !$opts{C} ) {
+				# just empty here as we just want to skip it if it fails and there is no C
+				# warning is above
+			} elsif ( $? != 0 && $opts{C} ) {
+				my $drive_count = 0;
+				my $continue    = 1;
+				while ($continue) {
+					my $output = `$smartctl -A $device -d cciss,$drive_count 2> /dev/null`;
+					if ( $? != 0 ) {
+						$continue = 0;
+					} else {
+						$continue = 0;
+						my $add_it = 0;
+						# if we have smart data for this device, process it
+						while ( $output =~ /(?i)START OF READ SMART DATA SECTION(.*)/g && !$continue ) {
+							$continue = 1;
+							my $id;
+							while ( $output =~ /(?i)Serial Number:(.*)/g ) {
+								$id = $1;
+								$id =~ s/^\s+|\s+$//g;
+							}
+							if ( defined($id) && !defined( $seen_lines->{$id} ) ) {
+								$add_it = 1;
+								$seen_lines->{$id} = 1;
+							}
+						} ## end while ( $output =~ /(?i)START OF READ SMART DATA SECTION(.*)/g...)
+						if ( $continue && $add_it ) {
+							$drive_lines
+								= $drive_lines
+								. $cciss . '0-'
+								. $drive_count . ' '
+								. $device
+								. ' -d cciss,'
+								. $drive_count . "\n";
+						}
+					} ## end else [ if ( $? != 0 ) ]
+					$drive_count++;
+				} ## end while ($continue)
+			} else {
+				my $drive_count = 0;
+				while ( $output =~ /(?i)\ *Physical drives:(.*)/g ) {
+					my $drive_count_line = $1;
+					$drive_count_line =~ s/^\s+|\s+$//g;
+					$drive_count += $drive_count_line;
+				}
+				my $drive_int = 0;
+				while ( $drive_int < $drive_count ) {
+					$drive_lines
+						= $drive_lines . $cciss . '0-' . $drive_int . ' ' . $device . ' -d cciss,' . $drive_int . "\n";
+
+					$drive_int++;
+				}
+			} ## end else [ if ( $? != 0 && !$opts{C} ) ]
+
+			$sg_int++;
+			$device = '/dev/' . $cciss . $sg_int;
+		} ## end while ( -e $device && $sg_process )
+	} ## end if ( $scan_modes->{'linux_cciss_vol_status'...})
 
 	my $useSN = 1;
 	if ( $opts{S} ) {
 		$useSN = 0;
 	}
 
-	print 'useSN=' . $useSN . "\n" . 'smartctl=' . $smartctl . "\n" . $cache . $drive_lines;
+	print '# scan_modes='
+		. $opts{G}
+		. "\nuseSN="
+		. $useSN . "\n"
+		. 'smartctl='
+		. $smartctl . "\n"
+		. $cache
+		. $drive_lines;
 
 	exit 0;
 } ## end if ( defined( $opts{g} ) )
