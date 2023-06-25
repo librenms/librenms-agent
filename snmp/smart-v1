@@ -159,13 +159,17 @@ if ( !$opts{g} ) {
 }
 
 my $to_return = {
-	data        => { disks => {} },
+	data        => { disks => {}, exit_nonzero => 0, unhealthy => 0, },
 	version     => 1,
 	error       => 0,
 	errorString => '',
 };
 
+#
+#
 # guess if asked
+#
+#
 if ( defined( $opts{g} ) ) {
 
 	#get what path to use for smartctl
@@ -384,7 +388,11 @@ open( my $readfh, "<", $config ) or die "Can't open '" . $config . "'";
 read( $readfh, $config_file, 1000000 );
 close($readfh);
 
-#parse the config file and remove comments and empty lines
+#
+#
+# parse the config file and remove comments and empty lines
+#
+#
 my @configA = split( /\n/, $config_file );
 @configA = grep( !/^$/,        @configA );
 @configA = grep( !/^\#/,       @configA );
@@ -440,6 +448,11 @@ if ( !defined( $opts{u} ) ) {
 	}
 } ## end if ( !defined( $opts{u} ) )
 
+#
+#
+# Process each disk
+#
+#
 foreach my $line (@disks) {
 	my $disk;
 	my $name;
@@ -449,12 +462,11 @@ foreach my $line (@disks) {
 		$disk = $line;
 		$name = $line;
 	}
-	my $output;
 	if ( $disk !~ /\// ) {
 		$disk = '/dev/' . $disk;
 	}
-	$output = `$smartctl -A $disk`;
-	my %IDs = (
+	my $output = `$smartctl -A $disk`;
+	my %IDs    = (
 		'5'            => 'null',
 		'10'           => 'null',
 		'173'          => 'null',
@@ -478,271 +490,286 @@ foreach my $line (@disks) {
 		'selftest_log' => undef,
 		'health_pass'  => 0,
 		max_temp       => 'null',
+		exit           => $?,
 	);
 	$IDs{'disk'} =~ s/^\/dev\///;
 
-	my @outputA;
-
-	if ( $output =~ /NVMe Log/ ) {
-		# we have an NVMe drive with annoyingly different output
-		my %mappings = (
-			'Temperature'     => 194,
-			'Power Cycles'    => 12,
-			'Power On Hours'  => 9,
-			'Percentage Used' => 231,
-		);
-		foreach ( split( /\n/, $output ) ) {
-			if (/:/) {
-				my ( $key, $val ) = split(/:/);
-				$val =~ s/^\s+|\s+$|\D+//g;
-				if ( exists( $mappings{$key} ) ) {
-					if ( $mappings{$key} == 231 ) {
-						$IDs{ $mappings{$key} } = 100 - $val;
-					} else {
-						$IDs{ $mappings{$key} } = $val;
-					}
-				}
-			} ## end if (/:/)
-		} ## end foreach ( split( /\n/, $output ) )
-
+	# if polling exited non-zero above, no reason running the rest of the checks
+	my $disk_id = $name;
+	if ( $IDs{exit} != 0 ) {
+		$to_return->{data}{exit_nonzero}++;
 	} else {
-		@outputA = split( /\n/, $output );
-		my $outputAint = 0;
-		while ( defined( $outputA[$outputAint] ) ) {
-			my $line = $outputA[$outputAint];
-			$line =~ s/^ +//;
-			$line =~ s/  +/ /g;
+		my @outputA;
 
-			if ( $line =~ /^[0123456789]+ / ) {
-				my @lineA      = split( /\ /, $line, 10 );
-				my $raw        = $lineA[9];
-				my $normalized = $lineA[3];
-				my $id         = $lineA[0];
+		if ( $output =~ /NVMe Log/ ) {
+			# we have an NVMe drive with annoyingly different output
+			my %mappings = (
+				'Temperature'     => 194,
+				'Power Cycles'    => 12,
+				'Power On Hours'  => 9,
+				'Percentage Used' => 231,
+			);
+			foreach ( split( /\n/, $output ) ) {
+				if (/:/) {
+					my ( $key, $val ) = split(/:/);
+					$val =~ s/^\s+|\s+$|\D+//g;
+					if ( exists( $mappings{$key} ) ) {
+						if ( $mappings{$key} == 231 ) {
+							$IDs{ $mappings{$key} } = 100 - $val;
+						} else {
+							$IDs{ $mappings{$key} } = $val;
+						}
+					}
+				} ## end if (/:/)
+			} ## end foreach ( split( /\n/, $output ) )
 
-				# Crucial SSD
-				# 202, Percent_Lifetime_Remain, same as 231, SSD Life Left
-				if (   $id == 202
-					&& $line =~ /Percent_Lifetime_Remain/ )
-				{
-					$IDs{231} = $raw;
-				}
+		} else {
+			@outputA = split( /\n/, $output );
+			my $outputAint = 0;
+			while ( defined( $outputA[$outputAint] ) ) {
+				my $line = $outputA[$outputAint];
+				$line =~ s/^ +//;
+				$line =~ s/  +/ /g;
 
-				# single int raw values
-				if (   ( $id == 5 )
-					|| ( $id == 10 )
-					|| ( $id == 173 )
-					|| ( $id == 183 )
-					|| ( $id == 184 )
-					|| ( $id == 187 )
-					|| ( $id == 196 )
-					|| ( $id == 197 )
-					|| ( $id == 198 )
-					|| ( $id == 199 ) )
-				{
-					my @rawA = split( /\ /, $raw );
-					$IDs{$id} = $rawA[0];
-				} ## end if ( ( $id == 5 ) || ( $id == 10 ) || ( $id...))
+				if ( $line =~ /^[0123456789]+ / ) {
+					my @lineA      = split( /\ /, $line, 10 );
+					my $raw        = $lineA[9];
+					my $normalized = $lineA[3];
+					my $id         = $lineA[0];
 
-				# single int normalized values
-				if (   ( $id == 177 )
-					|| ( $id == 230 )
-					|| ( $id == 231 )
-					|| ( $id == 232 )
-					|| ( $id == 233 ) )
-				{
+					# Crucial SSD
+					# 202, Percent_Lifetime_Remain, same as 231, SSD Life Left
+					if (   $id == 202
+						&& $line =~ /Percent_Lifetime_Remain/ )
+					{
+						$IDs{231} = $raw;
+					}
+
+					# single int raw values
+					if (   ( $id == 5 )
+						|| ( $id == 10 )
+						|| ( $id == 173 )
+						|| ( $id == 183 )
+						|| ( $id == 184 )
+						|| ( $id == 187 )
+						|| ( $id == 196 )
+						|| ( $id == 197 )
+						|| ( $id == 198 )
+						|| ( $id == 199 ) )
+					{
+						my @rawA = split( /\ /, $raw );
+						$IDs{$id} = $rawA[0];
+					} ## end if ( ( $id == 5 ) || ( $id == 10 ) || ( $id...))
+
+					# single int normalized values
+					if (   ( $id == 177 )
+						|| ( $id == 230 )
+						|| ( $id == 231 )
+						|| ( $id == 232 )
+						|| ( $id == 233 ) )
+					{
 				 # annoying non-standard disk
 				 # WDC WDS500G2B0A
 				 # 230 Media_Wearout_Indicator 0x0032   100   100   ---    Old_age   Always       -       0x002e000a002e
 				 # 232 Available_Reservd_Space 0x0033   100   100   004    Pre-fail  Always       -       100
 				 # 233 NAND_GB_Written_TLC     0x0032   100   100   ---    Old_age   Always       -       9816
 
-					if (   $id == 230
-						&& $line =~ /Media_Wearout_Indicator/ )
-					{
-						$IDs{233} = int($normalized);
-					} elsif ( $id == 232
-						&& $line =~ /Available_Reservd_Space/ )
-					{
-						$IDs{232} = int($normalized);
-					} else {
-						# only set 233 if it has not been set yet
-						# if it was set already then the above did it and we don't want
-						# to overwrite it
-						if ( $id == 233 && $IDs{233} eq "null" ) {
-							$IDs{$id} = int($normalized);
-						} elsif ( $id != 233 ) {
-							$IDs{$id} = int($normalized);
-						}
-					} ## end else [ if ( $id == 230 && $line =~ /Media_Wearout_Indicator/)]
-				} ## end if ( ( $id == 177 ) || ( $id == 230 ) || (...))
+						if (   $id == 230
+							&& $line =~ /Media_Wearout_Indicator/ )
+						{
+							$IDs{233} = int($normalized);
+						} elsif ( $id == 232
+							&& $line =~ /Available_Reservd_Space/ )
+						{
+							$IDs{232} = int($normalized);
+						} else {
+							# only set 233 if it has not been set yet
+							# if it was set already then the above did it and we don't want
+							# to overwrite it
+							if ( $id == 233 && $IDs{233} eq "null" ) {
+								$IDs{$id} = int($normalized);
+							} elsif ( $id != 233 ) {
+								$IDs{$id} = int($normalized);
+							}
+						} ## end else [ if ( $id == 230 && $line =~ /Media_Wearout_Indicator/)]
+					} ## end if ( ( $id == 177 ) || ( $id == 230 ) || (...))
 
-				# 9, power on hours
-				if ( $id == 9 ) {
-					my @runtime = split( /[\ h]/, $raw );
-					$IDs{$id} = $runtime[0];
-				}
-
-				# 188, Command_Timeout
-				if ( $id == 188 ) {
-					my $total   = 0;
-					my @rawA    = split( /\ /, $raw );
-					my $rawAint = 0;
-					while ( defined( $rawA[$rawAint] ) ) {
-						$total = $total + $rawA[$rawAint];
-						$rawAint++;
+					# 9, power on hours
+					if ( $id == 9 ) {
+						my @runtime = split( /[\ h]/, $raw );
+						$IDs{$id} = $runtime[0];
 					}
-					$IDs{$id} = $total;
-				} ## end if ( $id == 188 )
 
-				# 190, airflow temp
-				# 194, temp
-				if (   ( $id == 190 )
-					|| ( $id == 194 ) )
-				{
-					my ($temp) = split( /\ /, $raw );
-					$IDs{$id} = $temp;
+					# 188, Command_Timeout
+					if ( $id == 188 ) {
+						my $total   = 0;
+						my @rawA    = split( /\ /, $raw );
+						my $rawAint = 0;
+						while ( defined( $rawA[$rawAint] ) ) {
+							$total = $total + $rawA[$rawAint];
+							$rawAint++;
+						}
+						$IDs{$id} = $total;
+					} ## end if ( $id == 188 )
+
+					# 190, airflow temp
+					# 194, temp
+					if (   ( $id == 190 )
+						|| ( $id == 194 ) )
+					{
+						my ($temp) = split( /\ /, $raw );
+						$IDs{$id} = $temp;
+					}
+				} ## end if ( $line =~ /^[0123456789]+ / )
+
+				# SAS Wrapping
+				# Section by Cameron Munroe (munroenet[at]gmail.com)
+
+				# Elements in Grown Defect List.
+				# Marking as 5 Reallocated_Sector_Ct
+				if ( $line =~ "Elements in grown defect list:" ) {
+
+					my @lineA = split( /\ /, $line, 10 );
+					my $raw   = $lineA[5];
+
+					# Reallocated Sector Count ID
+					$IDs{5} = $raw;
+
 				}
-			} ## end if ( $line =~ /^[0123456789]+ / )
 
-			# SAS Wrapping
-			# Section by Cameron Munroe (munroenet[at]gmail.com)
+				# Current Drive Temperature
+				# Marking as 194 Temperature_Celsius
+				if ( $line =~ "Current Drive Temperature:" ) {
 
-			# Elements in Grown Defect List.
-			# Marking as 5 Reallocated_Sector_Ct
-			if ( $line =~ "Elements in grown defect list:" ) {
+					my @lineA = split( /\ /, $line, 10 );
+					my $raw   = $lineA[3];
 
-				my @lineA = split( /\ /, $line, 10 );
-				my $raw   = $lineA[5];
+					# Temperature C ID
+					$IDs{194} = $raw;
 
-				# Reallocated Sector Count ID
-				$IDs{5} = $raw;
+				}
 
-			}
+				# End of SAS Wrapper
 
-			# Current Drive Temperature
-			# Marking as 194 Temperature_Celsius
-			if ( $line =~ "Current Drive Temperature:" ) {
+				$outputAint++;
+			} ## end while ( defined( $outputA[$outputAint] ) )
+		} ## end else [ if ( $output =~ /NVMe Log/ ) ]
 
-				my @lineA = split( /\ /, $line, 10 );
-				my $raw   = $lineA[3];
+		#get the selftest logs
+		$output  = `$smartctl -l selftest $disk`;
+		@outputA = split( /\n/, $output );
+		my @completed = grep( /Completed/, @outputA );
+		$IDs{'completed'} = scalar @completed;
+		my @interrupted = grep( /Interrupted/, @outputA );
+		$IDs{'interrupted'} = scalar @interrupted;
+		my @read_failure = grep( /read failure/, @outputA );
+		$IDs{'read_failure'} = scalar @read_failure;
+		my @unknown_failure = grep( /unknown failure/, @outputA );
+		$IDs{'unknown_failure'} = scalar @unknown_failure;
+		my @extended = grep( /\d.*\ ([Ee]xtended|[Ll]ong).*(?![Dd]uration)/, @outputA );
+		$IDs{'extended'} = scalar @extended;
+		my @short = grep( /[Ss]hort/, @outputA );
+		$IDs{'short'} = scalar @short;
+		my @conveyance = grep( /[Cc]onveyance/, @outputA );
+		$IDs{'conveyance'} = scalar @conveyance;
+		my @selective = grep( /[Ss]elective/, @outputA );
+		$IDs{'selective'} = scalar @selective;
+		my @offline = grep( /(\d|[Bb]ackground|[Ff]oreground)+\ +[Oo]ffline/, @outputA );
+		$IDs{'offline'} = scalar @offline;
 
-				# Temperature C ID
-				$IDs{194} = $raw;
+		# if we have logs, actually grab the log output
+		if (   $IDs{'completed'} > 0
+			|| $IDs{'interrupted'} > 0
+			|| $IDs{'read_failure'} > 0
+			|| $IDs{'extended'} > 0
+			|| $IDs{'short'} > 0
+			|| $IDs{'conveyance'} > 0
+			|| $IDs{'selective'} > 0
+			|| $IDs{'offline'} > 0 )
+		{
+			my @headers = grep( /(Num\ +Test.*LBA| Description .*[Hh]ours)/, @outputA );
 
-			}
+			my @log_lines;
+			push( @log_lines, @extended, @short, @conveyance, @selective, @offline );
+			$IDs{'selftest_log'} = join( "\n", @headers, sort(@log_lines) );
+		} ## end if ( $IDs{'completed'} > 0 || $IDs{'interrupted'...})
 
-			# End of SAS Wrapper
+		# get the drive serial number, if needed
+		$disk_id = $name;
+		$output  = `$smartctl -i $disk`;
+		# generally upper case, HP branded drives seem to report with lower case n
+		while ( $output =~ /(?i)Serial Number:(.*)/g ) {
+			$IDs{'serial'} = $1;
+			$IDs{'serial'} =~ s/^\s+|\s+$//g;
+		}
+		if ($useSN) {
+			$disk_id = $IDs{'serial'};
+		}
 
-			$outputAint++;
-		} ## end while ( defined( $outputA[$outputAint] ) )
-	} ## end else [ if ( $output =~ /NVMe Log/ ) ]
+		while ( $output =~ /(?i)Model Family:(.*)/g ) {
+			$IDs{'model_family'} = $1;
+			$IDs{'model_family'} =~ s/^\s+|\s+$//g;
+		}
 
-	#get the selftest logs
-	$output  = `$smartctl -l selftest $disk`;
-	@outputA = split( /\n/, $output );
-	my @completed = grep( /Completed/, @outputA );
-	$IDs{'completed'} = scalar @completed;
-	my @interrupted = grep( /Interrupted/, @outputA );
-	$IDs{'interrupted'} = scalar @interrupted;
-	my @read_failure = grep( /read failure/, @outputA );
-	$IDs{'read_failure'} = scalar @read_failure;
-	my @unknown_failure = grep( /unknown failure/, @outputA );
-	$IDs{'unknown_failure'} = scalar @unknown_failure;
-	my @extended = grep( /\d.*\ ([Ee]xtended|[Ll]ong).*(?![Dd]uration)/, @outputA );
-	$IDs{'extended'} = scalar @extended;
-	my @short = grep( /[Ss]hort/, @outputA );
-	$IDs{'short'} = scalar @short;
-	my @conveyance = grep( /[Cc]onveyance/, @outputA );
-	$IDs{'conveyance'} = scalar @conveyance;
-	my @selective = grep( /[Ss]elective/, @outputA );
-	$IDs{'selective'} = scalar @selective;
-	my @offline = grep( /(\d|[Bb]ackground|[Ff]oreground)+\ +[Oo]ffline/, @outputA );
-	$IDs{'offline'} = scalar @offline;
+		while ( $output =~ /(?i)Device Model:(.*)/g ) {
+			$IDs{'device_model'} = $1;
+			$IDs{'device_model'} =~ s/^\s+|\s+$//g;
+		}
 
-	# if we have logs, actually grab the log output
-	if (   $IDs{'completed'} > 0
-		|| $IDs{'interrupted'} > 0
-		|| $IDs{'read_failure'} > 0
-		|| $IDs{'extended'} > 0
-		|| $IDs{'short'} > 0
-		|| $IDs{'conveyance'} > 0
-		|| $IDs{'selective'} > 0
-		|| $IDs{'offline'} > 0 )
-	{
-		my @headers = grep( /(Num\ +Test.*LBA| Description .*[Hh]ours)/, @outputA );
+		while ( $output =~ /(?i)Model Number:(.*)/g ) {
+			$IDs{'model_number'} = $1;
+			$IDs{'model_number'} =~ s/^\s+|\s+$//g;
+		}
 
-		my @log_lines;
-		push( @log_lines, @extended, @short, @conveyance, @selective, @offline );
-		$IDs{'selftest_log'} = join( "\n", @headers, sort(@log_lines) );
-	} ## end if ( $IDs{'completed'} > 0 || $IDs{'interrupted'...})
+		while ( $output =~ /(?i)Firmware Version:(.*)/g ) {
+			$IDs{'fw_version'} = $1;
+			$IDs{'fw_version'} =~ s/^\s+|\s+$//g;
+		}
 
-	# get the drive serial number, if needed
-	my $disk_id = $name;
-	$output = `$smartctl -i $disk`;
-	# generally upper case, HP branded drives seem to report with lower case n
-	while ( $output =~ /(?i)Serial Number:(.*)/g ) {
-		$IDs{'serial'} = $1;
-		$IDs{'serial'} =~ s/^\s+|\s+$//g;
+		# mainly HP drives
+		while ( $output =~ /(?i)Vendor:(.*)/g ) {
+			$IDs{'vendor'} = $1;
+			$IDs{'vendor'} =~ s/^\s+|\s+$//g;
+		}
+
+		# mainly HP drives
+		while ( $output =~ /(?i)Product:(.*)/g ) {
+			$IDs{'product'} = $1;
+			$IDs{'product'} =~ s/^\s+|\s+$//g;
+		}
+
+		# mainly HP drives
+		while ( $output =~ /(?i)Revision:(.*)/g ) {
+			$IDs{'revision'} = $1;
+			$IDs{'revision'} =~ s/^\s+|\s+$//g;
+		}
+
+		# figure out what to use for the max temp, if there is one
+		if ( $IDs{'190'} =~ /^\d+$/ ) {
+			$IDs{max_temp} = $IDs{'190'};
+		} elsif ( $IDs{'194'} =~ /^\d+$/ ) {
+			$IDs{max_temp} = $IDs{'194'};
+		}
+		if ( $IDs{'194'} =~ /^\d+$/ && defined( $IDs{max_temp} ) && $IDs{'194'} > $IDs{max_temp} ) {
+			$IDs{max_temp} = $IDs{'194'};
+		}
+
+		$output = `$smartctl -H $disk`;
+		if ( $output =~ /SMART\ overall\-health\ self\-assessment\ test\ result\:\ PASSED/ ) {
+			$IDs{'health_pass'} = 1;
+		} elsif ( $output =~ /SMART\ Health\ Status\:\ OK/ ) {
+			$IDs{'health_pass'} = 1;
+		}
+
+		if ( !$IDs{'health_pass'} ) {
+			$to_return->{data}{unhealthy}++;
+		}
+	} ## end else [ if ( $IDs{exit} != 0 ) ]
+
+	# only bother to save this if useSN is not being used
+	if ( !$useSN ) {
+		$to_return->{data}{disks}{$disk_id} = \%IDs;
 	}
-	if ($useSN) {
-		$disk_id = $IDs{'serial'};
-	}
-
-	while ( $output =~ /(?i)Model Family:(.*)/g ) {
-		$IDs{'model_family'} = $1;
-		$IDs{'model_family'} =~ s/^\s+|\s+$//g;
-	}
-
-	while ( $output =~ /(?i)Device Model:(.*)/g ) {
-		$IDs{'device_model'} = $1;
-		$IDs{'device_model'} =~ s/^\s+|\s+$//g;
-	}
-
-	while ( $output =~ /(?i)Model Number:(.*)/g ) {
-		$IDs{'model_number'} = $1;
-		$IDs{'model_number'} =~ s/^\s+|\s+$//g;
-	}
-
-	while ( $output =~ /(?i)Firmware Version:(.*)/g ) {
-		$IDs{'fw_version'} = $1;
-		$IDs{'fw_version'} =~ s/^\s+|\s+$//g;
-	}
-
-	# mainly HP drives using this
-	while ( $output =~ /(?i)Vendor:(.*)/g ) {
-		$IDs{'vendor'} = $1;
-		$IDs{'vendor'} =~ s/^\s+|\s+$//g;
-	}
-
-	while ( $output =~ /(?i)Product:(.*)/g ) {
-		$IDs{'product'} = $1;
-		$IDs{'product'} =~ s/^\s+|\s+$//g;
-	}
-
-	while ( $output =~ /(?i)Revision:(.*)/g ) {
-		$IDs{'revision'} = $1;
-		$IDs{'revision'} =~ s/^\s+|\s+$//g;
-	}
-
-	# figure out what to use for the max temp, if there is one
-	if ( $IDs{'190'} =~ /^\d+$/ ) {
-		$IDs{max_temp} = $IDs{'190'};
-	} elsif ( $IDs{'194'} =~ /^\d+$/ ) {
-		$IDs{max_temp} = $IDs{'194'};
-	}
-	if ( $IDs{'194'} =~ /^\d+$/ && defined( $IDs{max_temp} ) && $IDs{'194'} > $IDs{max_temp} ) {
-		$IDs{max_temp} = $IDs{'194'};
-	}
-
-	$output = `$smartctl -H $disk`;
-	if ( $output =~ /SMART\ overall\-health\ self\-assessment\ test\ result\:\ PASSED/ ) {
-		$IDs{'health_pass'} = 1;
-	} elsif ( $output =~ /SMART\ Health\ Status\:\ OK/ ) {
-		$IDs{'health_pass'} = 1;
-	}
-
-	$to_return->{data}{disks}{$disk_id} = \%IDs;
-
 } ## end foreach my $line (@disks)
 
 my $toReturn = $json->encode($to_return);
