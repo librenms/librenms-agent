@@ -274,9 +274,12 @@ if ( defined( $opts{g} ) ) {
 			$cciss = '/dev/sg';
 		}
 
+		# generate the initial device path that will be checked
+		my $sg_int = 0;
+		my $device = $cciss . $sg_int;
+
 		my $sg_process = 1;
-		if ( -e '/dev/' . $cciss . '0' ) {
-			my $device = '/dev/' . $cciss . '0';
+		if ( -e $device ) {
 			my $output = `cciss_vol_status -V $device 2> /dev/null`;
 			if ( $? != 0 && !$opts{C} ) {
 				$sg_process = 0;
@@ -289,10 +292,8 @@ if ( defined( $opts{g} ) ) {
 					. $device
 					. "' is failing\n";
 			} ## end if ( $? != 0 && !$opts{C} )
-		} ## end if ( -e '/dev/' . $cciss . '0' )
-		my $sg_int     = 0;
+		} ## end if ( -e $device )
 		my $seen_lines = {};
-		my $device     = '/dev/' . $cciss . $sg_int;
 		while ( -e $device && $sg_process ) {
 			my $output = `cciss_vol_status -V $device 2> /dev/null`;
 			if ( $? != 0 && !$opts{C} ) {
@@ -350,9 +351,9 @@ if ( defined( $opts{g} ) ) {
 			} ## end else [ if ( $? != 0 && !$opts{C} ) ]
 
 			$sg_int++;
-			$device = '/dev/' . $cciss . $sg_int;
+			$device = $cciss . $sg_int;
 		} ## end while ( -e $device && $sg_process )
-	} ## end if ( $scan_modes->{'linux_cciss_vol_status'...})
+	} ## end if ( $scan_modes->{'cciss_vol_status'} && ...)
 
 	my $useSN = 1;
 	if ( $opts{S} ) {
