@@ -284,7 +284,7 @@ if ( defined( $opts{g} ) ) {
 
 		my $sg_process = 1;
 		if ( -e $device ) {
-			my $output = `cciss_vol_status -V $device 2> /dev/null`;
+			my $output = `which cciss_vol_status 2> /dev/null`;
 			if ( $? != 0 && !$opts{C} ) {
 				$sg_process = 0;
 				$drive_lines
@@ -300,10 +300,10 @@ if ( defined( $opts{g} ) ) {
 		my $seen_lines = {};
 		while ( -e $device && $sg_process ) {
 			my $output = `cciss_vol_status -V $device 2> /dev/null`;
-			if ( $? != 0 && !$opts{C} ) {
+			if ( $? != 0 && $output eq '' && !$opts{C} ) {
 				# just empty here as we just want to skip it if it fails and there is no C
 				# warning is above
-			} elsif ( $? != 0 && $opts{C} ) {
+			} elsif ( $? != 0 && $output eq '' && $opts{C} ) {
 				my $drive_count = 0;
 				my $continue    = 1;
 				while ($continue) {
@@ -355,7 +355,7 @@ if ( defined( $opts{g} ) ) {
 
 					$drive_int++;
 				}
-			} ## end else [ if ( $? != 0 && !$opts{C} ) ]
+			} ## end else [ if ( $? != 0 && $output eq '' && !$opts{C})]
 
 			$sg_int++;
 			$device = '/dev/' . $cciss . $sg_int;
