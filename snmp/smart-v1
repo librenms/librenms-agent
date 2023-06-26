@@ -273,14 +273,14 @@ if ( defined( $opts{g} ) ) {
 	if ( $scan_modes->{'cciss_vol_status'} && ( $^O eq 'linux' || $^O eq 'freebsd' ) ) {
 		my $cciss;
 		if ( $^O eq 'freebsd' ) {
-			$cciss = '/dev/ciss';
+			$cciss = 'ciss';
 		} elsif ( $^O eq 'linux' ) {
-			$cciss = '/dev/sg';
+			$cciss = 'sg';
 		}
 
 		# generate the initial device path that will be checked
 		my $sg_int = 0;
-		my $device = $cciss . $sg_int;
+		my $device = '/dev/' . $cciss . $sg_int;
 
 		my $sg_process = 1;
 		if ( -e $device ) {
@@ -339,11 +339,14 @@ if ( defined( $opts{g} ) ) {
 					$drive_count++;
 				} ## end while ($continue)
 			} else {
-				my $drive_count = 0;
-				while ( $output =~ /(?i)\ *Physical drives:(.*)/g ) {
-					my $drive_count_line = $1;
-					$drive_count_line =~ s/^\s+|\s+$//g;
-					$drive_count += $drive_count_line;
+				my $sg_drive_int = 0;
+				my $drive_count  = 0;
+				# count the connector lines, this will make sure failed are founded as well
+				while ( $output =~ /(connector +\d.*box +\d.*bay +\d.*)/g ) {
+					if ( !defined( $seen_lines->{$1} ) ) {
+						$seen_lines->{$1} = 1;
+						$drive_count++;
+					}
 				}
 				my $drive_int = 0;
 				while ( $drive_int < $drive_count ) {
@@ -355,7 +358,7 @@ if ( defined( $opts{g} ) ) {
 			} ## end else [ if ( $? != 0 && !$opts{C} ) ]
 
 			$sg_int++;
-			$device = $cciss . $sg_int;
+			$device = '/dev/' . $cciss . $sg_int;
 		} ## end while ( -e $device && $sg_process )
 	} ## end if ( $scan_modes->{'cciss_vol_status'} && ...)
 
