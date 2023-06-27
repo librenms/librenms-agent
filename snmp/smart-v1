@@ -269,6 +269,7 @@ if ( defined( $opts{g} ) ) {
 		# second pass, putting the lines together
 		my %current_disk;
 		foreach my $arguments (@argumentsA) {
+
 			my $name = $arguments;
 			$name =~ s/ .*//;
 			$name =~ s/\/dev\///;
@@ -337,21 +338,16 @@ if ( defined( $opts{g} ) ) {
 					if ( $? != 0 ) {
 						$continue = 0;
 					} else {
-						$continue = 0;
 						my $add_it = 0;
-						# if we have smart data for this device, process it
-						while ( $output =~ /(?i)START OF READ SMART DATA SECTION(.*)/g && !$continue ) {
-							$continue = 1;
-							my $id;
-							while ( $output =~ /(?i)Serial Number:(.*)/g ) {
-								$id = $1;
-								$id =~ s/^\s+|\s+$//g;
-							}
-							if ( defined($id) && !defined( $seen_lines->{$id} ) ) {
-								$add_it = 1;
-								$seen_lines->{$id} = 1;
-							}
-						} ## end while ( $output =~ /(?i)START OF READ SMART DATA SECTION(.*)/g...)
+						my $id;
+						while ( $output =~ /(?i)Serial Number:(.*)/g ) {
+							$id = $1;
+							$id =~ s/^\s+|\s+$//g;
+						}
+						if ( defined($id) && !defined( $seen_lines->{$id} ) ) {
+							$add_it = 1;
+							$seen_lines->{$id} = 1;
+						}
 						if ( $continue && $add_it ) {
 							$drive_lines
 								= $drive_lines
@@ -365,7 +361,7 @@ if ( defined( $opts{g} ) ) {
 					$drive_count++;
 				} ## end while ($continue)
 			} else {
-				my $drive_count  = 0;
+				my $drive_count = 0;
 				# count the connector lines, this will make sure failed are founded as well
 				while ( $output =~ /(connector +\d.*box +\d.*bay +\d.*)/g ) {
 					if ( !defined( $seen_lines->{$1} ) ) {
@@ -376,10 +372,16 @@ if ( defined( $opts{g} ) ) {
 				my $drive_int = 0;
 				while ( $drive_int < $drive_count ) {
 					$drive_lines
-						= $drive_lines . $cciss . $sg_int . '-' . $drive_int . ' ' . $device . ' -d cciss,' . $drive_int . "\n";
+						= $drive_lines
+						. $cciss
+						. $sg_int . '-'
+						. $drive_int . ' '
+						. $device
+						. ' -d cciss,'
+						. $drive_int . "\n";
 
 					$drive_int++;
-				}
+				} ## end while ( $drive_int < $drive_count )
 			} ## end else [ if ( $? != 0 && $output eq '' && !$opts{C})]
 
 			$sg_int++;
