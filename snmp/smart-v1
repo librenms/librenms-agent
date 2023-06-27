@@ -30,11 +30,11 @@ Add this to snmpd.conf like below.
 
 Then add to root's cron tab, if you have more than a few disks.
 
-    */3 * * * * /etc/snmp/smart -u
+    */5 * * * * /etc/snmp/extends/smart -u
 
 You will also need to create the config file, which defaults to the same path as the script,
 but with .config appended. So if the script is located at /etc/snmp/smart, the config file
-will be /etc/snmp/smart.config. Alternatively you can also specific a config via -c.
+will be /etc/snmp/extends/smart.config. Alternatively you can also specific a config via -c.
 
 Anything starting with a # is comment. The format for variables is $variable=$value. Empty
 lines are ignored. Spaces and tabes at either the start or end of a line are ignored. Any
@@ -65,6 +65,31 @@ used for reporting and everything after that is used as the argument to be passe
 If you want to guess at the configuration, call it with -g and it will print out what it thinks
 it should be.
 
+
+Switches:
+
+-c <config>   The config file to use.
+-u            Update
+-p            Pretty print the JSON.
+-Z            GZip+Base64 compress the results.
+
+-g            Guess at the config and print it to STDOUT
+-C            Enable manual checking for guess and cciss.
+-S            Set useSN to 0 when using -g
+-G <modes>    Guess modes to use. This is a comma seperated list.
+              Default :: scan-open,cciss-vol-status
+
+Guess Modes:
+
+- scan :: Use "--scan" with smartctl. "scan-open" will take presidence.
+
+- scan-open :: Call smartctl with "--scan-open".
+
+- cciss-vol-status :: Freebsd/Linux specific and if it sees /dev/sg0(on Linux) or
+    /dev/ciss0(on FreebSD) it will attempt to find drives via cciss-vol-status,
+    and then optionally checking for disks via smrtctl if -C is given. Should be noted
+    though that -C will not find drives that are currently missing/failed.
+
 =cut
 
 ##
@@ -75,7 +100,7 @@ use strict;
 use Getopt::Std;
 use JSON;
 use MIME::Base64;
-use Gzip::Faster;
+use IO::Compress::Gzip qw(gzip $GzipError);
 
 my $cache    = '/var/cache/smart';
 my $smartctl = '/usr/bin/env smartctl';
@@ -107,7 +132,8 @@ Scan Modes:
 
 - cciss-vol-status :: Freebsd/Linux specific and if it sees /dev/sg0(on Linux) or
     /dev/ciss0(on FreebSD) it will attempt to find drives via cciss-vol-status,
-    falling if that is not found to checking for disks via smrtctl.
+    and then optionally checking for disks via smrtctl if -C is given. Should be noted
+    though that -C will not find drives that are currently missing/failed.
 ';
 
 } ## end sub main::HELP_MESSAGE
@@ -782,13 +808,15 @@ if ( !$opts{p} ) {
 }
 
 if ( $opts{Z} ) {
-	my $compressed = encode_base64( gzip($toReturn) );
+	my $toReturnCompressed;
+	gzip \$toReturn => \$toReturnCompressed;
+	my $compressed = encode_base64($toReturnCompressed);
 	$compressed =~ s/\n//g;
 	$compressed = $compressed . "\n";
 	if ( length($compressed) < length($toReturn) ) {
 		$toReturn = $compressed;
 	}
-}
+} ## end if ( $opts{Z} )
 
 if ( !$noWrite ) {
 	open( my $writefh, ">", $cache ) or die "Can't open '" . $cache . "'";
