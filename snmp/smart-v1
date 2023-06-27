@@ -334,7 +334,7 @@ if ( defined( $opts{g} ) ) {
 				my $drive_count = 0;
 				my $continue    = 1;
 				while ($continue) {
-					my $output = `$smartctl -A $device -d cciss,$drive_count 2> /dev/null`;
+					my $output = `$smartctl -i $device -d cciss,$drive_count 2> /dev/null`;
 					if ( $? != 0 ) {
 						$continue = 0;
 					} else {
