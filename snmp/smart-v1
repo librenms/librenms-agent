@@ -269,23 +269,36 @@ if ( defined( $opts{g} ) ) {
 		# second pass, putting the lines together
 		my %current_disk;
 		foreach my $arguments (@argumentsA) {
+			my $not_virt = 1;
+
+			# check to see if we have a virtual device
+			my @virt_check = split( /\n/, `smartctl -i $arguments 2> /dev/null` );
+			foreach my $virt_check_line (@virt_check) {
+				if ( $virt_check_line =~ /($?)Prouct\:.*LOGICATAL VOLUME.*/ ) {
+					$not_virt = 0;
+				}
+			}
 
 			my $name = $arguments;
 			$name =~ s/ .*//;
 			$name =~ s/\/dev\///;
 
-			if ( $found_disks_names{$name} == 0 ) {
-				# If no other devices, just name it after the base device.
-				$drive_lines = $drive_lines . $name . " " . $arguments . "\n";
-			} else {
-				# if more than one, start at zero and increment, apennding comma number to the base device name
-				if ( defined( $current_disk{$name} ) ) {
-					$current_disk{$name}++;
+			# only add it if not a virtual RAID drive
+			# HP RAID virtual disks will show up with very basical but totally useless smart data
+			if ($not_virt) {
+				if ( $found_disks_names{$name} == 0 ) {
+					# If no other devices, just name it after the base device.
+					$drive_lines = $drive_lines . $name . " " . $arguments . "\n";
 				} else {
-					$current_disk{$name} = 0;
+					# if more than one, start at zero and increment, apennding comma number to the base device name
+					if ( defined( $current_disk{$name} ) ) {
+						$current_disk{$name}++;
+					} else {
+						$current_disk{$name} = 0;
+					}
+					$drive_lines = $drive_lines . $name . "," . $current_disk{$name} . " " . $arguments . "\n";
 				}
-				$drive_lines = $drive_lines . $name . "," . $current_disk{$name} . " " . $arguments . "\n";
-			}
+			} ## end if ($not_virt)
 
 		} ## end foreach my $arguments (@argumentsA)
 	} ## end if ( $scan_modes->{'scan-open'} || $scan_modes...)
