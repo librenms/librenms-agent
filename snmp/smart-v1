@@ -365,7 +365,6 @@ if ( defined( $opts{g} ) ) {
 					$drive_count++;
 				} ## end while ($continue)
 			} else {
-				my $sg_drive_int = 0;
 				my $drive_count  = 0;
 				# count the connector lines, this will make sure failed are founded as well
 				while ( $output =~ /(connector +\d.*box +\d.*bay +\d.*)/g ) {
@@ -377,7 +376,7 @@ if ( defined( $opts{g} ) ) {
 				my $drive_int = 0;
 				while ( $drive_int < $drive_count ) {
 					$drive_lines
-						= $drive_lines . $cciss . '0-' . $drive_int . ' ' . $device . ' -d cciss,' . $drive_int . "\n";
+						= $drive_lines . $cciss . $sg_int . '-' . $drive_int . ' ' . $device . ' -d cciss,' . $drive_int . "\n";
 
 					$drive_int++;
 				}
