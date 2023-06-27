@@ -274,7 +274,7 @@ if ( defined( $opts{g} ) ) {
 			# check to see if we have a virtual device
 			my @virt_check = split( /\n/, `smartctl -i $arguments 2> /dev/null` );
 			foreach my $virt_check_line (@virt_check) {
-				if ( $virt_check_line =~ /($?)Prouct\:.*LOGICATAL VOLUME.*/ ) {
+				if ( $virt_check_line =~ /(?i)Product\:.*LOGICAL VOLUME/ ) {
 					$not_virt = 0;
 				}
 			}
