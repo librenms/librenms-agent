@@ -76,6 +76,7 @@ Switches:
 -g            Guess at the config and print it to STDOUT
 -C            Enable manual checking for guess and cciss.
 -S            Set useSN to 0 when using -g
+-t <test>     Run the specified smart self test on all the devices.
 -G <modes>    Guess modes to use. This is a comma seperated list.
               Default :: scan-open,cciss-vol-status
 
@@ -121,8 +122,10 @@ sub main::HELP_MESSAGE {
 -Z            GZip+Base64 compress the results.
 -C            Enable manual checking for guess and cciss.
 -S            Set useSN to 0 when using -g
+-t <test>     Run the specified smart self test on all the devices.
 -G <modes>    Guess modes to use. This is a comma seperated list.
               Default :: scan-open,cciss-vol-status
+
 
 Scan Modes:
 
@@ -140,7 +143,7 @@ Scan Modes:
 
 #gets the options
 my %opts = ();
-getopts( 'ugc:pZhvCSG', \%opts );
+getopts( 'ugc:pZhvCSGt:', \%opts );
 
 if ( $opts{h} ) {
 	&HELP_MESSAGE;
@@ -472,10 +475,61 @@ while ( defined( $configA[$configA_int] ) ) {
 	$configA_int++;
 } ## end while ( defined( $configA[$configA_int] ) )
 
+#
+#
+# run the specified self test on all disks if asked
+#
+#
+if ( defined( $opts{t} ) ) {
+
+	# make sure we have something that atleast appears sane for the test name
+	my $valid_tesks = {
+		'offline'        => 1,
+		'short'          => 1,
+		'long'           => 1,
+		'conveyance'     => 1,
+		'afterselect,on' => 1,
+	};
+	if ( !defined( $valid_tesks->{ $opts{t} } ) && $opts{t} !~ /select,(\d+[\-\+]\d+|next|next\+\d+|redo\+\d+)/ ) {
+		print '"' . $opts{t} . "\" does not appear to be a valid test\n";
+		exit 1;
+	}
+
+	print "Running the SMART $opts{t} on all devices in the config...\n\n";
+
+	foreach my $line (@disks) {
+		my $disk;
+		my $name;
+		if ( $line =~ /\ / ) {
+			( $name, $disk ) = split( /\ /, $line, 2 );
+		} else {
+			$disk = $line;
+			$name = $line;
+		}
+		if ( $disk !~ /\// ) {
+			$disk = '/dev/' . $disk;
+		}
+
+		print "\n------------------------------------------------------------------\nDoing "
+			. $smartctl . ' -t '
+			. $opts{t} . ' '
+			. $disk
+			. "  ...\n\n";
+		print `$smartctl -t $opts{t} $disk` . "\n";
+
+	} ## end foreach my $line (@disks)
+
+	exit 0;
+} ## end if ( defined( $opts{t} ) )
+
 #if set to 1, no cache will be written and it will be printed instead
 my $noWrite = 0;
 
+#
+#
 # if no -u, it means we are being called from snmped
+#
+#
 if ( !defined( $opts{u} ) ) {
 	# if the cache file exists, print it, otherwise assume one is not being used
 	if ( -f $cache ) {
