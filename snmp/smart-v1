@@ -544,7 +544,7 @@ if ( !defined( $opts{u} ) ) {
 #
 #
 my $to_return = {
-	data        => { disks => {}, exit_nonzero => 0, unhealthy => 0,, useSN => $useSN },
+	data        => { disks => {}, exit_nonzero => 0, unhealthy => 0, useSN => $useSN },
 	version     => 1,
 	error       => 0,
 	errorString => '',
