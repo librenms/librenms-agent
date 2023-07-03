@@ -187,13 +187,6 @@ if ( !$opts{g} ) {
 	}
 }
 
-my $to_return = {
-	data        => { disks => {}, exit_nonzero => 0, unhealthy => 0, },
-	version     => 1,
-	error       => 0,
-	errorString => '',
-};
-
 #
 #
 # guess if asked
@@ -550,6 +543,12 @@ if ( !defined( $opts{u} ) ) {
 # Process each disk
 #
 #
+my $to_return = {
+	data        => { disks => {}, exit_nonzero => 0, unhealthy => 0,, useSN => $useSN },
+	version     => 1,
+	error       => 0,
+	errorString => '',
+};
 foreach my $line (@disks) {
 	my $disk;
 	my $name;
