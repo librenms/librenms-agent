@@ -1,0 +1,489 @@
+#!/usr/bin/env perl
+
+=head1 NAME
+
+logsize - LinbreNMS JSON extend for getting log file size monitoring.
+
+=head1 SYNOPSIS
+
+logsize [B<-b>] [B<-f> <config>]
+
+=head1 SWITCHES
+
+=head2 -b
+
+Compress the return via GZip+Base64.
+
+=head2 -f <config>
+
+The config file to use.
+
+=head1 SETUP
+
+Install the depends.
+
+    # FreeBSD
+    pkg install p5-File-Find-Rule p5-JSON p5-TOML p5-Time-Piece p5-MIME-Base64 p5-File-Slurp p5-Statistics-Lite
+    # Debian
+    apt-get install cpanminus
+    cpanm File::Find::Rule JSON TOML Time::Piece MIME::Base64 File::Slurp Statistics::Lite
+
+Create the cache dir, by default "/var/cache/logsize_extend/".
+
+Either make sure SNMPD can write to the cache dir, by default "/var/cache/logsize_extend/", or
+set it up in cron and make sure SNMPD can write to it.
+
+Then set it up in SNMPD.
+
+
+    # if running it via cron
+    extend logsize /usr/local/etc/snmp/extends/logsize -b
+
+    # if using cron
+    extend logsize /bin/cat /var/cache/logsize_extend/extend_return
+
+=head1 CONFIG
+
+The config format used is TOML.
+
+Please note that variable part of log_end and log_chomp is dynamically generated at
+run time only if those various are undef. log_end and log_chomp if you want to custamize
+them are better placed in dir specific sections.
+
+In general best to leave these defaults alone.
+
+    - .cache_dir :: The cache dir to use.
+        - Default :: /var/cache/logsize_extend/
+
+    - .log_end :: Log file ends to look for. $today_name is '%F' and
+                  $today_name_alt1 is '%Y%m%d'.
+        - Default :: [ '*.log', '*.today', '*.json', '*log',
+                     '*-$today_name', '*-$today_name_alt1' ]
+
+    - .max_age :: How long to keep a file in the cache in days.
+        - Default :: 30
+
+    - .log_chomp :: The regexp to use for chomping the the logfiles to get the base
+                    log file name to use for reporting. $today_name is '%F' and
+                  $today_name_alt1 is '%Y%m%d'.
+        - Default :: ((\-\d\d\d\d\d\d\d\d)*\.log|\.today|\.json|\-$today_name|\-$today_name_alt1)$
+
+The log specific sections resize under .set so if we want to create a set named var_log, the hash
+would be .set.var_log .
+
+    [sets.var_log]
+    dir="/var/log/"
+
+Sets inherit all the configured .log_end and the .log_chomp variables. Each set must have
+the value dir defined.
+
+    - .sets.*.dir :: The directory to look under for logs.
+        - Default :: undef
+
+So if we want to create a set named foobar that looks under /var/log/foo for files ending in foo or bar,
+it would be like below.
+
+    [sets.foobar]
+    dir="/var/log/foo/"
+    log_end=["*.foo", "*.bar"]
+    log_chomp="\.(foo|bar)$"
+
+Multiple sets may be defined. Below creates var_log, suricata, and suricata_flows.
+
+    [sets.var_log]
+    dir="/var/log/"
+    [sets.suricata]
+    dir="/var/log/suricata/"
+    [sets.suricata_flows]
+    dir="/var/log/suricata/flows/current"
+
+=head1 RETURNED DATA
+
+This is in in reference to .data in the returned JSON.
+
+    - .failes_sets :: A hash where the keys are they name of the failed set
+                      and values are the error in question.
+    - .max :: Max size of all log files.
+    - .mean :: Mean size of all log files.
+    - .median :: Median size of all log files.
+    - .min :: Min size of all log files.
+    - .sets.*.files :: A hash where the keys are the names of the log files found for the current
+                       set and the value is the size of the file.
+    - .sets.*.mode :: Mode size of log files in the current set.
+    - .sets.*.max :: Max size of log files in the current set.
+    - .sets.*.mean :: Mean size of log files in the current set.
+    - .sets.*.median :: Median size of log files in the current set.
+    - .sets.*.min :: Min size of log files in the current set.
+    - .sets.*.mode :: Mode size of log files in the current set.
+    - .sets.*.size :: Total size of the current set.
+    - .sets.*.unseen :: A list of files seen in the past 7 days but not currently present.
+    - .size :: Total size of all sets.
+
+=cut
+
+use warnings;
+use strict;
+use File::Find::Rule;
+use JSON;
+use Getopt::Std;
+use TOML;
+use Time::Piece;
+use MIME::Base64;
+use IO::Compress::Gzip qw(gzip $GzipError);
+use File::Slurp;
+use Statistics::Lite qw(:all);
+
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
+
+sub main::VERSION_MESSAGE {
+	print "LibreNMS logsize extend 0.0.1\n";
+}
+
+sub main::HELP_MESSAGE {
+	print '
+
+-f <config>      Path to the config file.
+                 Default :: /usr/local/etc/logsize.conf
+
+-b               Gzip+Base64 compress the output.
+';
+}
+
+my $return_json = {
+	error       => 0,
+	errorString => '',
+	version     => 1,
+	data        => {
+		sets        => {},
+		failed_sets => {},
+		max         => undef,
+		mean        => undef,
+		median      => undef,
+		mode        => undef,
+		min         => undef,
+		size        => 0,
+	},
+};
+
+# get current time and time stamp of today
+my $t               = localtime;
+my $today_name      = $t->strftime('%F');
+my $today_name_alt1 = $t->strftime('%Y%m%d');
+
+#gets the options
+my %opts = ();
+getopts( 'f:b', \%opts );
+if ( !defined( $opts{f} ) ) {
+	$opts{f} = '/usr/local/etc/logsize.conf';
+}
+
+# if the config does not exist or is not readable, no point in continuing
+if ( !-f $opts{f} ) {
+	$return_json->{error}       = 1;
+	$return_json->{errorString} = $opts{f} . ' is not a file or does not eixst';
+	print encode_json($return_json) . "\n";
+	exit 1;
+} elsif ( !-r $opts{f} ) {
+	$return_json->{error}       = 2;
+	$return_json->{errorString} = $opts{f} . ' is not readable';
+	print encode_json($return_json) . "\n";
+	exit 2;
+}
+
+# reads in the config
+my $config;
+my $err;
+eval {
+	my $raw_toml = read_file( $opts{f} );
+	( $config, $err ) = from_toml($raw_toml);
+};
+if ($@) {
+	$return_json->{error}       = 3;
+	$return_json->{errorString} = $opts{f} . ' errored reading or parsing... ' . $@;
+	print encode_json($return_json) . "\n";
+	exit 3;
+} elsif ( !$config ) {
+	$return_json->{error}       = 4;
+	$return_json->{errorString} = $opts{f} . ' errored  parsing... ' . $err;
+	print encode_json($return_json) . "\n";
+	exit 4;
+}
+
+# can't do anything if there are no sets
+if ( !defined( $config->{sets} ) ) {
+	$return_json->{error}       = 5;
+	$return_json->{errorString} = $opts{f} . ' does not contain any defined sets';
+	print encode_json($return_json) . "\n";
+	exit 5;
+}
+
+# set the default cache dir
+if ( !defined( $config->{cache_dir} ) ) {
+	$config->{cache_dir} = '/var/cache/logsize_extend/';
+}
+
+# make sure we have something we can use for log end
+if ( !defined( $config->{log_end} ) ) {
+	$config->{log_end} = [ '*.log', '*.today', '*.json', '*log', '*-' . $today_name, '*-' . $today_name_alt1 ];
+} else {
+	if ( ref( $config->{log_end} ) ne 'ARRAY' ) {
+		$return_json->{error}       = 8;
+		$return_json->{errorString} = 'The cache_dir, "' . $config->{cache_dir} . '", is not a ';
+		print encode_json($return_json) . "\n";
+		exit 8;
+	}
+}
+
+# set the default log chomp
+if ( !defined( $config->{log_chomp} ) ) {
+	$config->{log_chomp}
+		= '((\-\d\d\d\d\d\d\d\d)*\.log|\.today|\.json|\-' . $today_name . '|\-' . $today_name_alt1 . ')$';
+}
+
+# how long to keep a file in the cache
+if ( !defined( $config->{max_age} ) ) {
+	$config->{max_age} = 30;
+}
+
+# if it exists, make sure it is a directory
+if ( -e $config->{cache_dir} && !-d $config->{cache_dir} ) {
+	$return_json->{error}       = 6;
+	$return_json->{errorString} = 'The cache_dir, "' . $config->{cache_dir} . '", is not a ';
+	print encode_json($return_json) . "\n";
+	exit 6;
+} elsif ( !-e $config->{cache_dir} ) {
+	eval { mkdir( $config->{cache_dir} ) or die('failed'); };
+	if ($@) {
+		$return_json->{error}       = 7;
+		$return_json->{errorString} = 'The cache_dir, "' . $config->{cache_dir} . '", could not be created. ';
+		print encode_json($return_json) . "\n";
+		exit 7;
+	}
+}
+
+##
+## load the cache now
+##
+
+# gets time objects for now and a day ago
+my $t_minus_1d = localtime;
+my $t_minus_2d = localtime;
+my $t_minus_3d = localtime;
+my $t_minus_4d = localtime;
+my $t_minus_5d = localtime;
+my $t_minus_6d = localtime;
+my $t_minus_7d = localtime;
+$t_minus_1d -= 86400;
+$t_minus_2d -= ( 86400 * 2 );
+$t_minus_3d -= ( 86400 * 3 );
+$t_minus_4d -= ( 86400 * 4 );
+$t_minus_5d -= ( 86400 * 5 );
+$t_minus_6d -= ( 86400 * 6 );
+$t_minus_7d -= ( 86400 * 7 );
+
+my $today_cache_file = $config->{cache_dir} . '/' . $today_name;
+
+my $today_minus_1d_name = $t_minus_1d->strftime('%F');
+my $today_minus_2d_name = $t_minus_2d->strftime('%F');
+my $today_minus_3d_name = $t_minus_3d->strftime('%F');
+my $today_minus_4d_name = $t_minus_4d->strftime('%F');
+my $today_minus_5d_name = $t_minus_5d->strftime('%F');
+my $today_minus_6d_name = $t_minus_6d->strftime('%F');
+my $today_minus_7d_name = $t_minus_7d->strftime('%F');
+
+my $minus_d_hash = {
+	today_minus_1d_file => $config->{cache_dir} . '/' . $today_minus_1d_name,
+	today_minus_2d_file => $config->{cache_dir} . '/' . $today_minus_2d_name,
+	today_minus_3d_file => $config->{cache_dir} . '/' . $today_minus_3d_name,
+	today_minus_4d_file => $config->{cache_dir} . '/' . $today_minus_4d_name,
+	today_minus_5d_file => $config->{cache_dir} . '/' . $today_minus_5d_name,
+	today_minus_6d_file => $config->{cache_dir} . '/' . $today_minus_6d_name,
+	today_minus_7d_file => $config->{cache_dir} . '/' . $today_minus_7d_name,
+};
+
+my $today_cache = { sets => {} };
+
+my $today_minus_cache = {};
+my @minus_d           = ( '1d', '2d', '3d', '4d', '5d', '6d', '7d' );
+foreach my $d (@minus_d) {
+	eval { $today_minus_cache->{$d} = decode_json( read_file( $minus_d_hash->{ 'today_minus_' . $d . '_file' } ) ); };
+	if ($@) {
+		$today_minus_cache->{$d} = { sets => {} };
+	}
+}
+
+##
+## process each set
+##
+my @sets       = keys( %{ $config->{sets} } );
+my $found_sets = 0;
+my @set_sizes;
+foreach my $set (@sets) {
+
+	# if any set fails, add it to the list of failed sets
+	eval {
+		if ( ref( $config->{sets}{$set} ) ne 'HASH' ) {
+			die( 'set "' . $set . '" is a ' . ref( $config->{sets}{$set} ) . ' and not a HASH' );
+		}
+		if ( !defined( $config->{sets}{$set}{dir} ) ) {
+			die( 'set "' . $set . '" has no directory specified' );
+		}
+
+		if ( !defined( $config->{sets}{$set}{log_end} ) ) {
+			$config->{sets}{$set}{log_end} = $config->{log_end};
+		}
+
+		if ( !defined( $config->{sets}{$set}{log_chomp} ) ) {
+			$config->{sets}{$set}{log_chomp} = $config->{log_chomp};
+		}
+		my $chomp = $config->{sets}{$set}{log_chomp};
+
+		my @files = File::Find::Rule->canonpath()->maxdepth(1)->file()->name( @{ $config->{sets}{$set}{log_end} } )
+			->in( $config->{sets}{$set}{dir} );
+
+		$return_json->{data}{sets}{$set} = {
+			files  => {},
+			max    => undef,
+			mean   => undef,
+			median => undef,
+			mode   => undef,
+			min    => undef,
+			size   => 0,
+			unseen => [],
+		};
+
+		$today_cache->{sets}{$set}{files} = {};
+
+		# will later be used for regexp for chomping the start of the full path
+		my $quoted_dir = quotemeta( $config->{sets}{$set}{dir} );
+
+		my %m_times;
+		my %seen;
+		my %log_sizes;    # make sure we don't have any twice
+		foreach my $log (@files) {
+			my ( $dev, $ino, $mode, $nlink, $uid, $gid, $rdev, $size, $atime, $mtime, $ctime, $blksize, $blocks )
+				= stat($log);
+
+			$log =~ s/^$quoted_dir//;
+			$log =~ s/^\///;
+			$log =~ s/$chomp//;
+
+			# if we find a log twice, make sure it is the new one
+			if ( !defined( $m_times{$log} ) || $mtime > $m_times{$log} ) {
+				$seen{$log}                                   = 1;
+				$m_times{$log}                                = $mtime;
+				$log_sizes{$log}                              = $size;
+				$return_json->{data}{sets}{$set}{files}{$log} = $size;
+
+				# save the basic info for currently
+				$today_cache->{sets}{$set}{files}{$log} = {
+					dev     => $dev,
+					ino     => $ino,
+					rdev    => $rdev,
+					size    => $size,
+					mode    => $mode,
+					nlink   => $nlink,
+					uid     => $uid,
+					gid     => $gid,
+					atime   => $atime,
+					mtime   => $mtime,
+					ctime   => $ctime,
+					blksize => $blksize,
+					blocks  => $blocks
+				};
+
+			} ## end if ( !defined( $m_times{$log} ) || $mtime ...)
+		} ## end foreach my $log (@files)
+
+		# compute the stats for log sizes
+		my @size_keys = keys(%log_sizes);
+		my @sizes;
+		foreach my $item (@size_keys) {
+			push( @sizes, $return_json->{data}{sets}{$set}{files}{$item} );
+		}
+		$return_json->{data}{sets}{$set}{max}    = max(@sizes);
+		$return_json->{data}{sets}{$set}{mean}   = mean(@sizes);
+		$return_json->{data}{sets}{$set}{median} = median(@sizes);
+		$return_json->{data}{sets}{$set}{mode}   = mode(@sizes);
+		$return_json->{data}{sets}{$set}{min}    = min(@sizes);
+		$return_json->{data}{sets}{$set}{size}   = sum(@sizes);
+
+		push( @set_sizes, $return_json->{data}{sets}{$set}{size} );
+
+		# looks for missing files and adds them to unseen
+		my %unseen;
+		foreach my $d (@minus_d) {
+			my @old_logs = keys( %{ $today_minus_cache->{$d}{sets}{$set}{files} } );
+			foreach my $item (@old_logs) {
+				if ( !defined( $return_json->{data}{sets}{$set}{files}{$item} ) && !defined( $unseen{$item} ) ) {
+					$unseen{$item} = 1;
+					push( @{ $return_json->{data}{sets}{$set}{unseen} }, $item );
+				}
+
+			}
+		} ## end foreach my $d (@minus_d)
+	};
+
+	# if the above died, add it to a list of failed sets
+	if ($@) {
+		$return_json->{data}{failed_sets}{$set} = $@;
+	}
+
+	$found_sets++;
+} ## end foreach my $set (@sets)
+
+# compute the over all stats
+$return_json->{data}{max}    = max(@set_sizes);
+$return_json->{data}{mean}   = mean(@set_sizes);
+$return_json->{data}{median} = median(@set_sizes);
+$return_json->{data}{mode}   = mode(@set_sizes);
+$return_json->{data}{min}    = min(@set_sizes);
+$return_json->{data}{size}   = sum(@set_sizes);
+
+# if this is not atleast one, then no sets are defined, even if the hash exists
+if ( $found_sets < 1 ) {
+	$return_json->{error}       = 8;
+	$return_json->{errorString} = $opts{f} . ' lacks defined log sets';
+	print encode_json($return_json) . "\n";
+	exit 8;
+}
+
+##
+## encode the return and print it
+##
+my $return_string = encode_json($return_json) . "\n";
+eval { write_file( $config->{cache_dir} . "/extend_raw", $return_string ); };
+if ( !$opts{b} ) {
+	eval { write_file( $config->{cache_dir} . "/extend_return", $return_string ); };
+	print $return_string;
+} else {
+	my $toReturnCompressed;
+	gzip \$return_string => \$toReturnCompressed;
+	my $compressed = encode_base64($toReturnCompressed);
+	$compressed =~ s/\n//g;
+	$compressed = $compressed . "\n";
+	if ( length($compressed) > length($return_string) ) {
+		eval { write_file( $config->{cache_dir} . "/extend_return", $return_string ); };
+		print $return_string;
+	} else {
+		eval { write_file( $config->{cache_dir} . "/extend_return", $compressed ); };
+		print $compressed;
+	}
+} ## end else [ if ( !$opts{b} ) ]
+
+##
+## save the cache
+##
+eval { write_file( $today_cache_file, encode_json($today_cache) . "\n" ); };
+
+##
+## remove old cache files
+##
+my $older_than = $t->epoch - ( $config->{max_age} * 86400 );
+my @old_cache_files
+	= File::Find::Rule->canonpath()->maxdepth(1)->file()->mtime( '<' . $older_than )->in( $config->{cache_dir} );
+
+#use Data::Dumper; print Dumper(@old_cache_files);
+foreach my $old_file (@old_cache_files) {
+	unlink($old_file);
+}
