@@ -1,5 +1,126 @@
 #!/usr/bin/env perl
 
+=head1 NAME
+
+logsize - LinbreNMS JSON extend for getting log file size monitoring.
+
+=head1 SYNOPSIS
+
+logsize [B<-b>] [B<-f> <config>]
+
+=head1 SWITCHES
+
+=head2 -b
+
+Compress the return via GZip+Base64.
+
+=head2 -f <config>
+
+The config file to use.
+
+=head1 SETUP
+
+Install the depends.
+
+    # FreeBSD
+    pkg install p5-File-Find-Rule p5-JSON p5-TOML p5-Time-Piece p5-MIME-Base64 p5-File-Slurp p5-Statistics-Lite
+    # Debian
+    apt-get install cpanminus
+    cpanm File::Find::Rule JSON TOML Time::Piece MIME::Base64 File::Slurp Statistics::Lite
+
+Create the cache dir, by default "/var/cache/logsize_extend/".
+
+Either make sure SNMPD can write to the cache dir, by default "/var/cache/logsize_extend/", or
+set it up in cron and make sure SNMPD can write to it.
+
+Then set it up in SNMPD.
+
+
+    # if running it via cron
+    extend logsize /usr/local/etc/snmp/extends/logsize -b
+
+    # if using cron
+    extend logsize /bin/cat /var/cache/logsize_extend/extend_return
+
+=head1 CONFIG
+
+The config format used is TOML.
+
+Please note that variable part of log_end and log_chomp is dynamically generated at
+run time only if those various are undef. log_end and log_chomp if you want to custamize
+them are better placed in dir specific sections.
+
+In general best to leave these defaults alone.
+
+    - .cache_dir :: The cache dir to use.
+        - Default :: /var/cache/logsize_extend/
+
+    - .log_end :: Log file ends to look for. $today_name is '%F' and
+                  $today_name_alt1 is '%Y%m%d'.
+        - Default :: [ '*.log', '*.today', '*.json', '*log',
+                     '*-$today_name', '*-$today_name_alt1' ]
+
+    - .max_age :: How long to keep a file in the cache in days.
+        - Default :: 30
+
+    - .log_chomp :: The regexp to use for chomping the the logfiles to get the base
+                    log file name to use for reporting. $today_name is '%F' and
+                  $today_name_alt1 is '%Y%m%d'.
+        - Default :: ((\-\d\d\d\d\d\d\d\d)*\.log|\.today|\.json|\-$today_name|\-$today_name_alt1)$
+
+The log specific sections resize under .set so if we want to create a set named var_log, the hash
+would be .set.var_log .
+
+    [sets.var_log]
+    dir="/var/log/"
+
+Sets inherit all the configured .log_end and the .log_chomp variables. Each set must have
+the value dir defined.
+
+    - .sets.*.dir :: The directory to look under for logs.
+        - Default :: undef
+
+So if we want to create a set named foobar that looks under /var/log/foo for files ending in foo or bar,
+it would be like below.
+
+    [sets.foobar]
+    dir="/var/log/foo/"
+    log_end=["*.foo", "*.bar"]
+    log_chomp="\.(foo|bar)$"
+
+Multiple sets may be defined. Below creates var_log, suricata, and suricata_flows.
+
+    [sets.var_log]
+    dir="/var/log/"
+    [sets.suricata]
+    dir="/var/log/suricata/"
+    [sets.suricata_flows]
+    dir="/var/log/suricata/flows/current"
+
+=head1 RETURNED DATA
+
+This is in in reference to .data in the returned JSON.
+
+    - .failes_sets :: A hash where the keys are they name of the failed set
+                      and values are the error in question.
+    - .max :: Max size of all log files.
+    - .mean :: Mean size of all log files.
+    - .median :: Median size of all log files.
+    - .min :: Min size of all log files.
+    - .sets.*.files :: A hash where the keys are the names of the log files found for the current
+                       set and the value is the size of the file.
+    - .sets.*.mode :: Mode size of log files in the current set.
+    - .sets.*.max :: Max size of log files in the current set.
+    - .sets.*.mean :: Mean size of log files in the current set.
+    - .sets.*.median :: Median size of log files in the current set.
+    - .sets.*.min :: Min size of log files in the current set.
+    - .sets.*.mode :: Mode size of log files in the current set.
+    - .sets.*.size :: Total size of the current set.
+    - .sets.*.unseen :: A list of files seen in the past 7 days but not currently present.
+    - .size :: Total size of all sets.
+
+=cut
+
 use warnings;
 use strict;
 use File::Find::Rule;
@@ -8,7 +129,7 @@ use Getopt::Std;
 use TOML;
 use Time::Piece;
 use MIME::Base64;
-use Gzip::Faster;
+use IO::Compress::Gzip qw(gzip $GzipError);
 use File::Slurp;
 use Statistics::Lite qw(:all);
 
@@ -115,7 +236,8 @@ if ( !defined( $config->{log_end} ) ) {
 
 # set the default log chomp
 if ( !defined( $config->{log_chomp} ) ) {
-	$config->{log_chomp} = '((\-\d\d\d\d\d\d\d\d)*\.log|\.today|\.json|\-' . $today_name . '|\-' . $today_name_alt1 . ')$';
+	$config->{log_chomp}
+		= '((\-\d\d\d\d\d\d\d\d)*\.log|\.today|\.json|\-' . $today_name . '|\-' . $today_name_alt1 . ')$';
 }
 
 # how long to keep a file in the cache
@@ -327,7 +449,7 @@ if ( $found_sets < 1 ) {
 }
 
 ##
-##
+## encode the return and print it
 ##
 my $return_string = encode_json($return_json) . "\n";
 eval { write_file( $config->{cache_dir} . "/extend_raw", $return_string ); };
@@ -335,7 +457,9 @@ if ( !$opts{b} ) {
 	eval { write_file( $config->{cache_dir} . "/extend_return", $return_string ); };
 	print $return_string;
 } else {
-	my $compressed = encode_base64( gzip($return_string) );
+	my $toReturnCompressed;
+	gzip \$return_string => \$toReturnCompressed;
+	my $compressed = encode_base64($toReturnCompressed);
 	$compressed =~ s/\n//g;
 	$compressed = $compressed . "\n";
 	if ( length($compressed) > length($return_string) ) {
@@ -351,3 +475,15 @@ if ( !$opts{b} ) {
 ## save the cache
 ##
 eval { write_file( $today_cache_file, encode_json($today_cache) . "\n" ); };
+
+##
+## remove old cache files
+##
+my $older_than = $t->epoch - ( $config->{max_age} * 86400 );
+my @old_cache_files
+	= File::Find::Rule->canonpath()->maxdepth(1)->file()->mtime( '<' . $older_than )->in( $config->{cache_dir} );
+
+#use Data::Dumper; print Dumper(@old_cache_files);
+foreach my $old_file (@old_cache_files) {
+	unlink($old_file);
+}
