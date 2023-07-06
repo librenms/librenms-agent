@@ -147,7 +147,7 @@ Scan Modes:
 
 #gets the options
 my %opts = ();
-getopts( 'ugc:pZhvCSGt:u', \%opts );
+getopts( 'ugc:pZhvCSGt:U', \%opts );
 
 if ( $opts{h} ) {
 	&HELP_MESSAGE;
