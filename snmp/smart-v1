@@ -381,12 +381,17 @@ if ( defined( $opts{g} ) ) {
 			} else {
 				my $drive_count = 0;
 				# count the connector lines, this will make sure failed are founded as well
-				while ( $output =~ /(connector +\d.*box +\d.*bay +\d.*)/g ) {
-					if ( !defined( $seen_lines->{$1} ) ) {
-						$seen_lines->{$1} = 1;
+				my $seen_conectors = {};
+				while ( $output =~ /(connector +\d+[IA]\ +box +\d+\ +bay +\d+.*)/g ) {
+					my $cciss_drive_line = $1;
+					my $connector        = $cciss_drive_line;
+					$connector =~ s/(.*\ bay +\d+).*/$1/;
+					if ( !defined( $seen_lines->{$cciss_drive_line} ) && !defined( $seen_conectors->{$connector} ) ) {
+						$seen_lines->{$cciss_drive_line} = 1;
+						$seen_conectors->{$connector}    = 1;
 						$drive_count++;
 					}
-				}
+				} ## end while ( $output =~ /(connector +\d+[IA]\ +box +\d+\ +bay +\d+.*)/g)
 				my $drive_int = 0;
 				while ( $drive_int < $drive_count ) {
 					$drive_lines
