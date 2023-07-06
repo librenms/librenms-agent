@@ -113,7 +113,7 @@ my $useSN = 1;
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 
 sub main::VERSION_MESSAGE {
-	print "SMART SNMP extend 0.3.0\n";
+	print "SMART SNMP extend 0.3.1\n";
 }
 
 sub main::HELP_MESSAGE {
@@ -342,7 +342,8 @@ if ( defined( $opts{g} ) ) {
 					. "' is failing\n";
 			} ## end if ( $? != 0 && !$opts{C} )
 		} ## end if ( -e $device )
-		my $seen_lines = {};
+		my $seen_lines   = {};
+		my $ignore_lines = {};
 		while ( -e $device && $sg_process ) {
 			my $output = `cciss_vol_status -V $uarg $device 2> /dev/null`;
 			if ( $? != 0 && $output eq '' && !$opts{C} ) {
@@ -381,12 +382,25 @@ if ( defined( $opts{g} ) ) {
 			} else {
 				my $drive_count = 0;
 				# count the connector lines, this will make sure failed are founded as well
-				while ( $output =~ /(connector +\d.*box +\d.*bay +\d.*)/g ) {
-					if ( !defined( $seen_lines->{$1} ) ) {
-						$seen_lines->{$1} = 1;
+				my $seen_conectors = {};
+				while ( $output =~ /(connector +\d+[IA]\ +box +\d+\ +bay +\d+.*)/g ) {
+					my $cciss_drive_line = $1;
+					my $connector        = $cciss_drive_line;
+					$connector =~ s/(.*\ bay +\d+).*/$1/;
+					if (   !defined( $seen_lines->{$cciss_drive_line} )
+						&& !defined( $seen_conectors->{$connector} )
+						&& !defined( $ignore_lines->{$cciss_drive_line} ) )
+					{
+						$seen_lines->{$cciss_drive_line} = 1;
+						$seen_conectors->{$connector}    = 1;
 						$drive_count++;
+					} else {
+						# going to be a connector we've already seen
+						# which will happen when it is processing replacement drives
+						# so save this as a device to ignore
+						$ignore_lines->{$cciss_drive_line} = 1;
 					}
-				}
+				} ## end while ( $output =~ /(connector +\d+[IA]\ +box +\d+\ +bay +\d+.*)/g)
 				my $drive_int = 0;
 				while ( $drive_int < $drive_count ) {
 					$drive_lines
