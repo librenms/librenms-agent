@@ -395,6 +395,9 @@ if ( defined( $opts{g} ) ) {
 						$seen_conectors->{$connector}    = 1;
 						$drive_count++;
 					} else {
+						# going to be a connector we've already seen
+						# which will happen when it is processing replacement drives
+						# so save this as a device to ignore
 						$ignore_lines->{$cciss_drive_line} = 1;
 					}
 				} ## end while ( $output =~ /(connector +\d+[IA]\ +box +\d+\ +bay +\d+.*)/g)
