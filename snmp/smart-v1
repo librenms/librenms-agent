@@ -568,6 +568,7 @@ foreach my $line (@disks) {
 	if ( $disk !~ /\// ) {
 		$disk = '/dev/' . $disk;
 	}
+
 	my $output = `$smartctl -A $disk`;
 	my %IDs    = (
 		'5'            => 'null',
@@ -871,9 +872,16 @@ foreach my $line (@disks) {
 
 	# only bother to save this if useSN is not being used
 	if ( !$useSN ) {
-		$to_return->{data}{disks}{$name} = \%IDs;
-	} elsif ( $IDs{exit} == 0 ) {
 		$to_return->{data}{disks}{$disk_id} = \%IDs;
+	} elsif ( $IDs{exit} == 0 && defined($disk_id) ) {
+		$to_return->{data}{disks}{$disk_id} = \%IDs;
+	}
+
+	# smartctl will in some cases exit zero when it can't pull data for cciss
+	# so if we get a zero exit, but no serial then it means something errored
+	# and the device is likely dead
+	if ($IDs{exit} == 0 && !defined($IDs{serial})) {
+		$to_return->{data}{unhealthy}++;
 	}
 } ## end foreach my $line (@disks)
 
