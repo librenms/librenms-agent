@@ -111,7 +111,7 @@ my $useSN = 1;
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 
 sub main::VERSION_MESSAGE {
-	print "SMART SNMP extend 0.2.0\n";
+	print "SMART SNMP extend 0.3.0\n";
 }
 
 sub main::HELP_MESSAGE {
@@ -123,6 +123,7 @@ sub main::HELP_MESSAGE {
 -C            Enable manual checking for guess and cciss.
 -S            Set useSN to 0 when using -g
 -t <test>     Run the specified smart self test on all the devices.
+-u            When calling cciss_vol_status, call it with -u.
 -G <modes>    Guess modes to use. This is a comma seperated list.
               Default :: scan-open,cciss-vol-status
 
@@ -136,14 +137,15 @@ Scan Modes:
 - cciss-vol-status :: Freebsd/Linux specific and if it sees /dev/sg0(on Linux) or
     /dev/ciss0(on FreebSD) it will attempt to find drives via cciss-vol-status,
     and then optionally checking for disks via smrtctl if -C is given. Should be noted
-    though that -C will not find drives that are currently missing/failed.
+    though that -C will not find drives that are currently missing/failed. If -u is given,
+    cciss_vol_status will be called with -u.
 ';
 
 } ## end sub main::HELP_MESSAGE
 
 #gets the options
 my %opts = ();
-getopts( 'ugc:pZhvCSGt:', \%opts );
+getopts( 'ugc:pZhvCSGt:u', \%opts );
 
 if ( $opts{h} ) {
 	&HELP_MESSAGE;
@@ -314,6 +316,11 @@ if ( defined( $opts{g} ) ) {
 			$cciss = 'sg';
 		}
 
+		my $uarg = '';
+		if ($opts{u}) {
+			$uarg='-u';
+		}
+
 		# generate the initial device path that will be checked
 		my $sg_int = 0;
 		my $device = '/dev/' . $cciss . $sg_int;
@@ -335,7 +342,7 @@ if ( defined( $opts{g} ) ) {
 		} ## end if ( -e $device )
 		my $seen_lines = {};
 		while ( -e $device && $sg_process ) {
-			my $output = `cciss_vol_status -V $device 2> /dev/null`;
+			my $output = `cciss_vol_status -V $uarg $device 2> /dev/null`;
 			if ( $? != 0 && $output eq '' && !$opts{C} ) {
 				# just empty here as we just want to skip it if it fails and there is no C
 				# warning is above
