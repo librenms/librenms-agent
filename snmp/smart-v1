@@ -871,7 +871,7 @@ foreach my $line (@disks) {
 
 	# only bother to save this if useSN is not being used
 	if ( !$useSN ) {
-		$to_return->{data}{disks}{$disk_id} = \%IDs;
+		$to_return->{data}{disks}{$name} = \%IDs;
 	} elsif ( $IDs{exit} == 0 ) {
 		$to_return->{data}{disks}{$disk_id} = \%IDs;
 	}
