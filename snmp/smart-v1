@@ -113,7 +113,7 @@ my $useSN = 1;
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 
 sub main::VERSION_MESSAGE {
-	print "SMART SNMP extend 0.3.0\n";
+	print "SMART SNMP extend 0.3.1\n";
 }
 
 sub main::HELP_MESSAGE {
