@@ -21,6 +21,7 @@ CONFIGFILE = "/etc/snmp/puppet.json"
 
 
 summary_files = [
+    "/var/cache/puppet/public/last_run_summary.yaml",
     "/var/cache/puppet/state/last_run_summary.yaml",
     "/opt/puppetlabs/puppet/cache/state/last_run_summary.yaml",
     "/opt/puppetlabs/puppet/public/last_run_summary.yaml",
