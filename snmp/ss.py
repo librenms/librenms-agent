@@ -342,18 +342,15 @@ def main():
         ):
             continue
 
-        loop_first = True
-        for line in command_executor(ss_cmd, gentype).decode("utf-8").split("\n"):
-            if loop_first:
-                # Build the initial output_data datastructures.
-                output_data["data"][gentype] = {}
-                for netid in SOCKET_MAPPINGS[gentype]["netids"]:
-                    # Skip the netid if the socket is not allowed.
-                    if netid not in socket_allow_list:
-                        continue
-                    output_data["data"][gentype][netid] = {}
-                loop_first = False
+        # Build the initial output_data datastructures.
+        output_data["data"][gentype] = {}
+        for netid in SOCKET_MAPPINGS[gentype]["netids"]:
+            # Skip the netid if the socket is not allowed.
+            if netid not in socket_allow_list:
+                continue
+            output_data["data"][gentype][netid] = {}
 
+        for line in command_executor(ss_cmd, gentype).decode("utf-8").split("\n"):
             if not line:
                 continue
 
