@@ -57,90 +57,91 @@ import sys
 CONFIG_FILE = "/etc/snmp/ss.json"
 SOCKET_MAPPINGS = {
     "dccp": {
-        "args": ["--dccp", "--all", "--no-header"],
+        "args": ["--dccp"],
         "netids": [],
         "addr_family": False,
         "socket_type": True,
     },
     "inet": {
-        "args": ["--family", "inet", "--all", "--no-header"],
+        "args": ["--family", "inet"],
         "netids": ["dccp", "mptcp", "raw", "sctp", "tcp", "udp", "unknown"],
         "addr_family": True,
         "socket_type": False,
     },
     "inet6": {
-        "args": ["--family", "inet6", "--all", "--no-header"],
+        "args": ["--family", "inet6"],
         "netids": ["dccp", "icmp6", "mptcp", "raw", "sctp", "tcp", "udp", "unknown"],
         "addr_family": True,
         "socket_type": False,
     },
     "link": {
-        "args": ["--family", "link", "--all", "--no-header"],
+        "args": ["--family", "link"],
         "netids": ["p_dgr", "p_raw", "unknown"],
         "addr_family": True,
         "socket_type": False,
     },
     "mptcp": {
-        "args": ["--mptcp", "--all", "--no-header"],
+        "args": ["--mptcp"],
         "netids": [],
         "addr_family": False,
         "socket_type": True,
     },
     "netlink": {
-        "args": ["--family", "netlink", "--all", "--no-header"],
+        "args": ["--family", "netlink"],
         "netids": [],
         "addr_family": True,
         "socket_type": False,
     },
     "raw": {
-        "args": ["--raw", "--all", "--no-header"],
+        "args": ["--raw"],
         "netids": [],
         "addr_family": False,
         "socket_type": True,
     },
     "sctp": {
-        "args": ["--sctp", "--all", "--no-header"],
+        "args": ["--sctp"],
         "netids": [],
         "addr_family": False,
         "socket_type": True,
     },
     "tcp": {
-        "args": ["--tcp", "--all", "--no-header"],
+        "args": ["--tcp"],
         "netids": [],
         "addr_family": False,
         "socket_type": True,
     },
     "tipc": {
-        "args": ["--family", "tipc", "--all", "--no-header"],
+        "args": ["--family", "tipc"],
         "netids": ["ti_dg", "ti_rd", "ti_sq", "ti_st", "unknown"],
         "addr_family": True,
         "socket_type": False,
     },
     "udp": {
-        "args": ["--udp", "--all", "--no-header"],
+        "args": ["--udp"],
         "netids": [],
         "addr_family": False,
         "socket_type": True,
     },
     "unix": {
-        "args": ["--family", "unix", "--all", "--no-header"],
+        "args": ["--family", "unix"],
         "netids": ["u_dgr", "u_seq", "u_str"],
         "addr_family": True,
         "socket_type": False,
     },
     "vsock": {
-        "args": ["--family", "vsock", "--all", "--no-header"],
+        "args": ["--family", "vsock"],
         "netids": ["v_dgr", "v_str", "unknown"],
         "addr_family": True,
         "socket_type": False,
     },
     "xdp": {
-        "args": ["--xdp", "--all", "--no-header"],
+        "args": ["--xdp"],
         "netids": [],
         "addr_family": False,
         "socket_type": True,
     },
 }
+GLOBAL_ARGS = ["--all", "--no-header"]
 ADDR_FAMILY_ALLOW_LIST = []
 SOCKET_ALLOW_LIST = []
 
@@ -249,6 +250,7 @@ def command_executor(ss_cmd, socket_type):
     """
     ss_socket_cmd = ss_cmd.copy()
     ss_socket_cmd.extend(SOCKET_MAPPINGS[socket_type]["args"])
+    ss_socket_cmd.extend(GLOBAL_ARGS)
 
     try:
         # Execute ss command
