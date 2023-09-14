@@ -57,85 +57,85 @@ import sys
 CONFIG_FILE = "/etc/snmp/ss.json"
 SOCKET_MAPPINGS = {
     "dccp": {
-        "args": ["--dccp", "--all"],
+        "args": ["--dccp", "--all", "--no-header"],
         "netids": [],
         "addr_family": False,
         "socket_type": True,
     },
     "inet": {
-        "args": ["--family", "inet", "--all"],
+        "args": ["--family", "inet", "--all", "--no-header"],
         "netids": ["dccp", "mptcp", "raw", "sctp", "tcp", "udp", "unknown"],
         "addr_family": True,
         "socket_type": False,
     },
     "inet6": {
-        "args": ["--family", "inet6", "--all"],
+        "args": ["--family", "inet6", "--all", "--no-header"],
         "netids": ["dccp", "icmp6", "mptcp", "raw", "sctp", "tcp", "udp", "unknown"],
         "addr_family": True,
         "socket_type": False,
     },
     "link": {
-        "args": ["--family", "link", "--all"],
+        "args": ["--family", "link", "--all", "--no-header"],
         "netids": ["p_dgr", "p_raw", "unknown"],
         "addr_family": True,
         "socket_type": False,
     },
     "mptcp": {
-        "args": ["--mptcp", "--all"],
+        "args": ["--mptcp", "--all", "--no-header"],
         "netids": [],
         "addr_family": False,
         "socket_type": True,
     },
     "netlink": {
-        "args": ["--family", "netlink", "--all"],
+        "args": ["--family", "netlink", "--all", "--no-header"],
         "netids": [],
         "addr_family": True,
         "socket_type": False,
     },
     "raw": {
-        "args": ["--raw", "--all"],
+        "args": ["--raw", "--all", "--no-header"],
         "netids": [],
         "addr_family": False,
         "socket_type": True,
     },
     "sctp": {
-        "args": ["--sctp", "--all"],
+        "args": ["--sctp", "--all", "--no-header"],
         "netids": [],
         "addr_family": False,
         "socket_type": True,
     },
     "tcp": {
-        "args": ["--tcp", "--all"],
+        "args": ["--tcp", "--all", "--no-header"],
         "netids": [],
         "addr_family": False,
         "socket_type": True,
     },
     "tipc": {
-        "args": ["--family", "tipc", "--all"],
+        "args": ["--family", "tipc", "--all", "--no-header"],
         "netids": ["ti_dg", "ti_rd", "ti_sq", "ti_st", "unknown"],
         "addr_family": True,
         "socket_type": False,
     },
     "udp": {
-        "args": ["--udp", "--all"],
+        "args": ["--udp", "--all", "--no-header"],
         "netids": [],
         "addr_family": False,
         "socket_type": True,
     },
     "unix": {
-        "args": ["--family", "unix", "--all"],
+        "args": ["--family", "unix", "--all", "--no-header"],
         "netids": ["u_dgr", "u_seq", "u_str"],
         "addr_family": True,
         "socket_type": False,
     },
     "vsock": {
-        "args": ["--family", "vsock", "--all"],
+        "args": ["--family", "vsock", "--all", "--no-header"],
         "netids": ["v_dgr", "v_str", "unknown"],
         "addr_family": True,
         "socket_type": False,
     },
     "xdp": {
-        "args": ["--xdp", "--all"],
+        "args": ["--xdp", "--all", "--no-header"],
         "netids": [],
         "addr_family": False,
         "socket_type": True,
@@ -293,14 +293,14 @@ def socket_parser(line, gentype, ss_data, socket_allow_list):
         error_handler("Command Output Parsing Error", err)
 
     if SOCKET_MAPPINGS[gentype]["netids"]:
-        # Omit filtered sockets from the address families.
-        if netid not in socket_allow_list:
-            return ss_data
-
         # Special case to convert the question-marks symbol
         # to a safe string.
         if netid == "???":
             netid = "unknown"
+
+        # Omit filtered sockets from the address families.
+        if netid not in socket_allow_list:
+            return ss_data
 
         ss_data[netid][state] = (
             1 if state not in ss_data[netid] else (ss_data[netid][state] + 1)
@@ -353,8 +353,6 @@ def main():
                         continue
                     output_data["data"][gentype][netid] = {}
                 loop_first = False
-                # Skip the first header line.
-                continue
 
             if not line:
                 continue
