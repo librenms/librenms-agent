@@ -72,6 +72,14 @@ client hostname, and state are unique.
     - .found_leases.[].starts :: Unix time of of when the lease starts.
     - .found_leases.[].state :: State of the lease.
     - .found_leases.[].uid :: UID passed during the request.
+    - .found_leases.[].vendor_class_identifier :: Vendor class identifier passed during the request.
+
+The following are Base64 encoded as they may include binary that breaks either SNMP or
+the PHP JSON decoder.
+
+    - .found_leases.[].vendor_class_identifier
+    - .found_leases.[].uid :: UID passed during the request.
+    - .found_leases.[].vendor_class_identifier
 
 =cut
 
@@ -197,53 +205,65 @@ if ( !$opts{d} ) {
 				. $lease->{hardware_address} } = $lease;
 	}
 	foreach my $lease_key ( keys( %{$found_leases} ) ) {
-		my $uid=$found_leases->{$lease_key}{uid};
-		if ($uid ne '') {
-			$uid=encode_base64($uid);
+		my $uid = $found_leases->{$lease_key}{uid};
+		if ( $uid ne '' ) {
+			$uid = encode_base64($uid);
 			chomp($uid);
 		}
-		my $client_hostname=$found_leases->{$lease_key}{client_hostname};
-		if ($client_hostname ne '') {
-			$client_hostname=encode_base64($client_hostname);
+		my $client_hostname = $found_leases->{$lease_key}{client_hostname};
+		if ( $client_hostname ne '' ) {
+			$client_hostname = encode_base64($client_hostname);
 			chomp($client_hostname);
+		}
+		my $vendor_class_identifier = $found_leases->{$lease_key}{vendor_class_identifier};
+		if ( $vendor_class_identifier ne '' ) {
+			$vendor_class_identifier = encode_base64($vendor_class_identifier);
+			chomp($vendor_class_identifier);
 		}
 		push(
 			@{ $to_return->{data}{found_leases} },
 			{
-				uid             => $uid,
-				cltt            => $found_leases->{$lease_key}{cltt},
-				state           => $found_leases->{$lease_key}{state},
-				ip              => $found_leases->{$lease_key}{ip_address},
-				hw_address      => $found_leases->{$lease_key}{hardware_address},
-				starts          => $found_leases->{$lease_key}{starts},
-				ends            => $found_leases->{$lease_key}{ends},
-				client_hostname => $client_hostname,
+				uid                     => $uid,
+				cltt                    => $found_leases->{$lease_key}{cltt},
+				state                   => $found_leases->{$lease_key}{state},
+				ip                      => $found_leases->{$lease_key}{ip_address},
+				hw_address              => $found_leases->{$lease_key}{hardware_address},
+				starts                  => $found_leases->{$lease_key}{starts},
+				ends                    => $found_leases->{$lease_key}{ends},
+				client_hostname         => $client_hostname,
+				vendor_class_identifier => $vendor_class_identifier,
 			}
 		);
 	} ## end foreach my $lease_key ( keys( %{$found_leases} ...))
 } else {
 	foreach my $lease ( @{$leases} ) {
-		my $uid=$lease->{uid};
-		if ($uid ne '') {
-			$uid=encode_base64($uid);
+		my $uid = $lease->{uid};
+		if ( $uid ne '' ) {
+			$uid = encode_base64($uid);
 			chomp($uid);
 		}
-		my $client_hostname=$lease->{client_hostname};
-		if ($client_hostname ne '') {
-			$client_hostname=encode_base64($client_hostname);
+		my $client_hostname = $lease->{client_hostname};
+		if ( $client_hostname ne '' ) {
+			$client_hostname = encode_base64($client_hostname);
 			chomp($client_hostname);
+		}
+		my $vendor_class_identifier = $lease->{vendor_class_identifier};
+		if ( $vendor_class_identifier ne '' ) {
+			$vendor_class_identifier = encode_base64($vendor_class_identifier);
+			chomp($vendor_class_identifier);
 		}
 		push(
 			@{ $to_return->{data}{found_leases} },
 			{
-				uid             => $uid,
-				cltt            => $lease->{cltt},
-				state           => $lease->{state},
-				ip              => $lease->{ip_address},
-				hw_address      => $lease->{hardware_address},
-				starts          => $lease->{starts},
-				ends            => $lease->{ends},
-				client_hostname => $client_hostname,
+				uid                     => $uid,
+				cltt                    => $lease->{cltt},
+				state                   => $lease->{state},
+				ip                      => $lease->{ip_address},
+				hw_address              => $lease->{hardware_address},
+				starts                  => $lease->{starts},
+				ends                    => $lease->{ends},
+				client_hostname         => $client_hostname,
+				vendor_class_identifier => $vendor_class_identifier,
 			}
 		);
 	} ## end foreach my $lease ( @{$leases} )
