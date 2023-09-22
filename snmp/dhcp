@@ -1,0 +1,319 @@
+#!/usr/bin/env perl
+#Copyright (c) 2023, Zane C. Bowers-Hadley
+#All rights reserved.
+#
+#Redistribution and use in source and binary forms, with or without modification,
+#are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+#THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+#WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+#IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+#DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+#LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+#THE POSSIBILITY OF SUCH DAMAGE.
+
+=head1 NAME
+
+dhcp - LibreNMS ISC-DHCPD stats extend
+
+=head1 SYNOPSIS
+
+dhcp [B<-Z>] [B<-d>] [B<-p>] [B<-l> <file>]
+
+=head1 FLAGS
+
+=head2 -l <lease file>
+
+Path to the lease file.
+
+=head2 -Z
+
+Enable GZip+Base64 compression.
+
+=head2 -d
+
+Do not de-dup.
+
+This is done via making sure the combination of UID, CLTT, IP, HW address,
+client hostname, and state are unique.
+
+=head1 Return JSON Data Hash
+
+    - .all_networks.cur :: Current leases for all networks
+    - .all_networks.max :: Max possible leases for all networks
+    - .all_networks.percent :: Percent of total pool usage.
+
+    - .networks.[].cur :: Current leases for the network.
+    - .networks.[].max :: Max possible leases for thenetworks
+    - .networks.[].network :: Subnet of the network.
+    - .networks.[].percent :: Percent of network usage.
+
+    - .pools.[].cur :: Current leases for the pool.
+    - .pools.[].max :: Max possible leases for pool.
+    - .pools.[].first_ip :: First IP of the pool.
+    - .pools.[].last_ip :: Last IP of the pool.
+    - .pools.[].percent :: Percent of pool usage.
+
+    - .found_leases.[].client_hostname :: Hostname the client passed during the request.
+    - .found_leases.[].cltt :: The CLTT for the requist.
+    - .found_leases.[].ends :: Unix time of of when the lease ends.
+    - .found_leases.[].hw_address :: Hardware address for the client that made the request.
+    - .found_leases.[].ip :: IP address of the client that made the request.
+    - .found_leases.[].starts :: Unix time of of when the lease starts.
+    - .found_leases.[].state :: State of the lease.
+    - .found_leases.[].uid :: UID passed during the request.
+
+=cut
+
+use strict;
+use warnings;
+use Getopt::Std;
+use JSON -convert_blessed_universally;
+use MIME::Base64;
+use IO::Compress::Gzip qw(gzip $GzipError);
+use Net::ISC::DHCPd::Leases;
+
+my %opts;
+getopts( 'l:Zdp', \%opts );
+
+if ( !defined( $opts{l} ) ) {
+	# if freebsd, set it to the default path as used by the version installed via ports
+	#
+	# additional elsifs should be added as they become known, but default works for most Linux distros
+	if ( $^O eq 'freebsd' ) {
+		$opts{l} = '/var/db/dhcpd/dhcpd.leases';
+	} else {
+		$opts{l} = '/var/lib/dhcpd/dhcpd.leases';
+	}
+} ## end if ( !defined( $opts{l} ) )
+
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
+
+sub main::VERSION_MESSAGE {
+	print "LibreNMS ISC-DHCPD extend 0.0.1\n";
+}
+
+sub main::HELP_MESSAGE {
+	print '
+-l <lease file>  Path to the lease file.
+-Z               Enable GZip+Base64 compression.
+-d               Do not de-dup.
+';
+
+	exit;
+}
+
+my $to_return = {
+	data => {
+		lease_file   => $opts{l},
+		found_leases => [],
+		leases       => {
+			abandoned => 0,
+			active    => 0,
+			backup    => 0,
+			bootp     => 0,
+			expired   => 0,
+			free      => 0,
+			released  => 0,
+			reset     => 0,
+			total     => 0,
+		},
+		networks     => [],
+		pools        => [],
+		all_networks => {},
+	},
+	version     => 3,
+	error       => 0,
+	errorString => '',
+};
+
+if ( !-f $opts{l} && !-r $opts{l} ) {
+	$to_return->{error}       = 2;
+	$to_return->{errorString} = '"' . $opts{l} . '" does not exist, is not a file, or is not readable';
+	print decode_json($to_return) . "\n";
+	exit;
+}
+
+my $found_leases = {};
+
+my $leases;
+eval {
+	my $leases_obj = Net::ISC::DHCPd::Leases->new( file => $opts{l} );
+	$leases_obj->parse;
+	$leases = $leases_obj->leases;
+};
+if ($@) {
+	$to_return->{error}       = 1;
+	$to_return->{errorString} = 'Reading leases failed... ' . $@;
+	print decode_json($to_return) . "\n";
+	exit;
+}
+
+use Data::Dumper;
+
+foreach my $lease ( @{$leases} ) {
+	if ( !defined( $lease->{uid} ) ) {
+		$lease->{uid} = '';
+	}
+	if ( !defined( $lease->{vendor_class_identifier} ) ) {
+		$lease->{vendor_class_identifier} = '';
+	}
+	if ( !defined( $lease->{cltt} ) ) {
+		$lease->{cltt} = '';
+	}
+	if ( !defined( $lease->{state} ) ) {
+		$lease->{state} = '';
+	}
+	if ( !defined( $lease->{ip_address} ) ) {
+		$lease->{ip_address} = '';
+	}
+	if ( !defined( $lease->{hardware_address} ) ) {
+		$lease->{hardware_address} = '';
+	}
+	if ( !defined( $lease->{client_hostname} ) ) {
+		$lease->{client_hostname} = '';
+	}
+} ## end foreach my $lease ( @{$leases} )
+
+# dedup or copy lease info as is
+if ( !$opts{d} ) {
+	foreach my $lease ( @{$leases} ) {
+		$found_leases->{ $lease->{uid}
+				. $lease->{cltt}
+				. $lease->{uid}
+				. $lease->{ip_address}
+				. $lease->{client_hostname}
+				. $lease->{state}
+				. $lease->{hardware_address} } = $lease;
+	}
+	foreach my $lease_key ( keys( %{$found_leases} ) ) {
+		push(
+			@{ $to_return->{data}{found_leases} },
+			{
+				uid             => $found_leases->{$lease_key}{uid},
+				cltt            => $found_leases->{$lease_key}{cltt},
+				state           => $found_leases->{$lease_key}{state},
+				ip              => $found_leases->{$lease_key}{ip_address},
+				hw_address      => $found_leases->{$lease_key}{hardware_address},
+				starts          => $found_leases->{$lease_key}{starts},
+				ends            => $found_leases->{$lease_key}{ends},
+				client_hostname => $found_leases->{$lease_key}{client_hostname},
+			}
+		);
+	} ## end foreach my $lease_key ( keys( %{$found_leases} ...))
+} else {
+	foreach my $lease ( @{$leases} ) {
+		push(
+			@{ $to_return->{data}{found_leases} },
+			{
+				uid             => $lease->{uid},
+				cltt            => $lease->{cltt},
+				state           => $lease->{state},
+				ip              => $lease->{ip_address},
+				hw_address      => $lease->{hardware_address},
+				starts          => $lease->{starts},
+				ends            => $lease->{ends},
+				client_hostname => $lease->{client_hostname},
+			}
+		);
+	} ## end foreach my $lease ( @{$leases} )
+} ## end else [ if ( !$opts{d} ) ]
+
+#print Dumper($leases);
+
+# total the lease info types
+foreach my $lease ( @{ $to_return->{data}{found_leases} } ) {
+	$to_return->{data}{leases}{total}++;
+	if ( $lease->{state} eq 'free' ) {
+		$to_return->{data}{leases}{free}++;
+	} elsif ( $lease->{state} eq 'abandoned' ) {
+		$to_return->{data}{leases}{abandoned}++;
+	} elsif ( $lease->{state} eq 'active' ) {
+		$to_return->{data}{leases}{active}++;
+	} elsif ( $lease->{state} eq 'backup' ) {
+		$to_return->{data}{leases}{backup}++;
+	} elsif ( $lease->{state} eq 'bootp' ) {
+		$to_return->{data}{leases}{bootp}++;
+	} elsif ( $lease->{state} eq 'expired' ) {
+		$to_return->{data}{leases}{expired}++;
+	} elsif ( $lease->{state} eq 'released' ) {
+		$to_return->{data}{leases}{released}++;
+	} elsif ( $lease->{state} eq 'reset' ) {
+		$to_return->{data}{leases}{reset}++;
+	}
+} ## end foreach my $lease ( @{ $to_return->{data}{found_leases...}})
+
+my $cmd_output = `dhcpd-pools -s i -A -l $opts{l} 2> /dev/null`;
+my $category   = '';
+for my $line ( split( /\n/, $cmd_output ) ) {
+	$line =~ s/^ +//;
+	my @line_split = split( /[\ \t]+/, $line );
+	if ( $line =~ /^Ranges\:/ ) {
+		$category = 'pools';
+	} elsif ( $line =~ /^Shared\ networks\:/ ) {
+		$category = 'networks';
+	} elsif ( $line =~ /^Sum\ of\ all\ ranges\:/ ) {
+		$category = 'all_networks';
+	} elsif ( $category eq 'pools' && defined( $line_split[4] ) && $line_split[4] =~ /^\d+$/ ) {
+		push(
+			@{ $to_return->{data}{pools} },
+			{
+				first_ip => $line_split[1],
+				last_ip  => $line_split[3],
+				max      => $line_split[4],
+				cur      => $line_split[5],
+				percent  => $line_split[6],
+			}
+		);
+	} elsif ( $category eq 'networks'
+		&& defined( $line_split[1] )
+		&& $line_split[1] =~ /^\d+$/
+		&& defined( $line_split[2] )
+		&& $line_split[2] =~ /^\d+$/ )
+	{
+		push(
+			@{ $to_return->{data}{networks} },
+			{
+				network => $line_split[0],
+				max     => $line_split[1],
+				cur     => $line_split[2],
+				percent => $line_split[3],
+			}
+		);
+	} elsif ( $category eq 'all_networks' ) {
+		$to_return->{data}{all_networks}{max}     = $line_split[2];
+		$to_return->{data}{all_networks}{cur}     = $line_split[3];
+		$to_return->{data}{all_networks}{percent} = $line_split[4];
+	}
+} ## end for my $line ( split( /\n/, $cmd_output ) )
+
+my $json = JSON->new->allow_nonref->canonical(1);
+if ( $opts{p} ) {
+	$json->pretty;
+}
+my $toReturn = $json->encode($to_return) . "\n";
+if ( $opts{Z} ) {
+	my $toReturnCompressed;
+	gzip \$toReturn => \$toReturnCompressed;
+	my $compressed = encode_base64($toReturnCompressed);
+	$compressed =~ s/\n//g;
+	$compressed = $compressed . "\n";
+	if ( length($compressed) < length($toReturn) ) {
+		$toReturn = $compressed;
+	}
+} ## end if ( $opts{Z} )
+
+print $toReturn;
+
+exit;
+
