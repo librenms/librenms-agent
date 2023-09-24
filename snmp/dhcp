@@ -197,8 +197,6 @@ foreach my $lease ( @{$leases} ) {
 if ( !$opts{d} ) {
 	foreach my $lease ( @{$leases} ) {
 		$found_leases->{ $lease->{uid}
-				. $lease->{cltt}
-				. $lease->{uid}
 				. $lease->{ip_address}
 				. $lease->{client_hostname}
 				. $lease->{state}
