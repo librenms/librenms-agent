@@ -47,6 +47,17 @@ Do not de-dup.
 This is done via making sure the combination of UID, CLTT, IP, HW address,
 client hostname, and state are unique.
 
+=head2 -n
+
+If no shared networks are defined, what to use for generating the network names
+for reporting purposes.
+
+    - cidr :: Use the cidr for the defined subnets.
+
+    - cidr+range :: Use the cidr+range for the defined subnets.
+
+Default is 'cidr'.
+
 =head1 Return JSON Data Hash
 
     - .all_networks.cur :: Current leases for all networks
@@ -54,15 +65,19 @@ client hostname, and state are unique.
     - .all_networks.percent :: Percent of total pool usage.
 
     - .networks.[].cur :: Current leases for the network.
-    - .networks.[].max :: Max possible leases for thenetworks
-    - .networks.[].network :: Subnet of the network.
+    - .networks.[].max :: Max possible leases for the networks
+    - .networks.[].network :: Name of the network.
+    - .networks.[].subnets :: Array of subnets on the network.
     - .networks.[].percent :: Percent of network usage.
+    - .networks.[].pools :: Pool ranges used.
 
     - .pools.[].cur :: Current leases for the pool.
     - .pools.[].max :: Max possible leases for pool.
     - .pools.[].first_ip :: First IP of the pool.
     - .pools.[].last_ip :: Last IP of the pool.
     - .pools.[].percent :: Percent of pool usage.
+    - .pools.[].cidr :: CIDR for this subnet.
+    - .pools.[].$option :: Additional possible DHCP subnet option.
 
     - .found_leases.[].client_hostname :: Hostname the client passed during the request.
     - .found_leases.[].cltt :: The CLTT for the requist.
@@ -90,9 +105,18 @@ use JSON -convert_blessed_universally;
 use MIME::Base64;
 use IO::Compress::Gzip qw(gzip $GzipError);
 use Net::ISC::DHCPd::Leases;
+use Net::ISC::DHCPd::Config;
 
 my %opts;
-getopts( 'l:Zdp', \%opts );
+getopts( 'l:Zdpc:n:', \%opts );
+
+if ( !defined( $opts{n} ) ) {
+	$opts{n} = 'cidr';
+} else {
+	if ( $opts{n} ne 'cidr' && $opts{n} ne 'cidr+range' ) {
+		$opts{n} = 'cidr';
+	}
+}
 
 if ( !defined( $opts{l} ) ) {
 	# if freebsd, set it to the default path as used by the version installed via ports
@@ -105,6 +129,17 @@ if ( !defined( $opts{l} ) ) {
 	}
 } ## end if ( !defined( $opts{l} ) )
 
+if ( !defined( $opts{c} ) ) {
+	# if freebsd, set it to the default path as used by the version installed via ports
+	#
+	# additional elsifs should be added as they become known, but default works for most Linux distros
+	if ( $^O eq 'freebsd' ) {
+		$opts{c} = '/usr/local/etc/dhcpd.conf';
+	} else {
+		$opts{c} = '/etc/dhcp/dhcpd.conf';
+	}
+} ## end if ( !defined( $opts{c} ) )
+
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 
 sub main::VERSION_MESSAGE {
@@ -114,12 +149,13 @@ sub main::VERSION_MESSAGE {
 sub main::HELP_MESSAGE {
 	print '
 -l <lease file>  Path to the lease file.
+-c <dhcpd.conf>  Path to the dhcpd.conf file.
 -Z               Enable GZip+Base64 compression.
 -d               Do not de-dup.
 ';
 
 	exit;
-}
+} ## end sub main::HELP_MESSAGE
 
 my $to_return = {
 	data => {
@@ -138,7 +174,7 @@ my $to_return = {
 		},
 		networks     => [],
 		pools        => [],
-		all_networks => {},
+		all_networks => { cur => 0, max => 0, percent => 0, },
 	},
 	version     => 3,
 	error       => 0,
@@ -152,8 +188,14 @@ if ( !-f $opts{l} && !-r $opts{l} ) {
 	exit;
 }
 
+# hash for storing found leases for later deduping
 my $found_leases = {};
 
+##
+##
+## read in the leases
+##
+##
 my $leases;
 eval {
 	my $leases_obj = Net::ISC::DHCPd::Leases->new( file => $opts{l} );
@@ -167,8 +209,11 @@ if ($@) {
 	exit;
 }
 
-use Data::Dumper;
-
+##
+##
+## process found leases
+##
+##
 foreach my $lease ( @{$leases} ) {
 	if ( !defined( $lease->{uid} ) ) {
 		$lease->{uid} = '';
@@ -193,7 +238,11 @@ foreach my $lease ( @{$leases} ) {
 	}
 } ## end foreach my $lease ( @{$leases} )
 
-# dedup or copy lease info as is
+##
+##
+## dedup or copy lease info as is
+##
+##
 if ( !$opts{d} ) {
 	foreach my $lease ( @{$leases} ) {
 		$found_leases->{ $lease->{uid}
@@ -267,9 +316,11 @@ if ( !$opts{d} ) {
 	} ## end foreach my $lease ( @{$leases} )
 } ## end else [ if ( !$opts{d} ) ]
 
-#print Dumper($leases);
-
-# total the lease info types
+##
+##
+## total the lease info types
+##
+##
 foreach my $lease ( @{ $to_return->{data}{found_leases} } ) {
 	$to_return->{data}{leases}{total}++;
 	if ( $lease->{state} eq 'free' ) {
@@ -291,50 +342,179 @@ foreach my $lease ( @{ $to_return->{data}{found_leases} } ) {
 	}
 } ## end foreach my $lease ( @{ $to_return->{data}{found_leases...}})
 
-my $cmd_output = `dhcpd-pools -s i -A -l $opts{l} 2> /dev/null`;
-my $category   = '';
-for my $line ( split( /\n/, $cmd_output ) ) {
-	$line =~ s/^ +//;
-	my @line_split = split( /[\ \t]+/, $line );
-	if ( $line =~ /^Ranges\:/ ) {
-		$category = 'pools';
-	} elsif ( $line =~ /^Shared\ networks\:/ ) {
-		$category = 'networks';
-	} elsif ( $line =~ /^Sum\ of\ all\ ranges\:/ ) {
-		$category = 'all_networks';
-	} elsif ( $category eq 'pools' && defined( $line_split[4] ) && $line_split[4] =~ /^\d+$/ ) {
-		push(
-			@{ $to_return->{data}{pools} },
-			{
-				first_ip => $line_split[1],
-				last_ip  => $line_split[3],
-				max      => $line_split[4],
-				cur      => $line_split[5],
-				percent  => $line_split[6],
-			}
-		);
-	} elsif ( $category eq 'networks'
-		&& defined( $line_split[1] )
-		&& $line_split[1] =~ /^\d+$/
-		&& defined( $line_split[2] )
-		&& $line_split[2] =~ /^\d+$/ )
-	{
-		push(
-			@{ $to_return->{data}{networks} },
-			{
-				network => $line_split[0],
-				max     => $line_split[1],
-				cur     => $line_split[2],
-				percent => $line_split[3],
-			}
-		);
-	} elsif ( $category eq 'all_networks' ) {
-		$to_return->{data}{all_networks}{max}     = $line_split[2];
-		$to_return->{data}{all_networks}{cur}     = $line_split[3];
-		$to_return->{data}{all_networks}{percent} = $line_split[4];
-	}
-} ## end for my $line ( split( /\n/, $cmd_output ) )
+##
+##
+## read in the config
+##
+##
+my $config_obj;
+eval {
+	$config_obj = Net::ISC::DHCPd::Config->new( file => $opts{c} );
+	$config_obj->parse;
+};
+if ($@) {
+	$to_return->{error}       = 3;
+	$to_return->{errorString} = 'Reading leases failed... ' . $@;
+	print decode_json($to_return) . "\n";
+	exit;
+}
 
+##
+##
+## process found subnets
+##
+##
+my $pools   = {};
+my @subnets = $config_obj->subnets;
+foreach my $subnet (@subnets) {
+	my @ranges          = $subnet->ranges;
+	my $subnet_cidr_obj = $subnet->address;
+	my $subnet_cidr     = $subnet_cidr_obj->addr;
+	foreach my $range (@ranges) {
+		my $lower       = $range->lower;
+		my $upper       = $range->upper;
+		my $pool_name   = $lower->addr . '-' . $upper->addr;
+		my $subnet_addr = $subnet_cidr_obj->addr;
+		my $subnet_cidr = $subnet_cidr_obj->cidr;
+		my $max         = $upper->bigint - $lower->bigint;
+		$pools->{$pool_name} = {
+			first_ip => $lower->addr,
+			lower    => $lower,
+			last_ip  => $upper->addr,
+			upper    => $upper,
+			subnet   => $subnet_addr,
+			cidr     => $subnet_cidr,
+			max      => $max,
+			cur      => 0,
+			percent  => 0,
+		};
+		my @options = $subnet->options;
+
+		foreach my $option (@options) {
+			$pools->{$pool_name}{ $option->name } = $option->value;
+		}
+	} ## end foreach my $range (@ranges)
+} ## end foreach my $subnet (@subnets)
+
+##
+##
+## process found networks and subnets contained on in
+##
+##
+my $networks               = {};
+my @found_subnets          = $config_obj->sharednetworks;
+my $undef_network_name_int = 0;
+foreach my $network (@found_subnets) {
+	my $name = $network->name;
+	if ( !defined($name) || $name eq '' ) {
+		$name = 'undef' . $undef_network_name_int;
+		$undef_network_name_int++;
+	}
+	if ( !defined( $networks->{$name} ) ) {
+		$networks->{$name} = [];
+	}
+
+	@subnets = $network->subnets;
+	foreach my $subnet (@subnets) {
+		my @ranges          = $subnet->ranges;
+		my $subnet_cidr_obj = $subnet->address;
+		my $subnet_cidr     = $subnet_cidr_obj->addr;
+		foreach my $range (@ranges) {
+			my $lower     = $range->lower;
+			my $upper     = $range->upper;
+			my $pool_name = $lower->addr . '-' . $upper->addr;
+			my $max       = $upper->bigint - $lower->bigint;
+			$pools->{$pool_name} = {
+				first_ip => $lower->addr,
+				lower    => $lower,
+				last_ip  => $upper->addr,
+				upper    => $upper,
+				subnet   => $subnet_cidr,
+				max      => $max,
+				cur      => 0,
+				percent  => 0,
+			};
+			my @options = $subnet->options;
+			foreach my $option (@options) {
+				$pools->{$pool_name}{ $option->name } = $option->value;
+			}
+
+			push( @{ $networks->{$name} }, $pool_name );
+		} ## end foreach my $range (@ranges)
+	} ## end foreach my $subnet (@subnets)
+} ## end foreach my $network (@found_subnets)
+
+##
+##
+## puts the pools array together
+##
+##
+foreach my $pool_key ( keys( %{$pools} ) ) {
+	my $lower = $pools->{$pool_key}{lower};
+	delete( $pools->{$pool_key}{lower} );
+	my $upper = $pools->{$pool_key}{upper};
+	delete( $pools->{$pool_key}{upper} );
+
+	# check each lease for if it is between the upper and lower IPs
+	# then increment current if the state is active
+	foreach my $lease ( @{ $to_return->{data}{found_leases} } ) {
+		my $lease_ip = NetAddr::IP->new( $lease->{ip} );
+		if ( $lower <= $lease_ip && $lease_ip <= $upper ) {
+			if ( $lease->{state} eq 'active' ) {
+				$pools->{$pool_key}{cur}++;
+			}
+		}
+	}
+
+	$pools->{$pool_key}{percent} = ( $pools->{$pool_key}{cur} / $pools->{$pool_key}{max}->numify() ) * 100;
+	$pools->{$pool_key}{max}     = $pools->{$pool_key}{max}->bstr;
+
+	# add the current and max to all_networks(reall all subnets)...
+	$to_return->{data}{all_networks}{cur} = $to_return->{data}{all_networks}{cur} + $pools->{$pool_key}{cur};
+	$to_return->{data}{all_networks}{max} = $to_return->{data}{all_networks}{max} + $pools->{$pool_key}{max};
+
+	push( @{ $to_return->{data}{pools} }, $pools->{$pool_key} );
+} ## end foreach my $pool_key ( keys( %{$pools} ) )
+$to_return->{data}{all_networks}{percent}
+	= ( $to_return->{data}{all_networks}{cur} / $to_return->{data}{all_networks}{max} ) * 100;
+
+##
+##
+## put the networks section together
+##
+##
+my @network_keys = keys( %{$networks} );
+if ( !defined( $network_keys[0] ) ) {
+	foreach my $pool_key ( keys( %{$pools} ) ) {
+		$networks->{ $pools->{$pool_key}{cidr} } = [$pool_key];
+	}
+	@network_keys = keys( %{$networks} );
+}
+foreach my $network (@network_keys) {
+	my $cur = 0;
+	my $max = 0;
+	foreach my $pool_name ( @{ $networks->{$network} } ) {
+		$cur = $cur + $pools->{$pool_name}{cur};
+		$max = $max + $pools->{$pool_name}{max};
+	}
+	my $percent = ( $cur / $max ) * 100;
+	push(
+		@{ $to_return->{data}{networks} },
+		{
+			cur     => $cur,
+			max     => $max,
+			network => $network,
+			percent => $percent,
+			pools   => $networks->{$network},
+		}
+	);
+} ## end foreach my $network (@network_keys)
+
+##
+##
+## handle printing the output
+##
+##
 my $json = JSON->new->allow_nonref->canonical(1);
 if ( $opts{p} ) {
 	$json->pretty;
