@@ -58,6 +58,10 @@ for reporting purposes.
 
 Default is 'cidr'.
 
+=head2 -w <file>
+
+Write the the output to this file.
+
 =head1 Return JSON Data Hash
 
     - .all_networks.cur :: Current leases for all networks
@@ -106,9 +110,10 @@ use MIME::Base64;
 use IO::Compress::Gzip qw(gzip $GzipError);
 use Net::ISC::DHCPd::Leases;
 use Net::ISC::DHCPd::Config;
+use File::Slurp;
 
 my %opts;
-getopts( 'l:Zdpc:n:', \%opts );
+getopts( 'l:Zdpc:n:w:', \%opts );
 
 if ( !defined( $opts{n} ) ) {
 	$opts{n} = 'cidr';
@@ -532,5 +537,9 @@ if ( $opts{Z} ) {
 } ## end if ( $opts{Z} )
 
 print $toReturn;
+
+if ($opts{w}) {
+	write_file($opts{w}, $toReturn);
+}
 
 exit;
