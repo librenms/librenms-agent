@@ -1,0 +1,22 @@
+#!/bin/bash
+# Cache the file for 30 minutes
+# If you want to override this, put the command in cron.
+# We cache because it is a 1sec delay, which is painful for the poller
+if [ -x /usr/bin/pacman ]; then
+  DATE=$(date +%s)
+  FILE=/var/cache/librenms/agent-local-pacman
+
+  [ -d /var/cache/librenms ] || mkdir -p /var/cache/librenms
+
+  if [ ! -e $FILE ]; then
+    pacman -Qi | awk '/^Name/{name=$3} /^Version/{version=$3}  /^Architecture/{arch=$3} /^Installed Size/{print name, version, arch, $4$5}' > $FILE
+  fi
+  FILEMTIME=$(stat -c %Y $FILE)
+  FILEAGE=$(($DATE-$FILEMTIME))
+  if [ $FILEAGE -gt 1800 ]; then
+    pacman -Qi | awk '/^Name/{name=$3} /^Version/{version=$3}  /^Architecture/{arch=$3} /^Installed Size/{print name, version, arch, $4$5}' > $FILE
+  fi
+  echo "<<<pacman>>>"
+  cat $FILE
+fi
+
