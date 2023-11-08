@@ -78,6 +78,9 @@ elif [ "${OS}" = "Linux" ] ; then
     if [ -f /etc/dogtag ]; then
       DIST=$(cat /etc/dogtag)
     fi
+    if [ -f /usr/sbin/omv-sysinfo ]; then
+      DIST="${DIST}/OpenMediaVault $(/usr/sbin/omv-sysinfo 00-omv-version | grep Release | cut -d: -f2 | sed 's/\s//g')"
+    fi
 
   elif [ -f /etc/gentoo-release ] ; then
     DIST="Gentoo"
