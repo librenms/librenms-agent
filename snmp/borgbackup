@@ -381,7 +381,7 @@ foreach my $repo (@repos) {
 
 	if ($process) {
 		my ( $dev, $ino, $mode, $nlink, $uid, $gid, $rdev, $size, $atime, $mtime, $ctime, $blksize, $blocks )
-			= stat( $config->{$repo}{repo} );
+			= stat( $config->{$repo}{repo} . '/nonce' );
 
 		my $time_diff = time - $mtime;
 		$repo_info->{time_since_last_modified} = $time_diff;
