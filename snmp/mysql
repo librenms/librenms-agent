@@ -158,6 +158,8 @@ if (!isset($called_by_script_server)) {
          $output[] = $item;
       }
       list($short, $val) = explode(":", $item);
+      # ensure returned values do not exceed max limits in RRD
+      $val = $val % ( 124999999999 + 1 );
       echo(strtolower($short).":".strtolower($val)."\n");
    }
    debug(array("Final result", $output));
