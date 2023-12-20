@@ -1,8 +1,14 @@
 #!/usr/bin/env perl
 
-=head1 DESCRIPTION
+=head1 NAME
 
-This is a SNMP extend for ZFS for use with LibreNMS.
+zfs - LibreNMS JSON SNMP extend for gathering backups for ZFS
+
+=head1 VERSION
+
+0.1.0
+
+=head1 DESCRIPTION
 
 For more information, see L<https://docs.librenms.org/Extensions/Applications/#zfs>.
 
@@ -29,11 +35,11 @@ in the return.
 
 The requirements may be installed via CPAN like below for Linux.
 
-    apt-get install cpanminus zlib1g-dev
+    apt-get install cpanminus File::Slurp MIME::Base64 JSON
 
 Or on FreeBSD via pkg...
 
-    pkg install p5-JSON p5-File-Slurp p5-MIME-Base64 p5-Gzip-Faster
+    pkg install p5-JSON p5-File-Slurp p5-MIME-Base64
 
 =cut
 
@@ -62,31 +68,59 @@ Or on FreeBSD via pkg...
 
 # Many thanks to Ben Rockwood, Jason J. Hellenthal, and Martin Matuska
 # for zfs-stats and figuring out the math for all the stats
+#
+# Thanks to dlangille for pointing out the issues on 14 and Bobzikwick figuring out the fix in issues/501
 
 use strict;
 use warnings;
 use JSON;
-use Getopt::Std;
+use Getopt::Long;
 use File::Slurp;
 use MIME::Base64;
-use Gzip::Faster;
+use IO::Compress::Gzip qw(gzip $GzipError);
+use Pod::Usage;
 
-$Getopt::Std::STANDARD_HELP_VERSION = 1;
+#$Getopt::Std::STANDARD_HELP_VERSION = 1;
 
 sub main::VERSION_MESSAGE {
-	print "FreeBSD ZFS v3 stats extend 0.0.1\n";
+	pod2usage( -exitval => 255, -verbose => 99, -sections => qw(VERSION), -output => \*STDOUT, );
 }
 
 sub main::HELP_MESSAGE {
-
+	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
 }
 
 #this will be dumped to json at the end
 my %tojson;
 
 #gets the options
-my %opts = ();
-getopts( 'pbs', \%opts );
+my %opts;
+my $opts_p;
+my $opts_b;
+my $opts_s;
+my $version;
+my $help;
+#getopts( 'pbs', \%opts );
+GetOptions(
+	p       => \$opts_p,
+	b       => \$opts_b,
+	s       => \$opts_s,
+	v       => \$version,
+	version => \$version,
+	h       => \$help,
+	help    => \$help,
+);
+$opts{p} = $opts_p;
+$opts{b} = $opts_b;
+$opts{s} = $opts_s;
+
+if ($version) {
+	pod2usage( -exitval => 255, -verbose => 99, -sections => qw(VERSION), -output => \*STDOUT, );
+}
+
+if ($help) {
+	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
+}
 
 #process each pool and shove them into JSON
 my $zpool_output = `/sbin/zpool list -pH`;
@@ -118,39 +152,33 @@ while ( defined( $pools[$pools_int] ) ) {
 		$newPool{dedup},   $newPool{health},   $newPool{altroot}
 	) = split( /\,/, $pool );
 
-	if ($opts{s}) {
+	if ( $opts{s} ) {
 		$newPool{status} = `zpool status $newPool{name}`;
 	}
 
 	if ( $newPool{health} eq 'ONLINE' ) {
 		$newPool{health} = 0;
 		$tojson{online}++;
-	}
-	elsif ( $newPool{health} eq 'DEGRADED' ) {
+	} elsif ( $newPool{health} eq 'DEGRADED' ) {
 		$newPool{health} = 1;
 		$tojson{health}  = 0;
 		$tojson{degraded}++;
-	}
-	elsif ( $newPool{health} eq 'OFFLINE' ) {
+	} elsif ( $newPool{health} eq 'OFFLINE' ) {
 		$newPool{health} = 2;
 		$tojson{offline}++;
-	}
-	elsif ( $newPool{health} eq 'FAULTED' ) {
+	} elsif ( $newPool{health} eq 'FAULTED' ) {
 		$newPool{health} = 3;
 		$tojson{health}  = 0;
 		$tojson{faulted}++;
-	}
-	elsif ( $newPool{health} eq 'UNAVAIL' ) {
+	} elsif ( $newPool{health} eq 'UNAVAIL' ) {
 		$newPool{health} = 4;
 		$tojson{health}  = 0;
 		$tojson{unavail}++;
-	}
-	elsif ( $newPool{health} eq 'REMOVED' ) {
+	} elsif ( $newPool{health} eq 'REMOVED' ) {
 		$newPool{health} = 5;
 		$tojson{health}  = 0;
 		$tojson{removed}++;
-	}
-	else {
+	} else {
 		$newPool{health} = 6;
 		$tojson{health}  = 0;
 		$tojson{unknown}++;
@@ -188,7 +216,7 @@ while ( defined( $pools[$pools_int] ) ) {
 	push( @toShoveIntoJSON, \%newPool );
 
 	$pools_int++;
-}
+} ## end while ( defined( $pools[$pools_int] ) )
 $tojson{pools} = \@toShoveIntoJSON;
 
 #
@@ -209,10 +237,9 @@ if ( $^O eq 'freebsd' ) {
 			$var =~ s/^.*\.arcstats\.//;
 			$stats_stuff->{$var} = $val;
 		}
-	}
+	} ## end foreach my $stat (@sysctls_pull)
 
-}
-elsif ( $^O eq 'linux' ) {
+} elsif ( $^O eq 'linux' ) {
 	my @arcstats_lines = read_file('/proc/spl/kstat/zfs/arcstats');
 	foreach my $line (@arcstats_lines) {
 		chomp($line);
@@ -222,30 +249,30 @@ elsif ( $^O eq 'linux' ) {
 }
 
 # does not seem to exist for me, but some of these don't seem to be created till needed
-if ( !defined( $stats_stuff->{"recycle_miss"} ) ) {
-	$stats_stuff->{"recycle_miss"} = 0;
+if ( !defined( $stats_stuff->{recycle_miss} ) ) {
+	$stats_stuff->{recycle_miss} = 0;
 }
 
 ##
 ## ARC misc
 ##
-$tojson{deleted}      = $stats_stuff->{"deleted"};
-$tojson{evict_skip}   = $stats_stuff->{"evict_skip"};
-$tojson{mutex_skip}   = $stats_stuff->{'mutex_miss'};
-$tojson{recycle_miss} = $stats_stuff->{"recycle_miss"};
+$tojson{deleted}      = $stats_stuff->{deleted};
+$tojson{evict_skip}   = $stats_stuff->{evict_skip};
+$tojson{mutex_skip}   = $stats_stuff->{mutex_miss};
+$tojson{recycle_miss} = $stats_stuff->{recycle_miss};
 
 ##
 ## ARC size
 ##
-my $target_size_percent        = $stats_stuff->{"c"} / $stats_stuff->{"c_max"} * 100;
-my $arc_size_percent           = $stats_stuff->{"size"} / $stats_stuff->{"c_max"} * 100;
-my $target_size_adaptive_ratio = $stats_stuff->{"c"} / $stats_stuff->{"c_max"};
-my $min_size_percent           = $stats_stuff->{"c_min"} / $stats_stuff->{"c_max"} * 100;
+my $target_size_percent        = $stats_stuff->{c} / $stats_stuff->{c_max} * 100;
+my $arc_size_percent           = $stats_stuff->{size} / $stats_stuff->{c_max} * 100;
+my $target_size_adaptive_ratio = $stats_stuff->{c} / $stats_stuff->{c_max};
+my $min_size_percent           = $stats_stuff->{c_min} / $stats_stuff->{c_max} * 100;
 
-$tojson{arc_size}         = $stats_stuff->{"size"};
-$tojson{target_size_max}  = $stats_stuff->{"c_max"};
-$tojson{target_size_min}  = $stats_stuff->{"c_min"};
-$tojson{target_size}      = $stats_stuff->{"c"};
+$tojson{arc_size}         = $stats_stuff->{size};
+$tojson{target_size_max}  = $stats_stuff->{c_max};
+$tojson{target_size_min}  = $stats_stuff->{c_min};
+$tojson{target_size}      = $stats_stuff->{c};
 $tojson{target_size_per}  = $target_size_percent;
 $tojson{arc_size_per}     = $arc_size_percent;
 $tojson{target_size_arat} = $target_size_adaptive_ratio;
@@ -255,39 +282,47 @@ $tojson{min_size_per}     = $min_size_percent;
 ## ARC size breakdown
 ##
 my $mfu_size;
+if ( defined( $stats_stuff->{mfu_size} ) ) {
+	$mfu_size = $stats_stuff->{mfu_size};
+}
 my $recently_used_percent;
 my $frequently_used_percent;
-if ( $stats_stuff->{"size"} >= $stats_stuff->{"c"} ) {
-	$mfu_size                = $stats_stuff->{"size"} - $stats_stuff->{"p"};
-	$recently_used_percent   = $stats_stuff->{"p"} / $stats_stuff->{"size"} * 100;
-	$frequently_used_percent = $mfu_size / $stats_stuff->{"size"} * 100;
+if ( !defined( $stats_stuff->{p} ) && defined( $stats_stuff->{mfu_size} ) ) {
+	$stats_stuff->{p} = $stats_stuff->{size} - $stats_stuff->{mfu_size};
 }
-else {
-	$mfu_size                = $stats_stuff->{"c"} - $stats_stuff->{"p"};
-	$recently_used_percent   = $stats_stuff->{"p"} / $stats_stuff->{"c"} * 100;
-	$frequently_used_percent = $mfu_size / $stats_stuff->{"c"} * 100;
+if ( $stats_stuff->{size} >= $stats_stuff->{c} ) {
+	if ( !defined($mfu_size) ) {
+		$mfu_size = $stats_stuff->{size} - $stats_stuff->{p};
+	}
+	$recently_used_percent   = $stats_stuff->{p} / $stats_stuff->{size} * 100;
+	$frequently_used_percent = $mfu_size / $stats_stuff->{size} * 100;
+} else {
+	if ( !defined($mfu_size) ) {
+		$mfu_size = $stats_stuff->{c} - $stats_stuff->{p};
+	}
+	$recently_used_percent   = $stats_stuff->{p} / $stats_stuff->{c} * 100;
+	$frequently_used_percent = $mfu_size / $stats_stuff->{c} * 100;
 }
 
-$tojson{p} = $stats_stuff->{"p"};
+$tojson{p} = $stats_stuff->{p};
 
 ##
 ## ARC efficiency
 ##
-my $arc_hits                 = $stats_stuff->{"hits"};
-my $arc_misses               = $stats_stuff->{"misses"};
-my $demand_data_hits         = $stats_stuff->{"demand_data_hits"};
-my $demand_data_misses       = $stats_stuff->{"demand_data_misses"};
-my $demand_metadata_hits     = $stats_stuff->{"demand_metadata_hits"};
-my $demand_metadata_misses   = $stats_stuff->{"demand_metadata_misses"};
-my $mfu_ghost_hits           = $stats_stuff->{"mfu_ghost_hits"};
-my $mfu_hits                 = $stats_stuff->{"mfu_hits"};
-my $mru_ghost_hits           = $stats_stuff->{"mru_ghost_hits"};
-my $mru_hits                 = $stats_stuff->{"mru_hits"};
-my $prefetch_data_hits       = $stats_stuff->{"prefetch_data_hits"};
-my $prefetch_data_misses     = $stats_stuff->{"prefetch_data_misses"};
-my $prefetch_metadata_hits   = $stats_stuff->{"prefetch_metadata_hits"};
-my $prefetch_metadata_misses = $stats_stuff->{"prefetch_metadata_misses"};
-
+my $arc_hits                 = $stats_stuff->{hits};
+my $arc_misses               = $stats_stuff->{misses};
+my $demand_data_hits         = $stats_stuff->{demand_data_hits};
+my $demand_data_misses       = $stats_stuff->{demand_data_misses};
+my $demand_metadata_hits     = $stats_stuff->{demand_metadata_hits};
+my $demand_metadata_misses   = $stats_stuff->{demand_metadata_misses};
+my $mfu_ghost_hits           = $stats_stuff->{mfu_ghost_hits};
+my $mfu_hits                 = $stats_stuff->{mfu_hits};
+my $mru_ghost_hits           = $stats_stuff->{mru_ghost_hits};
+my $mru_hits                 = $stats_stuff->{mru_hits};
+my $prefetch_data_hits       = $stats_stuff->{prefetch_data_hits};
+my $prefetch_data_misses     = $stats_stuff->{prefetch_data_misses};
+my $prefetch_metadata_hits   = $stats_stuff->{prefetch_metadata_hits};
+my $prefetch_metadata_misses = $stats_stuff->{prefetch_metadata_misses};
 ##
 ## ARC efficiency, common
 ##
@@ -315,8 +350,7 @@ if ( $prefetch_data_total != 0 ) {
 my $anon_hits_percent;
 if ( $anon_hits != 0 ) {
 	$anon_hits_percent = $anon_hits / $arc_hits * 100;
-}
-else {
+} else {
 	$anon_hits_percent = 0;
 }
 
@@ -395,34 +429,35 @@ $tojson{l2_access_total} = $tojson{l2_hits} + $tojson{l2_misses};
 ##
 
 my %head_hash;
-$head_hash{'data'}        = \%tojson;
-$head_hash{'version'}     = 3;
-$head_hash{'error'}       = 0;
-$head_hash{'errorString'} = '';
+$head_hash{data}        = \%tojson;
+$head_hash{version}     = 3;
+$head_hash{error}       = 0;
+$head_hash{errorString} = '';
 
 my $j = JSON->new;
 
-if ( $opts{p}  && ! $opts{b} ) {
+if ( $opts{p} && !$opts{b} ) {
 	$j->pretty(1);
 }
 
 my $return_string = $j->encode( \%head_hash );
 
-if ( !$opts{p} && ! $opts{b}  ) {
-	print $return_string."\n";
+if ( !$opts{p} && !$opts{b} ) {
+	print $return_string. "\n";
 	exit 0;
-}elsif (!$opts{b}) {
+} elsif ( !$opts{b} ) {
 	print $return_string;
 	exit 0;
 }
 
-my $compressed = encode_base64( gzip($return_string) );
+my $compressed_string;
+gzip \$return_string => \$compressed_string;
+my $compressed = encode_base64($compressed_string);
 $compressed =~ s/\n//g;
 $compressed = $compressed . "\n";
 if ( length($compressed) > length($return_string) ) {
-	print $return_string."\n";
-}
-else {
+	print $return_string. "\n";
+} else {
 	print $compressed;
 }
 
