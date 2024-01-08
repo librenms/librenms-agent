@@ -1,0 +1,187 @@
+#!/bin/sh
+# (c) 2013-2017, f0o@devilcode.org, olb@nebkha.net
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+DISTRO_BIN="/usr/bin/distro"
+BASE='.1.3.6.1.2.1.31.1.1.1.18'
+GET_TYPE="$1"
+GET_OID="$2"
+
+UNAME="$(/usr/bin/uname)"
+
+if [ "$(echo "${UNAME}" | grep -ci 'bsd$')" -eq 1 ]; then
+    UNAME="BSD"
+fi
+
+# cache ip link output
+if [ "${UNAME}" = 'Linux' ]; then
+    IP_LINK="$(ip link)"
+else
+    IFCONFIG="$(ifconfig)"
+fi
+
+# Get interface id from GET_OID script parameter depending on the get type -g
+# or -n.
+#
+# snmpd specify two behaviors: GETNEXT and GET.
+#
+# script -g  <GET_OID>
+#
+# :    Should return OID value
+#
+# script -n <GET_OID>
+#
+# :    Should return next OID value
+#
+#      Note that interface id are not necessarly following incrementally.
+#      We need tho find the next interface id (which is not necessarily n+1).
+#
+interface_id()
+{
+    N=
+    L=
+    ID="${GET_OID#"$BASE".}"
+
+    case "$GET_TYPE" in
+        -g)
+            echo "$ID"
+            return 0
+            ;;
+        -n)
+            if [ "$ID" = "$BASE" ]
+            then
+                if [ "${UNAME}" = 'Linux' ]; then
+                    # find the first iface_id
+                    echo "$IP_LINK" | grep -oE "^[0-9]+:" | head -n 1 | cut -d':' -f 1
+                    return 0
+                else
+                    echo "${IFCONFIG}" | head -n 1 | cut -d: -f 1
+                    return 0
+                fi
+            else
+                # find the next iface_id
+                if [ "${UNAME}" = 'Linux' ]; then
+                    for N in $(echo "$IP_LINK" | grep -oE "^[0-9]+:" | cut -d':' -f 1)
+                    do
+                        if [ "$L" = "$ID" ] || [ -z "$ID" ]; then
+                            printf '%s' "$N"
+                            return 0
+                        fi
+                        L="$N"
+                    done
+                else
+                    for N in $(echo "${IFCONFIG}" | grep -E '^[A-Za-z]+' | cut -d: -f1 | cat -n -b | sed 's/^  *//' | sed 's/[\t\ ].*//'); do
+                        if [ "$L" = "$ID" ] || [ -z "$ID" ]; then
+                            printf '%s' "$N"
+                            return 0
+                        fi
+                        L="$N"
+                    done
+                fi
+            fi
+            ;;
+    esac
+    return 1
+}
+
+interface_name()
+{
+    if [ "${UNAME}" = 'Linux' ]; then
+        echo "$IP_LINK" | grep -oE "^$1: [^:@ ]*" | cut -d " " -f 2
+    else
+        echo "${IFCONFIG}" | grep -E '^[A-Za-z]+' | cut -d: -f1 | head -n "$1" | tail -n 1
+    fi
+}
+
+alias_from_interfaces_config_file()
+{
+    CONFIG_FILE=
+
+    if [ -x "$DISTRO_BIN" ]; then
+        if [ "${UNAME}" = 'Linux' ]; then
+            DISTRO_VAR="$($DISTRO_BIN | cut -d " " -f 1)"
+        else
+            DISTRO_VAR="${UNAME}"
+        fi
+
+        case "${DISTRO_VAR}" in
+            Debian)
+                CONFIG_FILE="/etc/network/interfaces"
+            ;;
+            Ubuntu)
+                CONFIG_FILE="/etc/network/interfaces"
+            ;;
+            Gentoo)
+                CONFIG_FILE="/etc/conf.d/net"
+            ;;
+            CentOS|RedHat|SuSE|Mandriva|Mandrake)
+                CONFIG_FILE="/etc/sysconfig/network-scripts/ifcfg-$1"
+            ;;
+            Archlinux)
+                CONFIG_FILE="/etc/conf.d/net-conf-$1"
+            ;;
+            BSD)
+                CONFIG_FILE="/etc/rc.conf"
+            ;;
+        esac
+    fi
+    if [ "$CONFIG_FILE" ]; then
+         # echo squashes possible multi line replies to a single line
+         FOUND_LINES="$(grep -i "^# $1:" $CONFIG_FILE | sed "s/^# $1: //i")"
+         if [ "$(echo "${FOUND_LINES}" | wc -l)" -ge 1 ]; then
+             echo "${FOUND_LINES}"
+             return 0
+         fi
+    fi
+    if [ "${UNAME}" = "Linux" ] && [ -d '/etc/network/interfaces.d' ]; then
+         if [ "$(find /etc/network/interfaces.d/ -type f | wc -l)" -ge 1 ]; then
+             # echo squashes possible multi line replies to a single line
+             TO_ECHO_AND_MAKE_LINT_HAPPY="$(grep -r -i "^# $1:" '/etc/network/interfaces.d/' | sed "s/^# $1: //i")"
+             echo "${TO_ECHO_AND_MAKE_LINT_HAPPY}"
+         fi
+    fi
+}
+
+alias_from_ip_link()
+{
+    case "${UNAME}" in
+        Linux)
+            ip link show "$1" | grep -e "^[[:space:]]*alias[[:space:]]" | sed -e 's/^[[:space:]]*alias //'
+            ;;
+        BSD)
+            if [ "$(ifconfig "$1" | grep 'description:' | head -n 1 | cut -d: -f 2- | wc -l)" -eq 1 ]; then
+                ifconfig "$1" | grep 'description:' | head -n 1 | cut -d: -f 2- | sed 's/^ //'
+           else
+               echo "$1"
+           fi
+           ;;
+        *) echo "$1" ;;
+    esac
+}
+
+IFACE_ID="$(interface_id)"
+[ "$IFACE_ID" ] || exit
+
+IFACE="$(interface_name "$IFACE_ID")"
+
+VALUE=
+# we first try to get alias from interface config file
+[ "$VALUE" ] || VALUE="$(alias_from_interfaces_config_file "$IFACE")"
+# then from ip link show $IFACE output
+[ "$VALUE" ] || VALUE="$(alias_from_ip_link "$IFACE")"
+
+echo "${BASE}.${IFACE_ID}"
+echo "string"
+echo "$VALUE"
+exit 0
