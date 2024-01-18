@@ -121,7 +121,7 @@ for p in pool_data:
                 "network": p[0],
                 "max": p[1],
                 "cur": p[2],
-                "percent": p[3],
+                "percent": 0 if p[3] == "nan" else p[3],
             }
         )
         continue
