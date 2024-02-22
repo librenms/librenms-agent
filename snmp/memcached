@@ -11,12 +11,16 @@ if (! class_exists('Memcached')) {
     exit;
 }
 
+$server='localhost';
+$port=11211;
 $m = new Memcached();
-$m->addServer('localhost', 11211);
+$m->addServer($server, $port);
 
 echo json_encode(array(
-    'data' => $m->getStats(),
+    // 'data' => $m->getStats(),
+    'data' => ($m->getStats())["$server:$port"],
     'error' => $m->getLastErrorCode(),
     'errorString' => $m->getLastErrorMessage(),
     'version' => '1.1',
 ));
+
