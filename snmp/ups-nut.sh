@@ -39,11 +39,7 @@ do
     fi
 done
 
-for value in "ups\.temperature: [0-9.]+"; do
-    OUT=$(echo "$TMP" | grep -Eo "$value" | awk '{print $2}' | LANG=C sort | head -n 1)
-    if [ -n "$OUT" ]; then
-	echo "$OUT"
-    else
-	echo "Unknown"
-    fi
-done
+UPSTEMP="ups\.temperature: [0-9.]+"
+OUT=$(echo "$TMP" | grep -Eo "$UPSTEMP" | awk '{print $2}' | LANG=C sort | head -n 1)
+[ -n "$OUT" ] && echo "$OUT" || echo "Unknown"
+
