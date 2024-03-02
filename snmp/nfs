@@ -26,7 +26,6 @@
 
 use strict;
 use warnings;
-use Getopt::Std;
 use Getopt::Long;
 use File::Slurp;
 use MIME::Base64;
