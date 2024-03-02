@@ -36,6 +36,9 @@ use JSON;
 #the version of returned data
 my $VERSION = 1;
 
+# ensure sbin is in the path
+$ENV{PATH} = $ENV{PATH} . ':/sbin:/usr/sbin';
+
 my $pretty;
 my $cache_base = '/var/cache/nfs.json';
 my $write;
@@ -537,10 +540,10 @@ if ( $^O eq 'linux' ) {
 ####
 my @stat_keys = keys( %{ $data->{stats} } );
 foreach my $item (@stat_keys) {
-	if ($item=~/^client/ && $data->{stats}{$item} > 0) {
-		$data->{is_client}=1
-	}elsif ($item=~/^server/ && $data->{stats}{$item} > 0) {
-		$data->{is_server}=1
+	if ( $item =~ /^client/ && $data->{stats}{$item} > 0 ) {
+		$data->{is_client} = 1;
+	} elsif ( $item =~ /^server/ && $data->{stats}{$item} > 0 ) {
+		$data->{is_server} = 1;
 	}
 }
 
@@ -549,63 +552,99 @@ foreach my $item (@stat_keys) {
 #### if server, call showmount
 ####
 ####
-if ($data->{is_server}) {
-	my $output_raw    = `showmount -a`;
-	my @output_split  = split( /\n/, $output_raw );
+if ( $data->{is_server} ) {
+	my $output_raw   = `showmount -a`;
+	my @output_split = split( /\n/, $output_raw );
 	foreach my $line (@output_split) {
-		if ($line=~/\:\//) {
-			my ($host, $path)=split(/\:\//, $line);
-			push(@{$data->{mounted_by}}, {host=>$host, path=>'/'.$path});
+		if ( $line =~ /\:\// ) {
+			my ( $host, $path ) = split( /\:\//, $line );
+			push( @{ $data->{mounted_by} }, { host => $host, path => '/' . $path } );
 		}
 	}
-}
+} ## end if ( $data->{is_server} )
 
 ####
 ####
 #### if client, call nfsstat -m
 ####
 ####
-if ($data->{is_client}) {
-	if ($^O eq 'freebsd') {
-		my $output_raw    = `nfsstat -m`;
-		my @output_split  = split( /\n/, $output_raw );
-		my $previous_line='';
+if ( $data->{is_client} ) {
+	if ( $^O eq 'freebsd' ) {
+		my $output_raw   = `nfsstat -m`;
+		my @output_split = split( /\n/, $output_raw );
 		my $host;
 		my $rpath;
 		my $lpath;
 		foreach my $line (@output_split) {
-			if ($line =~ /\:\/.* on \//) {
-				$host=$line;
-				$host=~s/\:\/.*$//;
+			if ( $line =~ /\:\/.* on \// ) {
+				$host = $line;
+				$host =~ s/\:\/.*$//;
 
-				$rpath=$line;
-				$rpath=~s/\ on\ \/.*$//;
-				$rpath=~s/^.*\:\///;
-				$rpath='/'.$rpath;
+				$rpath = $line;
+				$rpath =~ s/\ on\ \/.*$//;
+				$rpath =~ s/^.*\:\///;
+				$rpath = '/' . $rpath;
 
-				$lpath=$line;
-				$lpath=~s/^.*\:\/.*\ on \///;
-				$lpath='/'.$lpath;
-			}elsif ($line =~ /\,/ && defined($host) && defined($rpath) && defined($lpath) ) {
+				$lpath = $line;
+				$lpath =~ s/^.*\:\/.*\ on \///;
+				$lpath = '/' . $lpath;
+			} elsif ( $line =~ /\,/ && defined($host) && defined($rpath) && defined($lpath) ) {
 				my @flags;
 				my %opts;
-				my @line_split=split(/\,/, $line);
+				my @line_split = split( /\,/, $line );
 				foreach my $item (@line_split) {
-					if ($item =~ /\=/) {
-						my ($var, $val)=split(/\=/, $item);
-						$opts{$var}=$val;
-					}else {
-						push(@flags, $item);
+					if ( $item =~ /\=/ ) {
+						my ( $var, $val ) = split( /\=/, $item );
+						$opts{$var} = $val;
+					} else {
+						push( @flags, $item );
 					}
 				}
-				 push(@{$data->{mounted}}, { host=>$host, rpath=>$rpath, lpath=>$lpath,flags=>\@flags, opts=>\%opts });
-			}
-		}
-	}elsif ($^O eq 'linux') {
-		my $output_raw    = `nfsstat -m`;
-		my @output_split  = split( /\n/, $output_raw );
-	}
-}
+				push(
+					@{ $data->{mounted} },
+					{ host => $host, rpath => $rpath, lpath => $lpath, flags => \@flags, opts => \%opts }
+				);
+			} ## end elsif ( $line =~ /\,/ && defined($host) && defined...)
+		} ## end foreach my $line (@output_split)
+	} elsif ( $^O eq 'linux' ) {
+		my $output_raw   = `nfsstat -m`;
+		my @output_split = split( /\n/, $output_raw );
+		my $host;
+		my $rpath;
+		my $lpath;
+		foreach my $line (@output_split) {
+			if ( $line =~ /^\/.*\ from\ .*\:\/.*/ ) {
+				$lpath = $line;
+				$lpath =~ s/\ from\ .*$//;
+
+				$host = $line;
+				$host =~ s/.*\ from\ //;
+				$host =~ s/\:\/.*$//;
+
+				$rpath = $line;
+				$rpath =~ s/^.*\:\///;
+				$rpath = '/' . $rpath;
+			} elsif ( $line =~ /Flags\:[\ \t]+/ && defined($lpath) && defined($host) && defined($rpath) ) {
+				$line =~ s/^.*Flags\:[\ \t]+//;
+				my @flags;
+				my %opts;
+				my @line_split = split( /\,/, $line );
+				foreach my $item (@line_split) {
+					if ( $item =~ /\=/ ) {
+						my ( $var, $val ) = split( /\=/, $item );
+						$opts{$var} = $val;
+					} else {
+						push( @flags, $item );
+					}
+				}
+				push(
+					@{ $data->{mounted} },
+					{ host => $host, rpath => $rpath, lpath => $lpath, flags => \@flags, opts => \%opts }
+				);
+			} ## end elsif ( $line =~ /Flags\:[\ \t]+/ && defined(...))
+		} ## end foreach my $line (@output_split)
+	} ## end elsif ( $^O eq 'linux' )
+} ## end if ( $data->{is_client} )
 
 #add the data has to the return hash
 $to_return->{data} = $data;
