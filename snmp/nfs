@@ -75,9 +75,23 @@ my $to_return = {
 my $data = {
 	is_client  => 0,
 	is_server  => 0,
+	os         => $^O,
 	mounts     => [],
 	mounted_by => [],
 	stats      => {
+		client_rpc_clone          => 0,
+		client_rpc_layoutstats    => 0,
+		client_rpc_getdevicelist  => 0,
+		client_rpc_test_stateid   => 0,
+		client_rpc_secinfo_no     => 0,
+		client_rpc_get_lease_time => 0,
+		client_rpc_sequence       => 0,
+		client_rpc_fsid_present   => 0,
+		client_rpc_secinfo        => 0,
+		client_rpc_fs_locations   => 0,
+		client_rpc_server_caps    => 0,
+		client_rpc_renew          => 0,
+		client_rpc_confirm        => 0,
 		client_rpc_null           => 0,
 		client_rpc_Getattr        => 0,
 		client_rpc_Setattr        => 0,
@@ -271,6 +285,16 @@ my $data = {
 		server_cache_Misses       => 0,
 		server_cache_CacheSize    => 0,
 		server_cache_TCPPeak      => 0,
+		server_calls              => 0,
+		server_badcalls           => 0,
+		server_badfmt             => 0,
+		server_badauth            => 0,
+		server_badclnt            => 0,
+		server_null               => 0,
+		server_compound           => 0,
+		'server_op0-unused'       => 0,
+		'server_op1-unused'       => 0,
+		'server_op2-future'       => 0,
 	}
 };
 
@@ -530,8 +554,178 @@ if ( $^O eq 'freebsd' ) {
 ####
 ####
 if ( $^O eq 'linux' ) {
-
-}
+	my $output_raw    = `nfsstat | sed 's/[0-9\.]*\%//g'`;
+	my @output_split  = split( /\n/, $output_raw );
+	my $previous_line = '';
+	foreach my $line (@output_split) {
+		if ( $previous_line =~ /calls\ +badcalls\ +badfmt\ +badauth\ +badclnt/ ) {
+			(
+				$data->{stats}{server_calls},   $data->{stats}{'server_badcalls'}, $data->{stats}{server_badfmt},
+				$data->{stats}{server_badauth}, $data->{stats}{server_badclnt},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /null\ +compound/ ) {
+			( $data->{stats}{server_null}, $data->{stats}{server_compound}, ) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /op0\-unused\ +op1\-unused\ +op2\-future\ +access\ +close/ ) {
+			(
+				$data->{stats}{'server_op0-unused'}, $data->{stats}{'server_op1-unused'},
+				$data->{stats}{'server_op2-future'}, $data->{stats}{server_Access},
+				$data->{stats}{server_Close},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /commit\ +create\ +delegpurge\ +delegreturn\ +getattr/ ) {
+			(
+				$data->{stats}{server_Commit}, $data->{stats}{server_Create}, $data->{stats}{server_DelePurge},
+				$data->{stats}{server_Delegs}, $data->{stats}{server_Getattr},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /getfh\ +link\ +lock\ +lockt\ +locku/ ) {
+			(
+				$data->{stats}{server_GetFH}, $data->{stats}{server_Link}, $data->{stats}{server_Lock},
+				$data->{stats}{server_LockT}, $data->{stats}{server_LockU},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /lookup\ +lookup_root\ +nverify\ +open\ +openattr/ ) {
+			(
+				$data->{stats}{server_Lookup}, $data->{stats}{server_LookupP}, $data->{stats}{server_NVerify},
+				$data->{stats}{server_Open},   $data->{stats}{server_OpenAttr},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /open_conf\ +open_dgrd\ +putfh\ putpubfh\ +putrootfh/ ) {
+			(
+				$data->{stats}{server_OpenCfrm}, $data->{stats}{server_OpenDwnGr}, $data->{stats}{server_PutFH},
+				$data->{stats}{server_PutPubFH}, $data->{stats}{server_PutRootFH},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /read\ +readdir\ +readlink\ +remove\ +rename/ ) {
+			(
+				$data->{stats}{server_Read},   $data->{stats}{server_Readdir}, $data->{stats}{server_Readlink},
+				$data->{stats}{server_Remove}, $data->{stats}{server_Rename},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /renew\ +restorefh\ +savefh\ +secinfo\ +setattr/ ) {
+			(
+				$data->{stats}{server_Renew},   $data->{stats}{server_RestoreFH}, $data->{stats}{server_SaveFH},
+				$data->{stats}{server_Secinfo}, $data->{stats}{server_Setattr},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /setcltid\ +setcltidconf\ +verify\ +write\ +rellockowner/ ) {
+			(
+				$data->{stats}{server_SetClId}, $data->{stats}{server_SetClIdCf},
+				$data->{stats}{server_Verify},  $data->{stats}{server_Write},
+				$data->{stats}{server_RelLockOwn},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /bc_ctl\ +bind_conn\ +exchange_id\ +create_ses\ +destroy_ses/ ) {
+			(
+				$data->{stats}{server_BackChannelCt}, $data->{stats}{server_BindConnToSes},
+				$data->{stats}{server_ExchangeID},    $data->{stats}{server_CreateSess},
+				$data->{stats}{server_DestroySess},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /free_stateid\ +getdirdeleg\ +getdevinfo\ +getdevlist\ +layoutcommit/ ) {
+			(
+				$data->{stats}{server_FreeStateID}, $data->{stats}{server_GetDirDeleg},
+				$data->{stats}{server_GetDevInfo},  $data->{stats}{server_GetDevList},
+				$data->{stats}{server_layoutCommit},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /layoutget\ +layoutreturn\ +secinfononam\ +sequence\ +set_ssv/ ) {
+			(
+				$data->{stats}{server_LayoutGet},    $data->{stats}{server_LayoutReturn},
+				$data->{stats}{server_SecInfNoName}, $data->{stats}{server_Sequence},
+				$data->{stats}{server_SetSSV},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /test_stateid\ +want_deleg\ +destroy_clid\ +reclaim_comp\ +allocate/ ) {
+			(
+				$data->{stats}{server_TestStateID}, $data->{stats}{server_WantDeleg},
+				$data->{stats}{server_DestroyClId}, $data->{stats}{server_ReclaimCompl},
+				$data->{stats}{server_Allocate},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /copy\ +copy_notify\ +deallocate\ +ioadvise\ +layouterror/ ) {
+			(
+				$data->{stats}{server_Copy},       $data->{stats}{server_CopyNotify},
+				$data->{stats}{server_Deallocate}, $data->{stats}{server_IOAdvise},
+				$data->{stats}{server_LayoutError},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /layoutstats\ +offloadcancel\ +offloadstatus\ +readplus\ +seek/ ) {
+			(
+				$data->{stats}{server_Layouts},     $data->{stats}{server_OffloadCncl},
+				$data->{stats}{server_OffloadStat}, $data->{stats}{server_ReadPlus},
+				$data->{stats}{server_Seek},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /write_same/ ) {
+			( $data->{stats}{server_WriteSame} ) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /calls\ +retrans\ +authrefrsh/ ) {
+			(
+				$data->{stats}{client_rpc_info_Requests},
+				$data->{stats}{client_rpc_info_Retries},
+				$data->{stats}{client_rpc_info_X_Replies}
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /null\ +read\ +write\ +commit\ +open/ ) {
+			(
+				$data->{stats}{client_rpc_null},  $data->{stats}{client_rpc_Read},
+				$data->{stats}{client_rpc_Write}, $data->{stats}{client_rpc_Commit},
+				$data->{stats}{client_rpc_Open},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /open_conf\ +open_noat\ +open_dgrd\ +close\ +setattr/ ) {
+			(
+				$data->{stats}{client_rpc_OpenCfr},    $data->{stats}{client_rpc_OpenLayout},
+				$data->{stats}{client_rpc_OpenDownGr}, $data->{stats}{client_rpc_Commit},
+				$data->{stats}{client_rpc_Open},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /fsinfo\ +renew\ +setclntid\ +confirm\ +lock/ ) {
+			(
+				$data->{stats}{client_rpc_FSinfo},  $data->{stats}{client_rpc_renew},
+				$data->{stats}{client_rpc_SetClId}, $data->{stats}{client_rpc_confirm},
+				$data->{stats}{client_rpc_Lock},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /lockt\ +locku\ +access\ +getattr\ +lookup/ ) {
+			(
+				$data->{stats}{client_rpc_LockT},  $data->{stats}{client_rpc_LockU},
+				$data->{stats}{client_rpc_Access}, $data->{stats}{client_rpc_Getattr},
+				$data->{stats}{client_rpc_Lookup},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /lookup_root\ +remove\ +rename\ +link\ +symlink/ ) {
+			(
+				$data->{stats}{client_rpc_LookOpen}, $data->{stats}{client_rpc_Remove},
+				$data->{stats}{client_rpc_Rename},   $data->{stats}{client_rpc_Link},
+				$data->{stats}{client_rpc_Symlink},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /create\ +pathconf\ +statfs\ +readlink\ +readdir/ ) {
+			(
+				$data->{stats}{client_rpc_Create}, $data->{stats}{client_rpc_pathConf},
+				$data->{stats}{client_rpc_statfs}, $data->{stats}{client_rpc_Readlink},
+				$data->{stats}{client_rpc_Readlink},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /server_caps\ +delegreturn\ +getacl\ +setacl\ +fs_locations/ ) {
+			(
+				$data->{stats}{client_rpc_server_caps}, $data->{stats}{client_rpc_DelegRet},
+				$data->{stats}{client_rpc_GetAcl},      $data->{stats}{client_rpc_SetAcl},
+				$data->{stats}{client_rpc_fs_locations},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /rel_lkowner\ +secinfo\ +fsid_present\ +exchange_id\ +create_session/ ) {
+			(
+				$data->{stats}{client_rpc_RelLckOwn},    $data->{stats}{client_rpc_secinfo},
+				$data->{stats}{client_rpc_fsid_present}, $data->{stats}{client_rpc_ExchangeId},
+				$data->{stats}{client_rpc_CreateSess},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /destroy_session\ +sequence\ +get_lease_time\ +reclaim_comp\ +layoutget/ ) {
+			(
+				$data->{stats}{client_rpc_DestroySess},    $data->{stats}{client_rpc_sequence},
+				$data->{stats}{client_rpc_get_lease_time}, $data->{stats}{client_rpc_ReclaimCompl},
+				$data->{stats}{client_rpc_LayoutGet},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /getdevinfo\ +layoutcommit\ +layoutreturn\ +secinfo_no\ +test_stateid/ ) {
+			(
+				$data->{stats}{client_rpc_GetDevInfo},   $data->{stats}{client_rpc_LayoutCommit},
+				$data->{stats}{client_rpc_LayoutReturn}, $data->{stats}{client_rpc_secinfo_no},
+				$data->{stats}{client_rpc_test_stateid},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /free_stateid\ +getdevicelist\ +bind_conn_to_ses\ +destroy_clientid\ +seek/ ) {
+			(
+				$data->{stats}{client_rpc_FreeStateID},  $data->{stats}{client_rpc_getdevicelist},
+				$data->{stats}{client_rpc_BindConnSess}, $data->{stats}{client_rpc_DestroyClId},
+				$data->{stats}{client_rpc_Seek},
+			) = split( /[\ \t]+/m, $line );
+		} elsif ( $previous_line =~ /allocate\ +deallocate\ +layoutstats\ +clone/ ) {
+			(
+				$data->{stats}{client_rpc_Allocate},    $data->{stats}{client_rpc_Deallocate},
+				$data->{stats}{client_rpc_layoutstats}, $data->{stats}{client_rpc_clone},
+			) = split( /[\ \t]+/m, $line );
+		}
+		$previous_line = $line;
+	} ## end foreach my $line (@output_split)
+} ## end if ( $^O eq 'linux' )
 
 ####
 ####
@@ -601,7 +795,7 @@ if ( $data->{is_client} ) {
 					}
 				}
 				push(
-					@{ $data->{mounted} },
+					@{ $data->{mounts} },
 					{ host => $host, rpath => $rpath, lpath => $lpath, flags => \@flags, opts => \%opts }
 				);
 			} ## end elsif ( $line =~ /\,/ && defined($host) && defined...)
@@ -638,7 +832,7 @@ if ( $data->{is_client} ) {
 					}
 				}
 				push(
-					@{ $data->{mounted} },
+					@{ $data->{mounts} },
 					{ host => $host, rpath => $rpath, lpath => $lpath, flags => \@flags, opts => \%opts }
 				);
 			} ## end elsif ( $line =~ /Flags\:[\ \t]+/ && defined(...))
