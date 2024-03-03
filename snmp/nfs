@@ -1,5 +1,59 @@
 #!/usr/bin/env perl
 
+=head1 NAME
+
+nfs - LibreNMS JSON style SNMP extend for NFS monitoring
+
+=head1 VERSION
+
+0.0.1
+
+=head1 SYNOPSIS
+
+nfs [B<-w>] [B<-b>] [B<-o> <cache base>]
+
+nfs --help|-h
+
+nfs --version|-v
+
+=head1 SNMPD CONFIG
+
+    extend nfs /etc/snmp/extends/nfs -b
+
+or if using cron...
+
+    extend nfs cat /var/cache/nfs.json.snmp
+
+=head1 DESCRIPTION
+
+Uses showmount and nfsstat to gather information for the OSes below for NFS.
+
+    FreeBSD
+    Linux
+
+=head1 FLAGS
+
+=head2 -w
+
+Write the results out.
+
+=head2 -b
+
+Print out the compressed data if GZip+Base64 is smaller.
+
+=head2 -o <cache base>
+
+Where to write the results to. Defaults to '/var/cache/nfs.json',
+meaning it will be written out to the two locations.
+
+    /var/cache/nfs.json
+    /var/cache/nfs.json.snmp
+
+The later is for use with returning data for SNMP. Will be compressed
+if possible.
+
+=cut
+
 ##
 ##
 ## General Notes
@@ -42,14 +96,13 @@ $ENV{PATH} = $ENV{PATH} . ':/sbin:/usr/sbin';
 my $pretty;
 my $cache_base = '/var/cache/nfs.json';
 my $write;
-my $compress = 1;
+my $compress;
 my $version;
 my $help;
 GetOptions(
-	p       => \$pretty,
-	'b=s'   => \$compress,
 	'o=s'   => \$cache_base,
-	'w'     => \$write,
+	w       => \$write,
+	b       => \$compress,
 	v       => \$version,
 	version => \$version,
 	h       => \$help,
@@ -844,11 +897,44 @@ if ( $data->{is_client} ) {
 $to_return->{data} = $data;
 
 #finally render the JSON
-my $j = JSON->new;
-if ($pretty) {
-	$j->pretty(1);
-}
-print $j->encode($to_return);
-if ( !$pretty ) {
-	print "\n";
-}
+my $raw_json = encode_json($to_return);
+if ($write) {
+	write_file( $cache_base, $raw_json );
+	# compress and write to the cache file for it
+	my $compressed_string;
+	gzip \$raw_json => \$compressed_string;
+	my $compressed = encode_base64($compressed_string);
+	$compressed =~ s/\n//g;
+	$compressed = $compressed . "\n";
+	my $print_compressed = 0;
+	if ( length($compressed) > length($raw_json) ) {
+		write_file( $cache_base . '.snmp', $raw_json );
+	} else {
+		write_file( $cache_base . '.snmp', $compressed );
+		$print_compressed = 1;
+	}
+
+	if ( $compress && $print_compressed ) {
+		print $compressed;
+	} else {
+		print $raw_json;
+	}
+} else {
+	if ( !$compress ) {
+		print $raw_json. "\n";
+		exit;
+	}
+
+	# compress and write to the cache file for it
+	my $compressed_string;
+	gzip \$raw_json => \$compressed_string;
+	my $compressed = encode_base64($compressed_string);
+	$compressed =~ s/\n//g;
+	$compressed = $compressed . "\n";
+	my $print_compressed = 0;
+	if ( length($compressed) > length($raw_json) ) {
+		print $raw_json;
+	} else {
+		print $compressed;
+	}
+} ## end else [ if ($write) ]
