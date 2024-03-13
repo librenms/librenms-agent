@@ -54,30 +54,6 @@ if possible.
 
 =cut
 
-##
-##
-## General Notes
-##
-##
-#
-# FreeBSD used as the design basis given better stats produced and as well
-# as actually documented.
-
-###
-###
-### Linux Notes
-###
-###
-#
-# What the following map to if if there is a FreeBSD equivalent is not clear.
-#
-# fs_locations
-# test_stateid
-# fsid_present
-# open_conf
-# confirm
-# null
-
 use strict;
 use warnings;
 use Getopt::Long;
@@ -662,38 +638,40 @@ if ( $^O eq 'freebsd' ) {
 ####
 ####
 if ( $^O eq 'linux' ) {
-	my $output_raw    = `nfsstat | sed 's/[0-9\.]*\%//g'`;
+	my $output_raw    = `nfsstat -2 -3 -4 -v| sed 's/[0-9\.]*\%//g'`;
 	my @output_split  = split( /\n/, $output_raw );
 	my $previous_line = '';
 	my $mode          = '';
 
 	foreach my $line (@output_split) {
+		$line =~ s/\t/\ /g;
+		$line =~ s/\ +$//g;
 		if ( $line =~ /^[Cc]lient/ ) {
 			$mode = 'client';
 		} elsif ( $line =~ /^[Ss]erver/ ) {
 			$mode = 'server';
 		}
-		if ( $previous_line =~ /packets\ +udp\ +tcp\ +tcpconn/ && $mode eq 'server' ) {
+		if ( $previous_line =~ /^packets\ +udp\ +tcp\ +tcpconn/ && $mode eq 'server' ) {
 			(
 				$data->{stats}{server_network_packets}, $data->{stats}{server_network_udp},
 				$data->{stats}{server_network_tcp},     $data->{stats}{server_network_tcpconn},
 			) = split( /[\t\ ]+/, $line );
-		} elsif ( $previous_line =~ /calls\ +badcalls\ +badfmt\ +badauth\ +badclnt/ && $mode eq 'server' ) {
+		} elsif ( $previous_line =~ /^calls\ +badcalls\ +badfmt\ +badauth\ +badclnt/ && $mode eq 'server' ) {
 			(
 				$data->{stats}{server_rpcStats_calls},  $data->{stats}{server_rpcStats_badcalls},
 				$data->{stats}{server_rpcStats_badfmt}, $data->{stats}{server_rpcStats_badauth},
 				$data->{stats}{server_rpcStats_badclnt},
 			) = split( /[\t\ ]+/, $line );
-		} elsif ( $previous_line =~ /hits\ +misses\ +nocache/ && $mode eq 'server' ) {
+		} elsif ( $previous_line =~ /^hits\ +misses\ +nocache/ && $mode eq 'server' ) {
 			(
 				$data->{stats}{server_cache_hits},
 				$data->{stats}{server_cache_Misses},
 				$data->{stats}{server_cache_nocache},
 			) = split( /[\t\ ]+/, $line );
-		} elsif ( $previous_line =~ /read\ +write/ && $mode eq 'server' ) {
+		} elsif ( $previous_line =~ /^read\ +write/ && $mode eq 'server' ) {
 			( $data->{stats}{server_io_read}, $data->{stats}{server_io_write}, ) = split( /[\t\ ]+/, $line );
 		} elsif ( $previous_line
-			=~ /size\ +0\-10\%\ +10\-20\%\ +20\-3\0%\ +30\-40\%\ +40\-50\%\ +50\-60\%\ +60\-70\%\ +70\-80\%\ +80\-90\%\ +90\-100\%\ +notfound/
+			=~ /^size\ +0\-10\%\ +10\-20\%\ +20\-3\0%\ +30\-40\%\ +40\-50\%\ +50\-60\%\ +60\-70\%\ +70\-80\%\ +80\-90\%\ +90\-100\%\ +notfound/
 			&& $mode eq 'server' )
 		{
 			(
@@ -704,131 +682,131 @@ if ( $^O eq 'linux' ) {
 				$data->{stats}{server_RAcache_8}, $data->{stats}{server_RAcache_9},
 				$data->{stats}{server_RAcache_notfound}
 			) = split( /[\t\ ]+/, $line );
-		} elsif ( $previous_line =~ /lookup\ +anon\ +ncachedir\ +ncachenondir\ +stale/ && $mode eq 'server' ) {
+		} elsif ( $previous_line =~ /^lookup\ +anon\ +ncachedir\ +ncachenondir\ +stale/ && $mode eq 'server' ) {
 			(
 				$data->{stats}{server_FHcache_lookup},    $data->{stats}{server_FHcache_anon},
 				$data->{stats}{server_FHcache_ncachedir}, $data->{stats}{server_FHcache_ncachenondir},
 				$data->{stats}{server_FHcache_stale},
 			) = split( /[\t\ ]+/, $line );
-		} elsif ( $previous_line =~ /null\ +getattr\ +setattr\ +root\ +lookup/ && $mode eq 'server' ) {
+		} elsif ( $previous_line =~ /^null\ +getattr\ +setattr\ +root\ +lookup/ && $mode eq 'server' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{server_rpc_null}    += $split[0];
 			$data->{stats}{server_rpc_Getattr} += $split[1];
 			$data->{stats}{server_rpc_Setattr} += $split[2];
 			$data->{stats}{server_rpc_root}    += $split[3];
 			$data->{stats}{server_rpc_Lookup}  += $split[4];
-		} elsif ( $previous_line =~ /readlink\ +read\ +wrcache\ +write\ +create/ && $mode eq 'server' ) {
+		} elsif ( $previous_line =~ /^readlink\ +read\ +wrcache\ +write\ +create/ && $mode eq 'server' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{server_rpc_Readlink} += $split[0];
 			$data->{stats}{server_rpc_Read}     += $split[1];
 			$data->{stats}{server_rpc_wrcache}  += $split[2];
 			$data->{stats}{server_rpc_Write}    += $split[3];
 			$data->{stats}{server_rpc_Create}   += $split[4];
-		} elsif ( $previous_line =~ /remove\ +rename\ +link\ +symlink\ +mkdir/ && $mode eq 'server' ) {
+		} elsif ( $previous_line =~ /^remove\ +rename\ +link\ +symlink\ +mkdir/ && $mode eq 'server' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{server_rpc_Remove}  += $split[0];
 			$data->{stats}{server_rpc_Rename}  += $split[1];
 			$data->{stats}{server_rpc_Link}    += $split[2];
 			$data->{stats}{server_rpc_Symlink} += $split[3];
 			$data->{stats}{server_rpc_Mkdir}   += $split[4];
-		} elsif ( $previous_line =~ /rmdir\ +readdir\ +fsstat/ && $mode eq 'server' ) {
+		} elsif ( $previous_line =~ /^rmdir\ +readdir\ +fsstat/ && $mode eq 'server' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{server_rpc_Rmdir}   += $split[0];
 			$data->{stats}{server_rpc_Readdir} += $split[1];
 			$data->{stats}{server_rpc_Fsstat}  += $split[2];
-		} elsif ( $previous_line =~ /null\ +getattr\ +setattr\ +lookup\ +access/ && $mode eq 'server' ) {
+		} elsif ( $previous_line =~ /^null\ +getattr\ +setattr\ +lookup\ +access/ && $mode eq 'server' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{server_rpc_null}    += $split[0];
 			$data->{stats}{server_rpc_Getattr} += $split[1];
 			$data->{stats}{server_rpc_Setattr} += $split[2];
 			$data->{stats}{server_rpc_Lookup}  += $split[3];
 			$data->{stats}{server_rpc_Access}  += $split[4];
-		} elsif ( $previous_line =~ /readlink\ +read\ +write\ +create\ +mkdir/ && $mode eq 'server' ) {
+		} elsif ( $previous_line =~ /^readlink\ +read\ +write\ +create\ +mkdir/ && $mode eq 'server' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{server_rpc_Readlink} += $split[0];
 			$data->{stats}{server_rpc_Read}     += $split[1];
 			$data->{stats}{server_rpc_Write}    += $split[2];
 			$data->{stats}{server_rpc_Create}   += $split[3];
 			$data->{stats}{server_rpc_Mkdir}    += $split[4];
-		} elsif ( $previous_line =~ /symlink\ +mknod\ +remove\ +rmdir\ +rename/ && $mode eq 'server' ) {
+		} elsif ( $previous_line =~ /^symlink\ +mknod\ +remove\ +rmdir\ +rename/ && $mode eq 'server' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{server_rpc_Symlink} += $split[0];
 			$data->{stats}{server_rpc_Mknod}   += $split[1];
 			$data->{stats}{server_rpc_Remove}  += $split[2];
 			$data->{stats}{server_rpc_Rmdir}   += $split[3];
 			$data->{stats}{server_rpc_Rename}  += $split[4];
-		} elsif ( $previous_line =~ /link\ +readdir\ +readdirplus\ +fsstat\ +fsinfo/ && $mode eq 'server' ) {
+		} elsif ( $previous_line =~ /^link\ +readdir\ +readdirplus\ +fsstat\ +fsinfo/ && $mode eq 'server' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{server_rpc_Link}     += $split[0];
 			$data->{stats}{server_rpc_Readdir}  += $split[1];
 			$data->{stats}{server_rpc_ReadPlus} += $split[2];
 			$data->{stats}{server_rpc_Fsstat}   += $split[3];
 			$data->{stats}{server_rpc_FSinfo}   += $split[4];
-		} elsif ( $previous_line =~ /pathconf\ +commit/ && $mode eq 'server' ) {
+		} elsif ( $previous_line =~ /^pathconf\ +commit/ && $mode eq 'server' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{server_rpc_pathConf} += $split[0];
 			$data->{stats}{server_rpc_Commit}   += $split[1];
-		} elsif ( $previous_line =~ /null\ +compound/ && $mode eq 'server' ) {
+		} elsif ( $previous_line =~ /^null\ +compound/ && $mode eq 'server' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{server_rpc_null}     += $split[0];
 			$data->{stats}{server_rpc_compound} += $split[1];
-		} elsif ( $previous_line =~ /op0\-unused\ +op1\-unused\ +op2\-future\ +access\ +close/ && $mode eq 'server' ) {
+		} elsif ( $previous_line =~ /^op0\-unused\ +op1\-unused\ +op2\-future\ +access\ +close/ && $mode eq 'server' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{server_rpc_op0_unused} += $split[0];
 			$data->{stats}{server_rpc_op1_unused} += $split[1];
 			$data->{stats}{server_rpc_op2_future} += $split[2];
 			$data->{stats}{server_rpc_Access}     += $split[3];
 			$data->{stats}{server_rpc_Close}      += $split[4];
-		} elsif ( $previous_line =~ /commit\ +create\ +delegpurge\ +delegreturn\ +getattr/ && $mode eq 'server' ) {
+		} elsif ( $previous_line =~ /^commit\ +create\ +delegpurge\ +delegreturn\ +getattr/ && $mode eq 'server' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{server_rpc_Commit} += $split[0];
 			$data->{stats}{server_rpc_Create} += $split[1];
 			$data->{stats}{server_rpc_DelePurge} = $split[2];
 			$data->{stats}{server_rpc_DelRet}    = $split[3];
 			$data->{stats}{server_rpc_Getattr} += $split[4];
-		} elsif ( $previous_line =~ /getfh\ +link\ +lock\ +lockt\ +locku/ && $mode eq 'server' ) {
+		} elsif ( $previous_line =~ /^getfh\ +link\ +lock\ +lockt\ +locku/ && $mode eq 'server' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{server_rpc_GetFH} += $split[0];
 			$data->{stats}{server_rpc_Link}  += $split[1];
 			$data->{stats}{server_rpc_Lock}  += $split[2];
 			$data->{stats}{server_rpc_LockT} += $split[3];
 			$data->{stats}{server_rpc_LockU} += $split[4];
-		} elsif ( $previous_line =~ /lookup\ +lookup_root\ +nverify\ +open\ +openattr/ && $mode eq 'server' ) {
+		} elsif ( $previous_line =~ /^lookup\ +lookup_root\ +nverify\ +open\ +openattr/ && $mode eq 'server' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{server_rpc_Lookup}  += $split[0];
 			$data->{stats}{server_rpc_LookupP} += $split[1];
 			$data->{stats}{server_rpc_NVerify} += $split[2];
 			$data->{stats}{server_rpc_Open}    += $split[3];
 			$data->{stats}{server_rpc_OpeAttr} += $split[4];
-		} elsif ( $previous_line =~ /open_conf\ +open_dgrd\ +putfh\ +putpubfh\ +putrootfh/ && $mode eq 'server' ) {
+		} elsif ( $previous_line =~ /^open_conf\ +open_dgrd\ +putfh\ +putpubfh\ +putrootfh/ && $mode eq 'server' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{server_rpc_OpenCfrm}  += $split[0];
 			$data->{stats}{server_rpc_OpenDwnGr} += $split[1];
 			$data->{stats}{server_rpc_PutFH}     += $split[2];
 			$data->{stats}{server_rpc_PutPubFH}  += $split[3];
 			$data->{stats}{server_rpc_PutRootFH} += $split[4];
-		} elsif ( $previous_line =~ /read\ +readdir\ +readlink\ +remove\ +rename/ && $mode eq 'server' ) {
+		} elsif ( $previous_line =~ /^read\ +readdir\ +readlink\ +remove\ +rename/ && $mode eq 'server' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{server_rpc_Read}     += $split[0];
 			$data->{stats}{server_rpc_Readdir}  += $split[1];
 			$data->{stats}{server_rpc_Readlink} += $split[2];
 			$data->{stats}{server_rpc_Remove}   += $split[3];
 			$data->{stats}{server_rpc_Rename}   += $split[4];
-		} elsif ( $previous_line =~ /renew\ +restorefh\ +savefh\ +secinfo\ +setattr/ && $mode eq 'server' ) {
+		} elsif ( $previous_line =~ /^renew\ +restorefh\ +savefh\ +secinfo\ +setattr/ && $mode eq 'server' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{server_rpc_Renew}     += $split[0];
 			$data->{stats}{server_rpc_RestoreFH} += $split[1];
 			$data->{stats}{server_rpc_SaveFH}    += $split[2];
 			$data->{stats}{server_rpc_Secinfo}   += $split[3];
 			$data->{stats}{server_rpc_Setattr}   += $split[4];
-		} elsif ( $previous_line =~ /setcltid\ +setcltidconf\ +verify\ +write\ +rellockowner/ && $mode eq 'server' ) {
+		} elsif ( $previous_line =~ /^setcltid\ +setcltidconf\ +verify\ +write\ +rellockowner/ && $mode eq 'server' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{server_rpc_SetClId}    += $split[0];
 			$data->{stats}{server_rpc_SetClIdCf}  += $split[1];
 			$data->{stats}{server_rpc_Verify}     += $split[2];
 			$data->{stats}{server_rpc_Write}      += $split[3];
 			$data->{stats}{server_rpc_RelLockOwn} += $split[4];
-		} elsif ( $previous_line =~ /bc_ctl\ +bind_conn\ +exchange_id\ +create_ses\ +destroy_ses/ && $mode eq 'server' )
+		} elsif ( $previous_line =~ /^bc_ctl\ +bind_conn\ +exchange_id\ +create_ses\ +destroy_ses/ && $mode eq 'server' )
 		{
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{server_rpc_BackChannelCt} += $split[0];
@@ -836,7 +814,7 @@ if ( $^O eq 'linux' ) {
 			$data->{stats}{server_rpc_ExchangeID}    += $split[2];
 			$data->{stats}{server_rpc_CreateSess}    += $split[3];
 			$data->{stats}{server_rpc_DestroySess}   += $split[4];
-		} elsif ( $previous_line =~ /bc_ctl\ +bind_conn\ +exchange_id\ +create_ses\ +destroy_ses/ && $mode eq 'server' )
+		} elsif ( $previous_line =~ /^bc_ctl\ +bind_conn\ +exchange_id\ +create_ses\ +destroy_ses/ && $mode eq 'server' )
 		{
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{server_rpc_BackChannelCt} += $split[0];
@@ -844,7 +822,7 @@ if ( $^O eq 'linux' ) {
 			$data->{stats}{server_rpc_ExchangeID}    += $split[2];
 			$data->{stats}{server_rpc_CreateSess}    += $split[3];
 			$data->{stats}{server_rpc_DestroySess}   += $split[4];
-		} elsif ( $previous_line =~ /free_stateid\ +getdirdeleg\ +getdevinfo\ +getdevlist\ +layoutcommit/
+		} elsif ( $previous_line =~ /^free_stateid\ +getdirdeleg\ +getdevinfo\ +getdevlist\ +layoutcommit/
 			&& $mode eq 'server' )
 		{
 			my @split = split( /[\t\ ]+/, $line );
@@ -853,7 +831,7 @@ if ( $^O eq 'linux' ) {
 			$data->{stats}{server_rpc_GetDevInfo}   += $split[2];
 			$data->{stats}{server_rpc_GetDevList}   += $split[3];
 			$data->{stats}{server_rpc_layoutCommit} += $split[4];
-		} elsif ( $previous_line =~ /layoutget\ +layoutreturn\ +secinfononam\ +sequence\ +set_ssv/
+		} elsif ( $previous_line =~ /^layoutget\ +layoutreturn\ +secinfononam\ +sequence\ +set_ssv/
 			&& $mode eq 'server' )
 		{
 			my @split = split( /[\t\ ]+/, $line );
@@ -862,7 +840,7 @@ if ( $^O eq 'linux' ) {
 			$data->{stats}{server_rpc_SecInfNoName} += $split[2];
 			$data->{stats}{server_rpc_Sequence}     += $split[3];
 			$data->{stats}{server_rpc_SetSSV}       += $split[4];
-		} elsif ( $previous_line =~ /test_stateid\ +want_deleg\ +destroy_clid\ +reclaim_comp\ +allocate/
+		} elsif ( $previous_line =~ /^test_stateid\ +want_deleg\ +destroy_clid\ +reclaim_comp\ +allocate/
 			&& $mode eq 'server' )
 		{
 			my @split = split( /[\t\ ]+/, $line );
@@ -871,14 +849,14 @@ if ( $^O eq 'linux' ) {
 			$data->{stats}{server_rpc_DestroyClId}  += $split[2];
 			$data->{stats}{server_rpc_ReclaimCompl} += $split[3];
 			$data->{stats}{server_rpc_Allocate}     += $split[4];
-		} elsif ( $previous_line =~ /copy\ +copy_notify\ +deallocate\ +ioadvise\ +layouterror/ && $mode eq 'server' ) {
+		} elsif ( $previous_line =~ /^copy\ +copy_notify\ +deallocate\ +ioadvise\ +layouterror/ && $mode eq 'server' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{server_rpc_Copy}        += $split[0];
 			$data->{stats}{server_rpc_CopyNotify}  += $split[1];
 			$data->{stats}{server_rpc_Deallocate}  += $split[2];
 			$data->{stats}{server_rpc_IOAdvise}    += $split[3];
 			$data->{stats}{server_rpc_LayoutError} += $split[4];
-		} elsif ( $previous_line =~ /layoutstats\ +offloadcancel\ +offloadstatus\ +readplus\ +seek/
+		} elsif ( $previous_line =~ /^layoutstats\ +offloadcancel\ +offloadstatus\ +readplus\ +seek/
 			&& $mode eq 'server' )
 		{
 			my @split = split( /[\t\ ]+/, $line );
@@ -887,10 +865,10 @@ if ( $^O eq 'linux' ) {
 			$data->{stats}{server_rpc_OffloadStat} += $split[2];
 			$data->{stats}{server_rpc_ReadPlus}    += $split[3];
 			$data->{stats}{server_rpc_Seek}        += $split[4];
-		} elsif ( $previous_line =~ /write_same/ && $mode eq 'server' ) {
+		} elsif ( $previous_line =~ /^write_same/ && $mode eq 'server' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{server_rpc_WriteSame} += $split[0];
-		} elsif ( $previous_line =~ /packets\ +udp\ +tcp\ +tcpconn/ && $mode eq 'client' ) {
+		} elsif ( $previous_line =~ /^packets\ +udp\ +tcp\ +tcpconn/ && $mode eq 'client' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{client_network_packets} += $split[0];
 			$data->{stats}{client_network_udp}     += $split[1];
@@ -901,107 +879,107 @@ if ( $^O eq 'linux' ) {
 			$data->{stats}{client_rpc_info_calls}      += $split[0];
 			$data->{stats}{client_rpc_info_Retries}    += $split[1];
 			$data->{stats}{client_rpc_info_authrefrsh} += $split[2];
-		} elsif ( $previous_line =~ /null\ +getattr\ +setattr\ +root\ +lookup/ && $mode eq 'client' ) {
+		} elsif ( $previous_line =~ /^null\ +getattr\ +setattr\ +root\ +lookup/ && $mode eq 'client' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{client_rpc_null}    += $split[0];
 			$data->{stats}{client_rpc_Getattr} += $split[1];
 			$data->{stats}{client_rpc_Setattr} += $split[2];
 			$data->{stats}{client_rpc_root}    += $split[3];
 			$data->{stats}{client_rpc_Lookup}  += $split[4];
-		} elsif ( $previous_line =~ /readlink\ +read\ +wrcache\ +write\ +create/ && $mode eq 'client' ) {
+		} elsif ( $previous_line =~ /^readlink\ +read\ +wrcache\ +write\ +create/ && $mode eq 'client' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{client_rpc_Readlink} += $split[0];
 			$data->{stats}{client_rpc_Read}     += $split[1];
 			$data->{stats}{client_rpc_wrcache}  += $split[2];
 			$data->{stats}{client_rpc_Write}    += $split[3];
 			$data->{stats}{client_rpc_Create}   += $split[4];
-		} elsif ( $previous_line =~ /remove\ +rename\ +link\ +symlink\ +mkdir/ && $mode eq 'client' ) {
+		} elsif ( $previous_line =~ /^remove\ +rename\ +link\ +symlink\ +mkdir/ && $mode eq 'client' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{client_rpc_Remove}  += $split[0];
 			$data->{stats}{client_rpc_Rename}  += $split[1];
 			$data->{stats}{client_rpc_Link}    += $split[2];
 			$data->{stats}{client_rpc_Symlink} += $split[3];
 			$data->{stats}{client_rpc_Mkdir}   += $split[4];
-		} elsif ( $previous_line =~ /rmdir\ +readdir\ +fsstat/ && $mode eq 'client' ) {
+		} elsif ( $previous_line =~ /^rmdir\ +readdir\ +fsstat/ && $mode eq 'client' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{client_rpc_Rmdir}   += $split[0];
 			$data->{stats}{client_rpc_Readdir} += $split[1];
 			$data->{stats}{client_rpc_Fsstat}  += $split[2];
-		} elsif ( $previous_line =~ /null\ +getattr\ +setattr\ +lookup\ +access/ && $mode eq 'client' ) {
+		} elsif ( $previous_line =~ /^null\ +getattr\ +setattr\ +lookup\ +access/ && $mode eq 'client' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{client_rpc_null}    += $split[0];
 			$data->{stats}{client_rpc_Getattr} += $split[1];
 			$data->{stats}{client_rpc_Setattr} += $split[2];
 			$data->{stats}{client_rpc_Lookup}  += $split[3];
 			$data->{stats}{client_rpc_Access}  += $split[4];
-		} elsif ( $previous_line =~ /readlink\ +read\ +write\ +create\ +mkdir/ && $mode eq 'client' ) {
+		} elsif ( $previous_line =~ /^readlink\ +read\ +write\ +create\ +mkdir/ && $mode eq 'client' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{client_rpc_Readlink} += $split[0];
 			$data->{stats}{client_rpc_Read}     += $split[1];
 			$data->{stats}{client_rpc_Write}    += $split[2];
 			$data->{stats}{client_rpc_Create}   += $split[3];
 			$data->{stats}{client_rpc_Mkdir}    += $split[4];
-		} elsif ( $previous_line =~ /symlink\ +mknod\ +remove\ +rmdir\ +rename/ && $mode eq 'client' ) {
+		} elsif ( $previous_line =~ /^symlink\ +mknod\ +remove\ +rmdir\ +rename/ && $mode eq 'client' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{client_rpc_Symlink} += $split[0];
 			$data->{stats}{client_rpc_Mknod}   += $split[1];
 			$data->{stats}{client_rpc_Remove}  += $split[2];
 			$data->{stats}{client_rpc_Rmdir}   += $split[3];
 			$data->{stats}{client_rpc_Rename}  += $split[4];
-		} elsif ( $previous_line =~ /link\ +readdir\ +readdirplus\ +fsstat\ +fsinfo/ && $mode eq 'client' ) {
+		} elsif ( $previous_line =~ /^link\ +readdir\ +readdirplus\ +fsstat\ +fsinfo/ && $mode eq 'client' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{client_rpc_Link}    += $split[0];
 			$data->{stats}{client_rpc_Readdir} += $split[1];
 			$data->{stats}{client_rpc_Readdir} += $split[2];
 			$data->{stats}{client_rpc_Fsstat}  += $split[3];
 			$data->{stats}{client_rpc_FSinfo}  += $split[4];
-		} elsif ( $previous_line =~ /pathconf\ +commit/ && $mode eq 'client' ) {
+		} elsif ( $previous_line =~ /^pathconf\ +commit/ && $mode eq 'client' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{client_rpc_pathConf} += $split[0];
 			$data->{stats}{client_rpc_Commit}   += $split[1];
-		} elsif ( $previous_line =~ /null\ +read\ +write\ +commit\ +open/ && $mode eq 'client' ) {
+		} elsif ( $previous_line =~ /^null\ +read\ +write\ +commit\ +open/ && $mode eq 'client' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{client_rpc_null}   += $split[0];
 			$data->{stats}{client_rpc_Read}   += $split[1];
 			$data->{stats}{client_rpc_Write}  += $split[2];
 			$data->{stats}{client_rpc_Commit} += $split[3];
 			$data->{stats}{client_rpc_Open}   += $split[4];
-		} elsif ( $previous_line =~ /open_conf\ +open_noat\ +open_dgrd\ +close\ +setattr/ && $mode eq 'client' ) {
+		} elsif ( $previous_line =~ /^open_conf\ +open_noat\ +open_dgrd\ +close\ +setattr/ && $mode eq 'client' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{client_rpc_OpenCfr}    += $split[0];
 			$data->{stats}{client_rpc_OpenLayout} += $split[1];
 			$data->{stats}{client_rpc_OpenDownGr} += $split[2];
 			$data->{stats}{client_rpc_Close}      += $split[3];
 			$data->{stats}{client_rpc_Setattr}    += $split[4];
-		} elsif ( $previous_line =~ /fsinfo\ +renew\ +setclntid\ +confirm\ +lock/ && $mode eq 'client' ) {
+		} elsif ( $previous_line =~ /^fsinfo\ +renew\ +setclntid\ +confirm\ +lock/ && $mode eq 'client' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{client_rpc_FSinfo}  += $split[0];
 			$data->{stats}{client_rpc_Rename}  += $split[1];
 			$data->{stats}{client_rpc_SetClId} += $split[2];
 			$data->{stats}{client_rpc_confirm} += $split[3];
 			$data->{stats}{client_rpc_Lock}    += $split[4];
-		} elsif ( $previous_line =~ /lockt\ +locku\ +access\ +getattr\ +lookup/ && $mode eq 'client' ) {
+		} elsif ( $previous_line =~ /^lockt\ +locku\ +access\ +getattr\ +lookup/ && $mode eq 'client' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{client_rpc_LockT}   += $split[0];
 			$data->{stats}{client_rpc_LockU}   += $split[1];
 			$data->{stats}{client_rpc_Access}  += $split[2];
 			$data->{stats}{client_rpc_Getattr} += $split[3];
 			$data->{stats}{client_rpc_Lookup}  += $split[4];
-		} elsif ( $previous_line =~ /lookup_root\ +remove\ +rename\ +link\ +symlink/ && $mode eq 'client' ) {
+		} elsif ( $previous_line =~ /^lookup_root\ +remove\ +rename\ +link\ +symlink/ && $mode eq 'client' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{client_rpc_LookupOpen} += $split[0];
 			$data->{stats}{client_rpc_Remove}     += $split[1];
 			$data->{stats}{client_rpc_Rename}     += $split[2];
 			$data->{stats}{client_rpc_Link}       += $split[3];
 			$data->{stats}{client_rpc_Symlink}    += $split[4];
-		} elsif ( $previous_line =~ /create\ +pathconf\ +statfs\ +readlink\ +readdir/ && $mode eq 'client' ) {
+		} elsif ( $previous_line =~ /^create\ +pathconf\ +statfs\ +readlink\ +readdir/ && $mode eq 'client' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{client_rpc_Create}   += $split[0];
 			$data->{stats}{client_rpc_pathConf} += $split[1];
 			$data->{stats}{client_rpc_Fsstat}   += $split[2];
 			$data->{stats}{client_rpc_Readlink} += $split[3];
 			$data->{stats}{client_rpc_Readdir}  += $split[4];
-		} elsif ( $previous_line =~ /server_caps\ +delegreturn\ +getacl\ +setacl\ +fs_locations/ && $mode eq 'client' )
+		} elsif ( $previous_line =~ /^server_caps\ +delegreturn\ +getacl\ +setacl\ +fs_locations/ && $mode eq 'client' )
 		{
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{client_rpc_server_caps}  += $split[0];
@@ -1009,7 +987,7 @@ if ( $^O eq 'linux' ) {
 			$data->{stats}{client_rpc_Getattr}      += $split[2];
 			$data->{stats}{client_rpc_SetAcl}       += $split[3];
 			$data->{stats}{client_rpc_fs_locations} += $split[4];
-		} elsif ( $previous_line =~ /rel_lkowner\ +secinfo\ +fsid_present\ +exchange_id\ +create_session/
+		} elsif ( $previous_line =~ /^rel_lkowner\ +secinfo\ +fsid_present\ +exchange_id\ +create_session/
 			&& $mode eq 'client' )
 		{
 			my @split = split( /[\t\ ]+/, $line );
@@ -1018,7 +996,7 @@ if ( $^O eq 'linux' ) {
 			$data->{stats}{client_rpc_fsid_present} += $split[2];
 			$data->{stats}{client_rpc_ExchangeId}   += $split[3];
 			$data->{stats}{client_rpc_CreateSess}   += $split[4];
-		} elsif ( $previous_line =~ /destroy_session\ +sequence\ +get_lease_time\ +reclaim_comp\ +layoutget/
+		} elsif ( $previous_line =~ /^destroy_session\ +sequence\ +get_lease_time\ +reclaim_comp\ +layoutget/
 			&& $mode eq 'client' )
 		{
 			my @split = split( /[\t\ ]+/, $line );
@@ -1027,7 +1005,7 @@ if ( $^O eq 'linux' ) {
 			$data->{stats}{client_rpc_get_lease_time} += $split[2];
 			$data->{stats}{client_rpc_ReclaimCompl}   += $split[3];
 			$data->{stats}{client_rpc_LayoutGet}      += $split[4];
-		} elsif ( $previous_line =~ /getdevinfo\ +layoutcommit\ +layoutreturn\ +secinfo_no\ +test_stateid/
+		} elsif ( $previous_line =~ /^getdevinfo\ +layoutcommit\ +layoutreturn\ +secinfo_no\ +test_stateid/
 			&& $mode eq 'client' )
 		{
 			my @split = split( /[\t\ ]+/, $line );
@@ -1036,7 +1014,7 @@ if ( $^O eq 'linux' ) {
 			$data->{stats}{client_rpc_LayoutReturn} += $split[2];
 			$data->{stats}{client_rpc_secinfo_no}   += $split[3];
 			$data->{stats}{client_rpc_test_stateid} += $split[4];
-		} elsif ( $previous_line =~ /free_stateid\ +getdevicelist\ +bind_conn_to_ses\ +destroy_clientid\ +seek/
+		} elsif ( $previous_line =~ /^free_stateid\ +getdevicelist\ +bind_conn_to_ses\ +destroy_clientid\ +seek/
 			&& $mode eq 'client' )
 		{
 			my @split = split( /[\t\ ]+/, $line );
@@ -1045,7 +1023,7 @@ if ( $^O eq 'linux' ) {
 			$data->{stats}{client_rpc_BindConnSess}  += $split[2];
 			$data->{stats}{client_rpc_DestroyClId}   += $split[3];
 			$data->{stats}{client_rpc_Seek}          += $split[4];
-		} elsif ( $previous_line =~ /allocate\ +deallocate\ +layoutstats\ +clone/ && $mode eq 'client' ) {
+		} elsif ( $previous_line =~ /^allocate\ +deallocate\ +layoutstats\ +clone/ && $mode eq 'client' ) {
 			my @split = split( /[\t\ ]+/, $line );
 			$data->{stats}{client_rpc_Allocate}    += $split[0];
 			$data->{stats}{client_rpc_Deallocate}  += $split[1];
