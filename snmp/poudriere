@@ -24,8 +24,6 @@ or if using cron...
 
     extend poudriere cat /var/cache/poudriere.json.snmp
 
-=head1 DESCRIPTION
-
 =head1 FLAGS
 
 =head2 -w
