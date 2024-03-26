@@ -26,11 +26,6 @@ or if using cron...
 
 =head1 DESCRIPTION
 
-Uses showmount and nfsstat to gather information for the OSes below for NFS.
-
-    FreeBSD
-    Linux
-
 =head1 FLAGS
 
 =head2 -w
@@ -63,35 +58,35 @@ use IO::Compress::Gzip qw(gzip $GzipError);
 use Pod::Usage;
 use JSON;
 
-sub time_to_seconds{
-	my $time=$_[0];
+sub time_to_seconds {
+	my $time = $_[0];
 
-	if (!defined($time)) {
+	if ( !defined($time) ) {
 		return 0;
 	}
 
-	if ($time=~/^0\:[0-9]+\.[0-9]+$/) {
-		$time=~s/^0\://;
+	if ( $time =~ /^0\:[0-9]+\.[0-9]+$/ ) {
+		$time =~ s/^0\://;
 		return $time;
-	}elsif ($time=~/^[0-9]+\:[0-9]+\.[0-9]+$/) {
-		my $minutes=$time;
-		$minutes=~s/\:.*//;
-		$time=~s/.*\://;
-		$time = ($minutes * 60) + $time;
+	} elsif ( $time =~ /^[0-9]+\:[0-9]+\.[0-9]+$/ ) {
+		my $minutes = $time;
+		$minutes =~ s/\:.*//;
+		$time    =~ s/.*\://;
+		$time = ( $minutes * 60 ) + $time;
 		return $time;
-	}elsif ($time=~/^[0-9]+D\:[0-9]+\:[0-9]+\.[0-9]+$/) {
-		my $days=$time;
-		$days=~s/D\:.*$//;
-		my $minutes=$time;
-		$minutes=~s/^.*D\://;
-		$minutes=~s/\:.*//;
-		$time = ($days * 86400) + ($minutes * 60) + $time;
+	} elsif ( $time =~ /^[0-9]+D\:[0-9]+\:[0-9]+\.[0-9]+$/ ) {
+		my $days = $time;
+		$days =~ s/D\:.*$//;
+		my $minutes = $time;
+		$minutes =~ s/^.*D\://;
+		$minutes =~ s/\:.*//;
+		$time = ( $days * 86400 ) + ( $minutes * 60 ) + $time;
 		return $time;
 	}
 
 	# return 0 for anything unknown
 	return 0;
-}
+} ## end sub time_to_seconds
 
 #the version of returned data
 my $VERSION = 1;
@@ -133,8 +128,8 @@ my $to_return = {
 };
 my $data = {
 	status     => '',
-			build_info => '',
-			not_done => 0,
+	build_info => '',
+	not_done   => 0,
 	stats      => {
 		'copy-on-write-faults'         => 0,
 		'cpu-time'                     => 0,
@@ -166,21 +161,32 @@ my $data = {
 		'FETCH'                        => 0,
 		'REMAIN'                       => 0,
 		'TIME'                         => 0,
+		'check-sanity'                 => 0,
+		'pkg-depends'                  => 0,
+		'fetch-depends'                => 0,
+		'fetch checksum'               => 0,
+		'extract-depends'              => 0,
+		'extract'                      => 0,
+		'patch-depends'                => 0,
+		'patch'                        => 0,
+		'build-depends'                => 0,
+		'lib-depends'                  => 0,
+		'configure'                    => 0,
+		'build'                        => 0,
+		'run-depends'                  => 0,
+		'stage'                        => 0,
+		'package'                      => 0,
 	},
 	jailANDportsANDset => {}
 };
 
 my @ps_stats = (
-	'copy-on-write-faults',         'cpu-time',
-	'data-size',                    'elapsed-times',
-	'involuntary-context-switches', 'job-control-count',
-	'major-faults',                 'minor-faults',
-	'percent-cpu',                  'percent-memory',
-	'read-blocks',                  'received-messages',
-	'rss',                          'sent-messages',                'stack-size',
-	'swaps',                        'system-time',
-	'text-size',                    'threads',
-	'user-time',                    'voluntary-context-switches',
+	'copy-on-write-faults',         'cpu-time',          'data-size',    'elapsed-times',
+	'involuntary-context-switches', 'job-control-count', 'major-faults', 'minor-faults',
+	'percent-cpu',                  'percent-memory',    'read-blocks',  'received-messages',
+	'rss',                          'sent-messages',     'stack-size',   'swaps',
+	'system-time',                  'text-size',         'threads',      'user-time',
+	'voluntary-context-switches',
 );
 
 my @poudriere_stats = ( 'QUEUE', 'BUILT', 'FAIL', 'SKIP', 'IGNORE', 'FETCH', 'REMAIN', 'TIME' );
@@ -228,6 +234,21 @@ if ( $? == 0 ) {
 			'threads'                      => 0,
 			'user-time'                    => 0,
 			'voluntary-context-switches'   => 0,
+			'check-sanity'                 => 0,
+			'pkg-depends'                  => 0,
+			'fetch-depends'                => 0,
+			'fetch checksum'               => 0,
+			'extract-depends'              => 0,
+			'extract'                      => 0,
+			'patch-depends'                => 0,
+			'patch'                        => 0,
+			'build-depends'                => 0,
+			'lib-depends'                  => 0,
+			'configure'                    => 0,
+			'build'                        => 0,
+			'run-depends'                  => 0,
+			'stage'                        => 0,
+			'package'                      => 0,
 		};
 		(
 			$found->{SET},   $found->{PORTS},  $found->{JAIL}, $found->{BUILD}, $found->{STATUS},
@@ -235,8 +256,8 @@ if ( $? == 0 ) {
 			$found->{FETCH}, $found->{REMAIN}, $found->{TIME}, $found->{LOGS}
 		) = split( / +/, $status_split[$status_split_int], 14 );
 
-		if ($found->{STATUS} ne 'done') {
-			$data->{not_done}=1;
+		if ( $found->{STATUS} ne 'done' ) {
+			$data->{not_done} = 1;
 		}
 
 		my $jailANDportsANDset;
@@ -247,8 +268,8 @@ if ( $? == 0 ) {
 		}
 
 		foreach my $item (@poudriere_stats) {
-			if ($item eq 'TIME') {
-				$found->{$item} = time_to_seconds($found->{$item});
+			if ( $item eq 'TIME' ) {
+				$found->{$item} = time_to_seconds( $found->{$item} );
 			}
 			$data->{stats}{$item} += $found->{$item};
 		}
@@ -257,14 +278,13 @@ if ( $? == 0 ) {
 		## find the jails
 		##
 		my @jails;
-		my $jail_regex='^'.$jailANDportsANDset.'-job-[0-9]+';
-		my $jls_int=0;
-		while (defined( $jls->{'jail-information'}{jail}[$jls_int] )) {
-			if (
-				$jls->{'jail-information'}{jail}[$jls_int]{hostname} eq $jailANDportsANDset ||
-				$jls->{'jail-information'}{jail}[$jls_int]{hostname} =~ /$jail_regex/
-				) {
-				push(@jails, $jls->{'jail-information'}{jail}[$jls_int]{jid});
+		my $jail_regex = '^' . $jailANDportsANDset . '-job-[0-9]+';
+		my $jls_int    = 0;
+		while ( defined( $jls->{'jail-information'}{jail}[$jls_int] ) ) {
+			if (   $jls->{'jail-information'}{jail}[$jls_int]{hostname} eq $jailANDportsANDset
+				|| $jls->{'jail-information'}{jail}[$jls_int]{hostname} =~ /$jail_regex/ )
+			{
+				push( @jails, $jls->{'jail-information'}{jail}[$jls_int]{jid} );
 			}
 			$jls_int++;
 		}
@@ -272,32 +292,91 @@ if ( $? == 0 ) {
 		##
 		## if we have found jails, grab the information via ps
 		##
-		if (defined($jails[0])) {
-			my $jails_string=join(',', @jails);
+		if ( defined( $jails[0] ) ) {
+			my $jails_string = join( ',', @jails );
 
 			my $ps;
 			eval {
-				$ps = decode_json(`ps -o 'jid %cpu %mem rss cow dsiz etimes inblk jobc majflt minflt msgrcv msgsnd nivcsw nlwp nsigs nswap nvcsw oublk ssiz systime time tsiz usertime' --libxo json -J $jails_string`);
-			   };
+				$ps
+					= decode_json(
+					`ps -o 'jid %cpu %mem rss cow dsiz etimes inblk jobc majflt minflt msgrcv msgsnd nivcsw nlwp nsigs nswap nvcsw oublk ssiz systime time tsiz usertime' --libxo json -J $jails_string`
+					);
+			};
 			if ($@) {
 				$ps = { 'process-information' => { process => [] } };
 			}
-			my $ps_int=0;
-			while (defined( $ps->{'process-information'}{process}[$ps_int] )) {
+			my $ps_int = 0;
+			while ( defined( $ps->{'process-information'}{process}[$ps_int] ) ) {
 				foreach my $item (@ps_stats) {
-					if ($item eq 'user-time' || $item eq 'cpu-time' || $item eq 'system-time') {
-						$ps->{'process-information'}{process}[$ps_int]{$item} = time_to_seconds($ps->{'process-information'}{process}[$ps_int]{$item});
+					if ( $item eq 'user-time' || $item eq 'cpu-time' || $item eq 'system-time' ) {
+						$ps->{'process-information'}{process}[$ps_int]{$item}
+							= time_to_seconds( $ps->{'process-information'}{process}[$ps_int]{$item} );
 					}
 					$data->{stats}{$item} += $ps->{'process-information'}{process}[$ps_int]{$item};
 					$found->{$item} += $ps->{'process-information'}{process}[$ps_int]{$item};
 				}
 				$ps_int++;
-			}
-		}
+			} ## end while ( defined( $ps->{'process-information'}...))
+		} ## end if ( defined( $jails[0] ) )
 
 		$data->{jailANDportsANDset}{$jailANDportsANDset} = $found;
 		$status_split_int++;
 	} ## end while ( defined( $status_split[$status_split_int...]))
+
+	my @build_info_split = split( /\n/, $data->{build_info} );
+	my $current_section;
+	foreach my $line (@build_info_split) {
+		if ( $line =~ /^\[.*\]\ \[.*\] .*Queued.*Built/ ) {
+			$current_section = $line;
+			$current_section =~ s/^\[//;
+			$current_section =~ s/\].*$//;
+		} elsif ( $line =~ /^\[.*\].*\:.*\|.*\:/ ) {
+			my $type;
+			if ( $line =~ /[\ \t]check\-sanity[\ \t]/ ) {
+				$type = 'check-sanity';
+			} elsif ( $line =~ /[\ \t]pkg-depends[\ \t]/ ) {
+				$type = 'pkg-depends';
+			} elsif ( $line =~ /[\ \t]fetch-depends[\ \t]/ ) {
+				$type = 'fetch-depends';
+			} elsif ( $line =~ /[\ \t]fetch[\ \t]/ ) {
+				$type = 'fetch';
+			} elsif ( $line =~ /[\ \t]checksum[\ \t]/ ) {
+				$type = 'checksum';
+			} elsif ( $line =~ /[\ \t]extract\-depends[\ \t]/ ) {
+				$type = 'extract-depends';
+			} elsif ( $line =~ /[\ \t]extract[\ \t]/ ) {
+				$type = 'extract';
+			} elsif ( $line =~ /[\ \t]patch-depends[\ \t]/ ) {
+				$type = 'patch-depends';
+			} elsif ( $line =~ /[\ \t]lib\-depends[\ \t]/ ) {
+				$type = 'lib-depends';
+			} elsif ( $line =~ /[\ \t]configure[\ \t]/ ) {
+				$type = 'configure';
+			} elsif ( $line =~ /[\ \t]build[\ \t]/ ) {
+				$type = 'build';
+			} elsif ( $line =~ /[\ \t]build\-depends[\ \t]/ ) {
+				$type = 'build-depends';
+			} elsif ( $line =~ /[\ \t]lib\-depends[\ \t]/ ) {
+				$type = 'lib-depends';
+			} elsif ( $line =~ /[\ \t]configure[\ \t]/ ) {
+				$type = 'configure';
+			} elsif ( $line =~ /[\ \t]build[\ \t]/ ) {
+				$type = 'build';
+			} elsif ( $line =~ /[\ \t]run\-depends[\ \t]/ ) {
+				$type = 'run-depends';
+			} elsif ( $line =~ /[\ \t]stage[\ \t]/ ) {
+				$type = 'stage';
+			} elsif ( $line =~ /[\ \t]package[\ \t]/ ) {
+				$type = 'package';
+			}
+			if (defined($type)) {
+				$data->{stats}{$type}++;
+				if (defined($data->{jailANDportsANDset}{$current_section})) {
+					$data->{jailANDportsANDset}{$current_section}{$type}++;
+				}
+			}
+		} ## end elsif ( $line =~ /^\[[0-9]+\].*\/.*\|.*-.*\:/)
+	} ## end foreach my $line (@build_info_split)
 } else {
 	$to_return->{error}       = 1;
 	$to_return->{errorString} = 'non-zero exit for "poudriere status -f"';
