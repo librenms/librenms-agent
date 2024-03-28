@@ -1,4 +1,4 @@
-#!/usr/bin/env perl
+#!/usr/local/bin/perl
 
 =head1 NAME
 
@@ -6,7 +6,7 @@ poudriere - LibreNMS JSON style SNMP extend for monitoring Poudriere
 
 =head1 VERSION
 
-0.0.1
+0.1.0
 
 =head1 SYNOPSIS
 
@@ -55,6 +55,7 @@ use MIME::Base64;
 use IO::Compress::Gzip qw(gzip $GzipError);
 use Pod::Usage;
 use JSON;
+use Cwd;
 
 sub time_to_seconds {
 	my $time = $_[0];
@@ -66,13 +67,23 @@ sub time_to_seconds {
 	if ( $time =~ /^0\:[0-9]+\.[0-9]+$/ ) {
 		$time =~ s/^0\://;
 		return $time;
-	} elsif ( $time =~ /^[0-9]+\:[0-9]+\.[0-9]+$/ ) {
+	} elsif ( $time =~ /^[0-9]+\:[0-9]+\.[0-9]+$/ ||
+			  $time =~ /^[0-9]+\:[0-9]+$/
+			 ) {
 		my $minutes = $time;
 		$minutes =~ s/\:.*//;
 		$time    =~ s/.*\://;
 		$time = ( $minutes * 60 ) + $time;
 		return $time;
-	} elsif ( $time =~ /^[0-9]+D\:[0-9]+\:[0-9]+\.[0-9]+$/ ) {
+	} elsif ( $time =~ /^[0-9]+\:[0-9]+\:[0-9]+\.[0-9]+$/ ||
+			  $time =~ /^[0-9]+\:[0-9]+\:[0-9]+$/
+			 ) {
+		my ($hours, $minutes, $seconds) = split(/:/, $time);
+		$time = ( $hours * 3600 ) + ( $minutes * 60 ) + $seconds;
+		return $time;
+	} elsif ( $time =~ /^[0-9]+D\:[0-9]+\:[0-9]+\.[0-9]+$/ ||
+			  $time =~ /^[0-9]+D\:[0-9]+\:[0-9]+$/
+			 ) {
 		my $days = $time;
 		$days =~ s/D\:.*$//;
 		my $minutes = $time;
@@ -195,10 +206,10 @@ my @poudriere_stats = ( 'QUEUE', 'BUILT', 'FAIL', 'SKIP', 'IGNORE', 'FETCH', 'RE
 ###
 ###
 
-my $status_raw = `poudriere -N status -f 2> /dev/null`;
+my $status_raw = `poudriere -N status -f -l 2> /dev/null`;
 if ( $? == 0 ) {
 	$data->{status}     = $status_raw;
-	$data->{build_info} = `poudriere -N status -f -b 2>&1`;
+	$data->{build_info} = `poudriere -N status -f -b -l 2>&1`;
 
 	my @status_split     = split( /\n/, $status_raw );
 	my $status_split_int = 1;
@@ -265,11 +276,16 @@ if ( $? == 0 ) {
 			$jailANDportsANDset = $found->{JAIL} . '-' . $found->{PORTS} . '-' . $found->{SET};
 		}
 
+		$found->{packages_dir}=$found->{LOGS}.'/../../../data/'.$jailANDportsANDset;
+		$found->{logs_dir}=$found->{LOGS}.'/../';
+
 		foreach my $item (@poudriere_stats) {
 			if ( $item eq 'TIME' ) {
 				$found->{$item} = time_to_seconds( $found->{$item} );
 			}
-			$data->{stats}{$item} += $found->{$item};
+			if ($item =~ /^\d+$/) {
+				$data->{stats}{$item} += $found->{$item};
+			}
 		}
 
 		##
