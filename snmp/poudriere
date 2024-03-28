@@ -45,6 +45,12 @@ meaning it will be written out to the two locations.
 The later is for use with returning data for SNMP. Will be compressed
 if possible.
 
+=head1 REQUIREMENTS
+
+    p5-File-Slurp
+    p5-MIME-Base64
+    p5-JSON
+
 =cut
 
 use strict;
@@ -55,7 +61,7 @@ use MIME::Base64;
 use IO::Compress::Gzip qw(gzip $GzipError);
 use Pod::Usage;
 use JSON;
-use Cwd;
+use Cwd 'abs_path';
 
 sub time_to_seconds {
 	my $time = $_[0];
@@ -67,23 +73,23 @@ sub time_to_seconds {
 	if ( $time =~ /^0\:[0-9]+\.[0-9]+$/ ) {
 		$time =~ s/^0\://;
 		return $time;
-	} elsif ( $time =~ /^[0-9]+\:[0-9]+\.[0-9]+$/ ||
-			  $time =~ /^[0-9]+\:[0-9]+$/
-			 ) {
+	} elsif ( $time =~ /^[0-9]+\:[0-9]+\.[0-9]+$/
+		|| $time =~ /^[0-9]+\:[0-9]+$/ )
+	{
 		my $minutes = $time;
 		$minutes =~ s/\:.*//;
 		$time    =~ s/.*\://;
 		$time = ( $minutes * 60 ) + $time;
 		return $time;
-	} elsif ( $time =~ /^[0-9]+\:[0-9]+\:[0-9]+\.[0-9]+$/ ||
-			  $time =~ /^[0-9]+\:[0-9]+\:[0-9]+$/
-			 ) {
-		my ($hours, $minutes, $seconds) = split(/:/, $time);
+	} elsif ( $time =~ /^[0-9]+\:[0-9]+\:[0-9]+\.[0-9]+$/
+		|| $time =~ /^[0-9]+\:[0-9]+\:[0-9]+$/ )
+	{
+		my ( $hours, $minutes, $seconds ) = split( /:/, $time );
 		$time = ( $hours * 3600 ) + ( $minutes * 60 ) + $seconds;
 		return $time;
-	} elsif ( $time =~ /^[0-9]+D\:[0-9]+\:[0-9]+\.[0-9]+$/ ||
-			  $time =~ /^[0-9]+D\:[0-9]+\:[0-9]+$/
-			 ) {
+	} elsif ( $time =~ /^[0-9]+D\:[0-9]+\:[0-9]+\.[0-9]+$/
+		|| $time =~ /^[0-9]+D\:[0-9]+\:[0-9]+$/ )
+	{
 		my $days = $time;
 		$days =~ s/D\:.*$//;
 		my $minutes = $time;
@@ -91,7 +97,7 @@ sub time_to_seconds {
 		$minutes =~ s/\:.*//;
 		$time = ( $days * 86400 ) + ( $minutes * 60 ) + $time;
 		return $time;
-	}
+	} ## end elsif ( $time =~ /^[0-9]+D\:[0-9]+\:[0-9]+\.[0-9]+$/...)
 
 	# return 0 for anything unknown
 	return 0;
@@ -185,6 +191,12 @@ my $data = {
 		'run-depends'                  => 0,
 		'stage'                        => 0,
 		'package'                      => 0,
+		'package_size_all'             => 0,
+		'package_size_latest'          => 0,
+		'package_size_building'        => 0,
+		'log_size_latest'              => 0,
+		'log_size_done'                => 0,
+		'log_size_per_package'         => 0,
 	},
 	jailANDportsANDset => {}
 };
@@ -258,6 +270,12 @@ if ( $? == 0 ) {
 			'run-depends'                  => 0,
 			'stage'                        => 0,
 			'package'                      => 0,
+			'package_size_all'             => 0,
+			'package_size_latest'          => 0,
+			'package_size_building'        => 0,
+			'log_size_latest'              => 0,
+			'log_size_done'                => 0,
+			'log_size_per_package'         => 0,
 		};
 		(
 			$found->{SET},   $found->{PORTS},  $found->{JAIL}, $found->{BUILD}, $found->{STATUS},
@@ -276,14 +294,44 @@ if ( $? == 0 ) {
 			$jailANDportsANDset = $found->{JAIL} . '-' . $found->{PORTS} . '-' . $found->{SET};
 		}
 
-		$found->{packages_dir}=$found->{LOGS}.'/../../../data/'.$jailANDportsANDset;
-		$found->{logs_dir}=$found->{LOGS}.'/../';
+		$found->{packages_dir_all}    = $found->{LOGS} . '/../../../../packages/' . $jailANDportsANDset . '/All';
+		$found->{packages_dir_latest} = $found->{LOGS} . '/../../../../packages/' . $jailANDportsANDset . '/Latest';
+		$found->{packages_dir_building}
+			= $found->{LOGS} . '/../../../../packages/' . $jailANDportsANDset . '/.building';
+		$found->{logs_dir_latest}      = $found->{LOGS} . '/logs';
+		$found->{logs_dir_done}        = $found->{LOGS} . '/../latest-done/logs';
+		$found->{logs_dir_per_package} = $found->{LOGS} . '/../latest-per-pkg/';
+		my %dir_size_stats = (
+			'logs_dir_per_package'  => 'log_size_per_package',
+			'logs_dir_done'         => 'log_size_done',
+			'logs_dir_latest'       => 'log_size_latest',
+			'packages_dir_building' => 'package_size_building',
+			'packages_dir_latest'   => 'package_size_latest',
+			'packages_dir_all'      => 'package_size_all',
+		);
+
+		foreach my $item ( keys(%dir_size_stats) ) {
+			$found->{$item} = abs_path( $found->{$item} );
+			eval {
+				my @files = read_dir( $found->{$item} );
+				foreach my $to_stat (@files) {
+					if ( -f $found->{$item} . '/' . $to_stat ) {
+						my (
+							$dev,  $ino,   $mode,  $nlink, $uid,     $gid, $rdev,
+							$size, $atime, $mtime, $ctime, $blksize, $blocks
+						) = stat( $found->{$item} . '/' . $to_stat );
+						$found->{ $dir_size_stats{$item} } += $size;
+					}
+				}
+				$data->{stats}{ $dir_size_stats{$item} } = $found->{ $dir_size_stats{$item} };
+			};
+		} ## end foreach my $item ( keys(%dir_size_stats) )
 
 		foreach my $item (@poudriere_stats) {
 			if ( $item eq 'TIME' ) {
 				$found->{$item} = time_to_seconds( $found->{$item} );
 			}
-			if ($item =~ /^\d+$/) {
+			if ( $item =~ /^\d+$/ ) {
 				$data->{stats}{$item} += $found->{$item};
 			}
 		}
@@ -383,13 +431,13 @@ if ( $? == 0 ) {
 			} elsif ( $line =~ /[\ \t]package[\ \t]/ ) {
 				$type = 'package';
 			}
-			if (defined($type)) {
+			if ( defined($type) ) {
 				$data->{stats}{$type}++;
-				if (defined($data->{jailANDportsANDset}{$current_section})) {
+				if ( defined( $data->{jailANDportsANDset}{$current_section} ) ) {
 					$data->{jailANDportsANDset}{$current_section}{$type}++;
 				}
 			}
-		} ## end elsif ( $line =~ /^\[[0-9]+\].*\/.*\|.*-.*\:/)
+		} ## end elsif ( $line =~ /^\[.*\].*\:.*\|.*\:/ )
 	} ## end foreach my $line (@build_info_split)
 } else {
 	$to_return->{error}       = 1;
