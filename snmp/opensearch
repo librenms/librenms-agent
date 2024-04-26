@@ -36,6 +36,11 @@ Supported command line options are as below.
     -p <port>   The port to use.
                 Default: 9200
     -P          Pretty print.
+	-c <path>   CA certificate path.
+	            Default: empty
+	-a <path>   Auth token path.
+	            Default: empty
+	-S          Enable HTTPS.
 
 The last is only really relevant to the usage with SNMP.
 
@@ -59,20 +64,30 @@ sub main::HELP_MESSAGE {
 		. "            Default: 127.0.0.1\n"
 		. "-p <port>   The port to use.\n"
 		. "            Default: 9200\n"
-		. "-P          Pretty print.\n";
+		. "-P          Pretty print.\n"
+		. "-c <path>   CA certificate path.\n"
+		. "            Default: empty\n"
+		. "-a <path>   Auth token path.\n"
+		. "            Default: empty\n"
+		. "-S          Enable HTTPS.\n";
 }
 
 my $host = '127.0.0.1';
 my $port = 9200;
+my $schema = 'http';
 
 #gets the options
 my %opts;
-getopts( 'h:p:P', \%opts );
+getopts( 'h:p:P:c:a:S', \%opts );
 if ( defined( $opts{h} ) ) {
 	$host = $opts{h};
 }
 if ( defined( $opts{p} ) ) {
 	$port = $opts{p};
+}
+
+if ( $opts{S} ) {
+	$schema = 'https';
 }
 
 #
@@ -83,8 +98,16 @@ my $to_return = {
 	date        => {},
 };
 
-my $stats_url  = 'http://' . $host . ':' . $port . '/_stats';
-my $health_url = 'http://' . $host . ':' . $port . '/_cluster/health';
+my $stats_url  = $schema . '://' . $host . ':' . $port . '/_stats';
+my $health_url = $schema . '://' . $host . ':' . $port . '/_cluster/health';
+
+my $auth_token = "Basic ";
+if ( defined( $opts{a} ) ) {
+	open my $token_file, '<', $opts{a};
+	$auth_token = "Basic " . <$token_file>;
+	close $token_file;
+	chop $auth_token;
+}
 
 my $json = JSON->new->allow_nonref->canonical(1);
 if ( $opts{P} ) {
@@ -93,7 +116,17 @@ if ( $opts{P} ) {
 
 my $ua = LWP::UserAgent->new( timeout => 10 );
 
-my $stats_response = $ua->get($stats_url);
+if ( defined( $opts{c} ) ) {
+	$ua->ssl_opts( SSL_ca_file => $opts{c});
+}
+
+my $stats_response;
+if ( defined( $opts{a} ) ) {
+	$stats_response = $ua->get($stats_url, "Authorization" => $auth_token,);
+} else {
+	$stats_response = $ua->get($stats_url);
+}
+
 my $stats_json;
 if ( $stats_response->is_success ) {
 	eval { $stats_json = decode_json( $stats_response->decoded_content ); };
@@ -117,7 +150,13 @@ else {
 	exit;
 }
 
-my $health_response = $ua->get($health_url);
+my $health_response;
+if ( defined( $opts{a} ) ) {
+	$health_response = $ua->get($health_url, "Authorization" => $auth_token,);
+} else {
+	$health_response = $ua->get($health_url);
+}
+
 my $health_json;
 if ( $health_response->is_success ) {
 	eval { $health_json = decode_json( $health_response->decoded_content ); };
