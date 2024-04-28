@@ -31,11 +31,14 @@ Add this to snmpd.conf as below and restart snmpd.
 
 Supported command line options are as below.
 
+    -c <path>   CA file path.
+                Default: empty
     -h <host>   The host to connect to.
                 Default: 127.0.0.1
     -p <port>   The port to use.
                 Default: 9200
     -P          Pretty print.
+    -S          Use HTTPS.
 
 The last is only really relevant to the usage with SNMP.
 
@@ -55,24 +58,30 @@ sub main::VERSION_MESSAGE {
 
 sub main::HELP_MESSAGE {
 	print "\n"
+		. "-c <path>   CA file path.\n"
 		. "-h <host>   The host to connect to.\n"
 		. "            Default: 127.0.0.1\n"
 		. "-p <port>   The port to use.\n"
 		. "            Default: 9200\n"
-		. "-P          Pretty print.\n";
+		. "-P          Pretty print.\n"
+		. "-S          Use HTTPS.\n";
 }
 
 my $host = '127.0.0.1';
 my $port = 9200;
+my $schema = 'http';
 
 #gets the options
 my %opts;
-getopts( 'h:p:P', \%opts );
+getopts( 'c:h:p:P:S', \%opts );
 if ( defined( $opts{h} ) ) {
 	$host = $opts{h};
 }
 if ( defined( $opts{p} ) ) {
 	$port = $opts{p};
+}
+if ( $opts{S} ) {
+	$schema = 'https';
 }
 
 #
@@ -83,8 +92,8 @@ my $to_return = {
 	date        => {},
 };
 
-my $stats_url  = 'http://' . $host . ':' . $port . '/_stats';
-my $health_url = 'http://' . $host . ':' . $port . '/_cluster/health';
+my $stats_url  = $schema . '://' . $host . ':' . $port . '/_stats';
+my $health_url = $schema . '://' . $host . ':' . $port . '/_cluster/health';
 
 my $json = JSON->new->allow_nonref->canonical(1);
 if ( $opts{P} ) {
@@ -92,6 +101,11 @@ if ( $opts{P} ) {
 }
 
 my $ua = LWP::UserAgent->new( timeout => 10 );
+
+if ( defined( $opts{c} ) ) {
+	# set ca file
+	$ua->ssl_opts( SSL_ca_file => $opts{c});
+}
 
 my $stats_response = $ua->get($stats_url);
 my $stats_json;
