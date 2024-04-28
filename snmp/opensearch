@@ -31,6 +31,7 @@ Add this to snmpd.conf as below and restart snmpd.
 
 Supported command line options are as below.
 
+    -a <path>   Auth token path.
     -c <path>   CA file path.
                 Default: empty
     -h <host>   The host to connect to.
@@ -58,6 +59,7 @@ sub main::VERSION_MESSAGE {
 
 sub main::HELP_MESSAGE {
 	print "\n"
+		. "-a <path>   Auth token path.\n"
 		. "-c <path>   CA file path.\n"
 		. "-h <host>   The host to connect to.\n"
 		. "            Default: 127.0.0.1\n"
@@ -73,7 +75,7 @@ my $schema = 'http';
 
 #gets the options
 my %opts;
-getopts( 'c:h:p:P:S', \%opts );
+getopts( 'a:c:h:p:P:S', \%opts );
 if ( defined( $opts{h} ) ) {
 	$host = $opts{h};
 }
@@ -82,6 +84,14 @@ if ( defined( $opts{p} ) ) {
 }
 if ( $opts{S} ) {
 	$schema = 'https';
+}
+
+my $auth_token;
+if ( defined( $opts{a} ) ) {
+	open my $auth_file, '<', $opts{a};
+	$auth_token = <$auth_file>;
+	close $auth_file;
+	chop $auth_token;
 }
 
 #
@@ -107,7 +117,13 @@ if ( defined( $opts{c} ) ) {
 	$ua->ssl_opts( SSL_ca_file => $opts{c});
 }
 
-my $stats_response = $ua->get($stats_url);
+my $stats_response;
+if ( defined( $opts{a} ) ) {
+	$stats_response = $ua->get($stats_url, "Authorization" => $auth_token,);
+} else {
+	$stats_response = $ua->get($stats_url);
+}
+
 my $stats_json;
 if ( $stats_response->is_success ) {
 	eval { $stats_json = decode_json( $stats_response->decoded_content ); };
@@ -131,7 +147,13 @@ else {
 	exit;
 }
 
-my $health_response = $ua->get($health_url);
+my $health_response;
+if ( defined( $opts{a} ) ) {
+	$health_response = $ua->get($health_url, "Authorization" => $auth_token,);
+} else {
+	$health_response = $ua->get($health_url);
+}
+
 my $health_json;
 if ( $health_response->is_success ) {
 	eval { $health_json = decode_json( $health_response->decoded_content ); };
