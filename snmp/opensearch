@@ -38,6 +38,8 @@ Supported command line options are as below.
                 Default: 127.0.0.1
     -p <port>   The port to use.
                 Default: 9200
+    -S          Use https instead of http.
+    -I          Do not verify hostname (when used with -S).
     -P          Pretty print.
     -S          Use HTTPS.
 
@@ -65,17 +67,19 @@ sub main::HELP_MESSAGE {
 		. "            Default: 127.0.0.1\n"
 		. "-p <port>   The port to use.\n"
 		. "            Default: 9200\n"
-		. "-P          Pretty print.\n"
-		. "-S          Use HTTPS.\n";
+		. "-S          Use https instead of http.\n"
+		. "-I          Do not verify hostname (when used with -S).\n"
+		. "-P          Pretty print.\n";
 }
 
+my $protocol = 'http';
 my $host = '127.0.0.1';
 my $port = 9200;
 my $schema = 'http';
 
 #gets the options
 my %opts;
-getopts( 'a:c:h:p:P:S', \%opts );
+getopts( 'a:c:h:p:PIS', \%opts );
 if ( defined( $opts{h} ) ) {
 	$host = $opts{h};
 }
@@ -111,6 +115,12 @@ if ( $opts{P} ) {
 }
 
 my $ua = LWP::UserAgent->new( timeout => 10 );
+
+if ( $opts{I} ) {
+	$ua->ssl_opts( verify_hostname => 0, SSL_verify_mode => 0x00 );
+}
+
+my $stats_response = $ua->get($stats_url);
 
 if ( defined( $opts{c} ) ) {
 	# set ca file
