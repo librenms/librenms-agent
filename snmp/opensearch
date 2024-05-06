@@ -31,6 +31,9 @@ Add this to snmpd.conf as below and restart snmpd.
 
 Supported command line options are as below.
 
+    -a <path>   Auth token path.
+    -c <path>   CA file path.
+                Default: empty
     -h <host>   The host to connect to.
                 Default: 127.0.0.1
     -p <port>   The port to use.
@@ -38,6 +41,7 @@ Supported command line options are as below.
     -S          Use https instead of http.
     -I          Do not verify hostname (when used with -S).
     -P          Pretty print.
+    -S          Use HTTPS.
 
 The last is only really relevant to the usage with SNMP.
 
@@ -57,6 +61,8 @@ sub main::VERSION_MESSAGE {
 
 sub main::HELP_MESSAGE {
 	print "\n"
+		. "-a <path>   Auth token path.\n"
+		. "-c <path>   CA file path.\n"
 		. "-h <host>   The host to connect to.\n"
 		. "            Default: 127.0.0.1\n"
 		. "-p <port>   The port to use.\n"
@@ -69,10 +75,11 @@ sub main::HELP_MESSAGE {
 my $protocol = 'http';
 my $host = '127.0.0.1';
 my $port = 9200;
+my $schema = 'http';
 
 #gets the options
 my %opts;
-getopts( 'h:p:SIP', \%opts );
+getopts( 'a:c:h:p:PIS', \%opts );
 if ( defined( $opts{h} ) ) {
 	$host = $opts{h};
 }
@@ -80,7 +87,15 @@ if ( defined( $opts{p} ) ) {
 	$port = $opts{p};
 }
 if ( $opts{S} ) {
-	$protocol = 'https';
+	$schema = 'https';
+}
+
+my $auth_token;
+if ( defined( $opts{a} ) ) {
+	open my $auth_file, '<', $opts{a};
+	$auth_token = <$auth_file>;
+	close $auth_file;
+	chop $auth_token;
 }
 
 #
@@ -91,8 +106,8 @@ my $to_return = {
 	date        => {},
 };
 
-my $stats_url  = $protocol . '://' . $host . ':' . $port . '/_stats';
-my $health_url = $protocol . '://' . $host . ':' . $port . '/_cluster/health';
+my $stats_url  = $schema . '://' . $host . ':' . $port . '/_stats';
+my $health_url = $schema . '://' . $host . ':' . $port . '/_cluster/health';
 
 my $json = JSON->new->allow_nonref->canonical(1);
 if ( $opts{P} ) {
@@ -106,6 +121,19 @@ if ( $opts{I} ) {
 }
 
 my $stats_response = $ua->get($stats_url);
+
+if ( defined( $opts{c} ) ) {
+	# set ca file
+	$ua->ssl_opts( SSL_ca_file => $opts{c});
+}
+
+my $stats_response;
+if ( defined( $opts{a} ) ) {
+	$stats_response = $ua->get($stats_url, "Authorization" => $auth_token,);
+} else {
+	$stats_response = $ua->get($stats_url);
+}
+
 my $stats_json;
 if ( $stats_response->is_success ) {
 	eval { $stats_json = decode_json( $stats_response->decoded_content ); };
@@ -129,7 +157,13 @@ else {
 	exit;
 }
 
-my $health_response = $ua->get($health_url);
+my $health_response;
+if ( defined( $opts{a} ) ) {
+	$health_response = $ua->get($health_url, "Authorization" => $auth_token,);
+} else {
+	$health_response = $ua->get($health_url);
+}
+
 my $health_json;
 if ( $health_response->is_success ) {
 	eval { $health_json = decode_json( $health_response->decoded_content ); };
