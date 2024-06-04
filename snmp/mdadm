@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # MDADM SNMP extension for LibreNMS
 # Version
-extendVer='2.0.0'
+extendVer='2'
 # Initial portion of json
 mdadmSNMPOutput='{ "data": ['
 
@@ -40,6 +40,10 @@ main() {
             [[ "${mdadmArray}" =~ '/dev/md'[[:digit:]]+'p' ]] && continue
 
             mdadmName="$(basename "$(realpath "${mdadmArray}")")"
+
+			# Ignore inactive arrays
+			[[ $(grep "^${mdadmName}" /proc/mdstat) =~ 'inactive' ]] && continue
+
             mdadmSysDev="/sys/block/${mdadmName}"
 
             degraded=$(maybe_get "${mdadmSysDev}/md/degraded")
