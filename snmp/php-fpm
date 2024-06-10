@@ -1,0 +1,235 @@
+#!/usr/bin/env perl
+
+=head1 NAME
+
+php-fpm - LibreNMS JSON SNMP extend for gathering information for php-fpm
+
+=head1 VERSION
+
+0.0.1
+
+=head1 DESCRIPTION
+
+For more information, see L<https://docs.librenms.org/Extensions/Applications/#php-fpm>.
+
+=head1 SWITCHES
+
+=head1 -c <config file>
+
+The config file to use.
+
+Default: /usr/local/etc/php-fpm_extend.json
+
+=head2 -C
+
+Do not compress the information return using GZip+Base64.
+
+=head1 -h|--help
+
+Print help info.
+
+=head1 -v|--version
+
+Print version info.
+
+=head1 CONFIG FILE
+
+The config file is a JSON file.
+
+    - .instances :: An hash of instances to fetch. The key represents the
+            instance name and value is the URL to fetch, minus the '?json' bit.
+        Default :: undef
+
+    - .use_exec :: A boolean for instances values should be treated as a command
+            instead of a URL. All instances must be a command and can not be a lone URL.
+            The returned data is expected to be parsable JSON data.
+        Default :: 0
+
+Example...
+
+    {
+      "instances": {
+        "thefrog": "https://thefrog/fpm-status",
+        "foobar": "https://foo.bar/fpm-status"
+      }
+    }
+
+A use_exec example...
+
+    {
+      "instances": {
+        "thefrog": "curl 'https://thefrog/fpm-status?json' 2> /dev/null",
+        "foobar": "curl 'https://foo.bar/fpm-status?json' 2> /dev/null",
+      },
+      "use_exec": 1
+    }
+
+=cut
+
+use strict;
+use warnings;
+use JSON;
+use Getopt::Long;
+use File::Slurp;
+use IO::Compress::Gzip qw(gzip $GzipError);
+use MIME::Base64;
+use Pod::Usage;
+use String::ShellQuote;
+
+sub return_the_data {
+	my $to_return       = $_[0];
+	my $do_not_compress = $_[1];
+
+	my $to_return_string = encode_json($to_return);
+
+	if ($do_not_compress) {
+		print $to_return_string . "\n";
+		return;
+	}
+
+	my $toReturnCompressed;
+	gzip \$to_return_string => \$toReturnCompressed;
+	my $compressed = encode_base64($toReturnCompressed);
+	$compressed =~ s/\n//g;
+	$compressed = $compressed . "\n";
+	print $compressed;
+} ## end sub return_the_data
+
+#gets the options
+my %opts;
+my $do_not_compress;
+my $version;
+my $help;
+my $config_file = '/usr/local/etc/php-fpm_extend.json';
+GetOptions(
+	C       => \$do_not_compress,
+	v       => \$version,
+	version => \$version,
+	h       => \$help,
+	help    => \$help,
+);
+
+if ($version) {
+	pod2usage( -exitval => 255, -verbose => 99, -sections => qw(VERSION), -output => \*STDOUT, );
+}
+
+if ($help) {
+	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
+}
+
+my @to_total = (
+	"accepted conn",
+	"active processes",
+	"idle processes",
+	"listen queue",
+	"listen queue len",
+	"max active processes",
+	"max children reached",
+	"max listen queue",
+	"slow requests",
+	"total processes",
+);
+
+my $to_return = {
+	data => {
+		instances       => {},
+		instance_errors => {},
+		errored         => 0,
+		totals          => {
+			"accepted conn"        => 0,
+			"active processes"     => 0,
+			"idle processes"       => 0,
+			"listen queue"         => 0,
+			"listen queue len"     => 0,
+			"max active processes" => 0,
+			"max children reached" => 0,
+			"max listen queue"     => 0,
+			"slow requests"        => 0,
+			"total processes"      => 0,
+		},
+	},
+	version     => 1,
+	error       => 0,
+	errorString => '',
+};
+
+# error if the config does not exist
+if ( !-f $config_file ) {
+	$to_return->{errorString} = 'Config file, "' . $config_file . '", does not exist';
+	$to_return->{error}       = 1;
+	return_the_data( $to_return, $do_not_compress );
+	exit 1;
+}
+
+# read the config and decode it
+my $config;
+eval {
+	my $raw_config = read_file($config_file);
+	$config = decode_json($raw_config);
+};
+if ($@) {
+	$to_return->{errorString} = 'Reading config errored... ' . $@;
+	$to_return->{error}       = 2;
+	return_the_data( $to_return, $do_not_compress );
+	exit 1;
+}
+
+# ensure the config is basically sane
+if ( !defined( $config->{instances} ) ) {
+	$to_return->{errorString} = '.instances does not exist in the config';
+	$to_return->{error}       = 3;
+	return_the_data( $to_return, $do_not_compress );
+	exit 1;
+}
+if ( ref( $config->{instances} ) ne 'HASH' ) {
+	$to_return->{errorString} = '.instances is not a hash';
+	$to_return->{error}       = 3;
+	return_the_data( $to_return, $do_not_compress );
+	exit 1;
+}
+if ( defined( $config->{use_exec} ) && ref( $config->{use_exec} ) ne '' ) {
+	$to_return->{errorString} = '.use_exec is defined and is a hash or array';
+	$to_return->{error}       = 3;
+	return_the_data( $to_return, $do_not_compress );
+	exit 1;
+}
+
+# get a list of instances and process each instance
+my @instances = keys( %{ $config->{instances} } );
+foreach my $item (@instances) {
+	if ( ref( $config->{instances}{$item} ) eq '' ) {
+		my $command;
+		if ( !$config->{use_exec} ) {
+			$command = 'curl ' . shell_quote( $config->{instances}{$item} . '?json' ) . ' 2> /dev/null';
+		} else {
+			$command = $config->{instances}{$item};
+		}
+		eval {
+			my $instance_data_raw = `$command`;
+			if ( $? ne 0 ) {
+				$command =~ s/\"/\\\"/g;
+				die( 'command "' . $command . '" exited non-zero returnining... ' . $instance_data_raw );
+			}
+			my $instance_data;
+			$to_return->{data}{instances}{$item} = decode_json($instance_data_raw);
+		};
+		# if
+		if ($@) {
+			$to_return->{data}{instances}{$item}       = {};
+			$to_return->{data}{instance_errors}{$item} = $@;
+			$to_return->{data}{errored}                = 1;
+		}else {
+			# add the the instance to the totals
+			foreach my $total_item (@to_total) {
+				if (defined($to_return->{data}{instances}{$item}{$total_item})
+					&& $to_return->{data}{instances}{$item}{$total_item} =~ /^\d+$/
+					)  {
+					$to_return->{data}{totals}{$total_item} += $to_return->{data}{instances}{$item}{$total_item};
+				}
+			}
+		}
+	} ## end if ( ref( $config->{instances}{$item} ) eq...)
+} ## end foreach my $item (@instances)
+
+return_the_data( $to_return, $do_not_compress );
+exit 0;
