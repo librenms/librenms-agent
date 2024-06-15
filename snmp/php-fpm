@@ -36,19 +36,19 @@ Print version info.
 
 The config file is a JSON file.
 
-    - .instances :: An hash of instances to fetch. The key represents the
-            instance name and value is the URL to fetch, minus the '?json' bit.
+    - .pools :: An hash of pools to fetch. The key represents the
+            pool name and value is the URL to fetch, minus the '?json' bit.
         Default :: undef
 
-    - .use_exec :: A boolean for instances values should be treated as a command
-            instead of a URL. All instances must be a command and can not be a lone URL.
+    - .use_exec :: A boolean for pools values should be treated as a command
+            instead of a URL. All poolss must be a command and can not be a lone URL.
             The returned data is expected to be parsable JSON data.
         Default :: 0
 
 Example...
 
     {
-      "instances": {
+      "pools": {
         "thefrog": "https://thefrog/fpm-status",
         "foobar": "https://foo.bar/fpm-status"
       }
@@ -57,7 +57,7 @@ Example...
 A use_exec example...
 
     {
-      "instances": {
+      "pools": {
         "thefrog": "curl 'https://thefrog/fpm-status?json' 2> /dev/null",
         "foobar": "curl 'https://foo.bar/fpm-status?json' 2> /dev/null",
       },
@@ -130,12 +130,15 @@ my @to_total = (
 	"total processes",
 );
 
+my @to_migrate = @to_total;
+push( @to_migrate, 'start since', 'start time', 'pool', 'process manager' );
+
 my $to_return = {
 	data => {
-		instances       => {},
-		instance_errors => {},
-		errored         => 0,
-		totals          => {
+		pools       => {},
+		pool_errors => {},
+		errored     => 0,
+		totals      => {
 			"accepted conn"        => 0,
 			"active processes"     => 0,
 			"idle processes"       => 0,
@@ -175,14 +178,14 @@ if ($@) {
 }
 
 # ensure the config is basically sane
-if ( !defined( $config->{instances} ) ) {
-	$to_return->{errorString} = '.instances does not exist in the config';
+if ( !defined( $config->{pools} ) ) {
+	$to_return->{errorString} = '.pools does not exist in the config';
 	$to_return->{error}       = 3;
 	return_the_data( $to_return, $do_not_compress );
 	exit 1;
 }
-if ( ref( $config->{instances} ) ne 'HASH' ) {
-	$to_return->{errorString} = '.instances is not a hash';
+if ( ref( $config->{pools} ) ne 'HASH' ) {
+	$to_return->{errorString} = '.pools is not a hash';
 	$to_return->{error}       = 3;
 	return_the_data( $to_return, $do_not_compress );
 	exit 1;
@@ -194,42 +197,48 @@ if ( defined( $config->{use_exec} ) && ref( $config->{use_exec} ) ne '' ) {
 	exit 1;
 }
 
-# get a list of instances and process each instance
-my @instances = keys( %{ $config->{instances} } );
-foreach my $item (@instances) {
-	if ( ref( $config->{instances}{$item} ) eq '' ) {
+# get a list of pools and process each pool
+my @pools = keys( %{ $config->{pools} } );
+foreach my $item (@pools) {
+	if ( ref( $config->{pools}{$item} ) eq '' ) {
 		my $command;
 		if ( !$config->{use_exec} ) {
-			$command = 'curl ' . shell_quote( $config->{instances}{$item} . '?json' ) . ' 2> /dev/null';
+			$command = 'curl ' . shell_quote( $config->{pools}{$item} . '?json' ) . ' 2> /dev/null';
 		} else {
-			$command = $config->{instances}{$item};
+			$command = $config->{pools}{$item};
 		}
 		eval {
-			my $instance_data_raw = `$command`;
+			my $pool_data_raw = `$command`;
 			if ( $? ne 0 ) {
 				$command =~ s/\"/\\\"/g;
-				die( 'command "' . $command . '" exited non-zero returnining... ' . $instance_data_raw );
+				die( 'command "' . $command . '" exited non-zero returnining... ' . $pool_data_raw );
 			}
-			my $instance_data;
-			$to_return->{data}{instances}{$item} = decode_json($instance_data_raw);
+			my $pool_data = decode_json($pool_data_raw);
+			$to_return->{data}{pools}{$item} = {};
+			# ensure the hash only includes what we want and nothing unexpected
+			foreach my $migrate_item (@to_migrate) {
+				if ( defined( $pool_data->{$migrate_item} ) && ref($pool_data->{$migrate_item}) eq '' ) {
+					$to_return->{data}{pools}{$item}{$migrate_item} = $pool_data->{$migrate_item};
+				}
+			}
 		};
 		# if
 		if ($@) {
-			$to_return->{data}{instances}{$item}       = {};
-			$to_return->{data}{instance_errors}{$item} = $@;
-			$to_return->{data}{errored}                = 1;
-		}else {
-			# add the the instance to the totals
+			$to_return->{data}{pools}{$item}       = {};
+			$to_return->{data}{pool_errors}{$item} = $@;
+			$to_return->{data}{errored}            = 1;
+		} else {
+			# add the the pool to the totals
 			foreach my $total_item (@to_total) {
-				if (defined($to_return->{data}{instances}{$item}{$total_item})
-					&& $to_return->{data}{instances}{$item}{$total_item} =~ /^\d+$/
-					)  {
-					$to_return->{data}{totals}{$total_item} += $to_return->{data}{instances}{$item}{$total_item};
+				if ( defined( $to_return->{data}{pools}{$item}{$total_item} )
+					&& $to_return->{data}{pools}{$item}{$total_item} =~ /^\d+$/ )
+				{
+					$to_return->{data}{totals}{$total_item} += $to_return->{data}{pools}{$item}{$total_item};
 				}
 			}
-		}
-	} ## end if ( ref( $config->{instances}{$item} ) eq...)
-} ## end foreach my $item (@instances)
+		} ## end else [ if ($@) ]
+	} ## end if ( ref( $config->{pools}{$item} ) eq '' )
+} ## end foreach my $item (@pools)
 
 return_the_data( $to_return, $do_not_compress );
 exit 0;
