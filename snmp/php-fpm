@@ -75,7 +75,6 @@ use IO::Compress::Gzip qw(gzip $GzipError);
 use MIME::Base64;
 use Pod::Usage;
 use String::ShellQuote;
-use Statistics::Lite qw(:all);
 
 sub return_the_data {
 	my $to_return       = $_[0];
