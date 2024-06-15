@@ -149,7 +149,7 @@ my $to_return = {
 			"max listen queue"     => 0,
 			"slow requests"        => 0,
 			"total processes"      => 0,
-			'start since min'      => undef,
+			'start since'          => undef,
 		},
 	},
 	version     => 1,
@@ -242,10 +242,10 @@ foreach my $item (@pools) {
 			if ( defined( $to_return->{data}{pools}{$item}{'start since'} )
 				&& $to_return->{data}{pools}{$item}{'start since'} =~ /^\d+$/ )
 			{
-				if ( !defined( $to_return->{data}{totals}{'start since min'} )
-					|| $to_return->{data}{pools}{$item}{'start since'} < $to_return->{data}{totals}{'start since min'} )
+				if ( !defined( $to_return->{data}{totals}{'start since'} )
+					|| $to_return->{data}{pools}{$item}{'start since'} < $to_return->{data}{totals}{'start since'} )
 				{
-					$to_return->{data}{totals}{'start since min'} = $to_return->{data}{pools}{$item}{'start since'};
+					$to_return->{data}{totals}{'start since'} = $to_return->{data}{pools}{$item}{'start since'};
 				}
 			}
 		} ## end else [ if ($@) ]
