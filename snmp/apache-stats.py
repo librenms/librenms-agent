@@ -17,12 +17,19 @@
 #
 #
 #
+import base64
 import os
 import time
 import urllib.request
 
 cachetime = 30
 cachefile = "/var/cache/librenms/apache-snmp"
+
+url = "http://localhost/server-status?auto"
+
+# Leave fields below empty if no authentication is needed
+username = ""
+password = ""
 
 # Check for a cache file newer than cachetime seconds ago
 
@@ -33,11 +40,15 @@ if os.path.isfile(cachefile) and (time.time() - os.stat(cachefile)[8]) < cacheti
     f.close()
 else:
     # Grab the status URL (fresh data), needs package urllib3
-    data = (
-        urllib.request.urlopen("http://localhost/server-status?auto")
-        .read()
-        .decode("UTF-8")
-    )
+    if username == "" and password == "":
+        data = urllib.request.urlopen(url).read().decode("UTF-8")
+    else:
+        passman = urllib.request.HTTPPasswordMgrWithDefaultRealm()
+        passman.add_password(None, url, username, password)
+        authhandler = urllib.request.HTTPBasicAuthHandler(passman)
+        opener = urllib.request.build_opener(authhandler)
+        urllib.request.install_opener(opener)
+        data = urllib.request.urlopen(url).read().decode("UTF-8")
     # Write file
     f = open(cachefile + ".TMP." + str(os.getpid()), "w")
     f.write(data)
