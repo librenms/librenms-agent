@@ -75,6 +75,7 @@ use IO::Compress::Gzip qw(gzip $GzipError);
 use MIME::Base64;
 use Pod::Usage;
 use String::ShellQuote;
+use Statistics::Lite qw(:all);
 
 sub return_the_data {
 	my $to_return       = $_[0];
@@ -149,6 +150,7 @@ my $to_return = {
 			"max listen queue"     => 0,
 			"slow requests"        => 0,
 			"total processes"      => 0,
+			'start since min'      => undef,
 		},
 	},
 	version     => 1,
@@ -217,7 +219,7 @@ foreach my $item (@pools) {
 			$to_return->{data}{pools}{$item} = {};
 			# ensure the hash only includes what we want and nothing unexpected
 			foreach my $migrate_item (@to_migrate) {
-				if ( defined( $pool_data->{$migrate_item} ) && ref($pool_data->{$migrate_item}) eq '' ) {
+				if ( defined( $pool_data->{$migrate_item} ) && ref( $pool_data->{$migrate_item} ) eq '' ) {
 					$to_return->{data}{pools}{$item}{$migrate_item} = $pool_data->{$migrate_item};
 				}
 			}
@@ -234,6 +236,17 @@ foreach my $item (@pools) {
 					&& $to_return->{data}{pools}{$item}{$total_item} =~ /^\d+$/ )
 				{
 					$to_return->{data}{totals}{$total_item} += $to_return->{data}{pools}{$item}{$total_item};
+				}
+			}
+
+			# handle start since min
+			if ( defined( $to_return->{data}{pools}{$item}{'start since'} )
+				&& $to_return->{data}{pools}{$item}{'start since'} =~ /^\d+$/ )
+			{
+				if ( !defined( $to_return->{data}{totals}{'start since min'} )
+					|| $to_return->{data}{pools}{$item}{'start since'} < $to_return->{data}{totals}{'start since min'} )
+				{
+					$to_return->{data}{totals}{'start since min'} = $to_return->{data}{pools}{$item}{'start since'};
 				}
 			}
 		} ## end else [ if ($@) ]
