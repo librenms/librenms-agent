@@ -58,8 +58,8 @@ A use_exec example...
 
     {
       "pools": {
-        "thefrog": "curl 'https://thefrog/fpm-status?json' 2> /dev/null",
-        "foobar": "curl 'https://foo.bar/fpm-status?json' 2> /dev/null",
+        "thefrog": "curl 'https://thefrog/fpm-status?json&full' 2> /dev/null",
+        "foobar": "curl 'https://foo.bar/fpm-status?json&full' 2> /dev/null",
       },
       "use_exec": 1
     }
@@ -118,16 +118,17 @@ if ($help) {
 }
 
 my @to_total = (
-	"accepted conn",
-	"active processes",
-	"idle processes",
-	"listen queue",
-	"listen queue len",
-	"max active processes",
-	"max children reached",
-	"max listen queue",
-	"slow requests",
-	"total processes",
+	'accepted conn',
+	'active processes',
+	'idle processes',
+	'listen queue',
+	'listen queue len',
+	'max active processes',
+	'max children reached',
+	'max listen queue',
+	'slow requests',
+	'total processes',
+	'last request cpu',
 );
 
 my @to_migrate = @to_total;
@@ -139,17 +140,18 @@ my $to_return = {
 		pool_errors => {},
 		errored     => 0,
 		totals      => {
-			"accepted conn"        => 0,
-			"active processes"     => 0,
-			"idle processes"       => 0,
-			"listen queue"         => 0,
-			"listen queue len"     => 0,
-			"max active processes" => 0,
-			"max children reached" => 0,
-			"max listen queue"     => 0,
-			"slow requests"        => 0,
-			"total processes"      => 0,
-			'start since min'      => undef,
+			'accepted conn'        => 0,
+			'active processes'     => 0,
+			'idle processes'       => 0,
+			'listen queue'         => 0,
+			'listen queue len'     => 0,
+			'max active processes' => 0,
+			'max children reached' => 0,
+			'max listen queue'     => 0,
+			'slow requests'        => 0,
+			'total processes'      => 0,
+			'start since'          => undef,
+			'last request cpu'     => 0,
 		},
 	},
 	version     => 1,
@@ -204,7 +206,7 @@ foreach my $item (@pools) {
 	if ( ref( $config->{pools}{$item} ) eq '' ) {
 		my $command;
 		if ( !$config->{use_exec} ) {
-			$command = 'curl ' . shell_quote( $config->{pools}{$item} . '?json' ) . ' 2> /dev/null';
+			$command = 'curl ' . shell_quote( $config->{pools}{$item} . '?json&full' ) . ' 2> /dev/null';
 		} else {
 			$command = $config->{pools}{$item};
 		}
@@ -222,6 +224,18 @@ foreach my $item (@pools) {
 					$to_return->{data}{pools}{$item}{$migrate_item} = $pool_data->{$migrate_item};
 				}
 			}
+
+			if (defined($pool_data->{'processes'}) && ref($pool_data->{'processes'}) eq 'ARRAY') {
+				$to_return->{data}{pools}{$item}{'last request cpu'} = 0;
+				foreach my $proc_item (@{ $pool_data->{'processes'} }) {
+					if (defined( $proc_item->{'last request cpu'}) &&
+						ref($proc_item->{'last request cpu'}) eq '' &&
+						$proc_item->{'last request cpu'} =~ /\d+\.\d+/
+						) {
+						$to_return->{data}{pools}{$item}{'last request cpu'} += $proc_item->{'last request cpu'};
+					}
+				}
+			}
 		};
 		# if
 		if ($@) {
@@ -232,7 +246,7 @@ foreach my $item (@pools) {
 			# add the the pool to the totals
 			foreach my $total_item (@to_total) {
 				if ( defined( $to_return->{data}{pools}{$item}{$total_item} )
-					&& $to_return->{data}{pools}{$item}{$total_item} =~ /^\d+$/ )
+					&& $to_return->{data}{pools}{$item}{$total_item} =~ /^(\d+|\d+\.\d+)$/ )
 				{
 					$to_return->{data}{totals}{$total_item} += $to_return->{data}{pools}{$item}{$total_item};
 				}
@@ -242,10 +256,10 @@ foreach my $item (@pools) {
 			if ( defined( $to_return->{data}{pools}{$item}{'start since'} )
 				&& $to_return->{data}{pools}{$item}{'start since'} =~ /^\d+$/ )
 			{
-				if ( !defined( $to_return->{data}{totals}{'start since min'} )
-					|| $to_return->{data}{pools}{$item}{'start since'} < $to_return->{data}{totals}{'start since min'} )
+				if ( !defined( $to_return->{data}{totals}{'start since'} )
+					|| $to_return->{data}{pools}{$item}{'start since'} < $to_return->{data}{totals}{'start since'} )
 				{
-					$to_return->{data}{totals}{'start since min'} = $to_return->{data}{pools}{$item}{'start since'};
+					$to_return->{data}{totals}{'start since'} = $to_return->{data}{pools}{$item}{'start since'};
 				}
 			}
 		} ## end else [ if ($@) ]
