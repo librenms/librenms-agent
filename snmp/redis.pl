@@ -59,16 +59,39 @@ sub main::HELP_MESSAGE {
 	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
 }
 
+sub return_the_data {
+	my $to_return       = $_[0];
+	my $do_not_compress = $_[1];
+
+	my $to_return_string = encode_json($to_return);
+
+	if ($do_not_compress) {
+		print $to_return_string . "\n";
+		return;
+	}
+
+	my $toReturnCompressed;
+	gzip \$to_return_string => \$toReturnCompressed;
+	my $compressed = encode_base64($toReturnCompressed);
+	$compressed =~ s/\n//g;
+	$compressed = $compressed . "\n";
+	print $compressed;
+} ## end sub return_the_data
+
 my $return_json = {
 	error       => 0,
 	errorString => '',
-	version     => 1,
-	data        => {},
+	version     => 2,
+	data        => { 'extend_errors' => [] },
 };
 
 #gets the options
 my %opts = ();
-getopts( 'Bhv', \%opts );
+getopts( 'Bhvc:', \%opts );
+
+if ( !defined( $opts{c} ) ) {
+	$opts{c} = '/usr/local/etc/redis_extend.json';
+}
 
 if ( $opts{v} ) {
 	main::VERSION_MESSAGE;
@@ -81,40 +104,98 @@ if ( $opts{h} ) {
 	exit 256;
 }
 
+my $single = 1;
+my $config = { command => 'redis-cli info' };
+if ( -f $opts{c} ) {
+	eval {
+		my $raw_config = read_file( $opts{c} );
+		$config = decode_json($raw_config);
+		if ( !defined( $config->{instances} ) ) {
+			if ( !defined( $config->{command} ) ) {
+				$config->{command} = 'redis-cli info';
+			}
+		} elsif ( ref( $config->{instances} ) ne 'HASH' ) {
+			die( '.instances is defined and is not a hash but ref type ' . ref( $config->{instances} ) );
+		} else {
+			$single = 0;
+		}
+	};
+	if ($@) {
+		push( @{ $return_json->{data}{extend_errors} }, $@ );
+		return_the_data( $return_json, $opts{B} );
+		exit 0;
+	}
+} ## end if ( -f $opts{c} )
+
 # ensure that $ENV{PATH} has has it
 $ENV{PATH} = $ENV{PATH} . ':/usr/bin:/usr/sbin:/usr/local/sbin:/usr/local/bin';
 
-my $output_raw = `redis-cli info 2> /dev/null`;
-if ( $? != 0 ) {
-	$return_json->{error} = 1;
-	$return_json->{error} = 'redis-cli info exited non-zero';
-	print encode_json($return_json) . "\n";
-}
+if ($single) {
+	my $command    = $config->{command};
+	my $output_raw = `$command 2> /dev/null`;
+	if ( $? != 0 ) {
+		push(
+			@{ $return_json->{data}{extend_errors} },
+			'"' . $command . '" exited non-zero for with... ' . $output_raw
+		);
+	} else {
+		$output_raw =~ s/\r//g;
+		my $section;
+		foreach my $line ( split( /\n/, $output_raw ) ) {
+			if ( $line ne '' && $line =~ /^# / ) {
+				$line =~ s/^# //;
+				$section = $line;
+				$return_json->{data}{$section} = {};
+			} elsif ( $line ne '' && defined($section) ) {
+				my ( $key, $value ) = split( /\:/, $line );
+				if ( defined($key) && defined($value) ) {
+					$return_json->{data}{$section}{$key} = $value;
+				}
+			}
+		} ## end foreach my $line ( split( /\n/, $output_raw ) )
+	} ## end else [ if ( $? != 0 ) ]
+} else {
+	my @instances = keys( %{ $config->{instances} } );
+	$return_json->{data}{instances} = {};
+	foreach my $instance (@instances) {
+		if ( ref( $config->{instances}{$instance} ) ne '' ) {
+			push(
+				@{ $return_json->{data}{extend_errors} },
+				'instance "' . $instance . '" is ref type ' . ref( $config->{instances}{$instance} )
+			);
+		} elsif ( $instance =~ /^[\-\_]/ ) {
+			push( @{ $return_json->{data}{extend_errors} }, 'instance "' . $instance . '" matches /^[\-\_]/' );
+		} elsif ( $instance =~ /[\-\_\n\s\"\']$/ ) {
+			push( @{ $return_json->{data}{extend_errors} },
+				'instance "' . $instance . '" matches /[\-\_\n\s\'\\\"]$/' );
+		} else {
+			my $command    = $config->{instances}{$instance};
+			my $output_raw = `$command 2> /dev/null`;
+			if ( $? != 0 ) {
+				push(
+					@{ $return_json->{data}{extend_errors} },
+					'"' . $command . '" exited non-zero for instance "' . $instance . '" with... ' . $output_raw
+				);
+			} else {
+				$output_raw =~ s/\r//g;
+				my $section;
+				$return_json->{data}{instances}{$instance} = {};
+				foreach my $line ( split( /\n/, $output_raw ) ) {
+					if ( $line ne '' && $line =~ /^# / ) {
+						$line =~ s/^# //;
+						$section = $line;
+						$return_json->{data}{instances}{$instance}{$section} = {};
+					} elsif ( $line ne '' && defined($section) ) {
+						my ( $key, $value ) = split( /\:/, $line );
+						if ( defined($key) && defined($value) ) {
+							$return_json->{data}{instances}{$instance}{$section}{$key} = $value;
+						}
+					}
+				} ## end foreach my $line ( split( /\n/, $output_raw ) )
+			} ## end else [ if ( $? != 0 ) ]
+		} ## end else [ if ( ref( $config->{instances}{$instance} ...))]
+	} ## end foreach my $instance (@instances)
+} ## end else [ if ($single) ]
 
-$output_raw =~ s/\r//g;
-my $section;
-foreach my $line ( split( /\n/, $output_raw ) ) {
-	if ( $line ne '' && $line =~ /^# / ) {
-		$line =~ s/^# //;
-		$section = $line;
-		$return_json->{data}{$section} = {};
-	} elsif ( $line ne '' && defined($section) ) {
-		my ( $key, $value ) = split( /\:/, $line );
-		if ( defined($key) && defined($value) ) {
-			$return_json->{data}{$section}{$key} = $value;
-		}
-	}
-} ## end foreach my $line ( split( /\n/, $output_raw ) )
-
-my $return_json_raw = encode_json($return_json);
-if ( $opts{B} ) {
-	print $return_json_raw. "\n";
-	exit 0;
-}
-
-my $toReturnCompressed;
-gzip \$return_json_raw => \$toReturnCompressed;
-my $compressed = encode_base64($toReturnCompressed);
-$compressed =~ s/\n//g;
-$compressed = $compressed . "\n";
-print $compressed;
+return_the_data( $return_json, $opts{B} );
+exit 0;
