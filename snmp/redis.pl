@@ -2,13 +2,23 @@
 
 =head1 NAME
 
-redis.pl - LinbreNMS JSON extend for redis.
+redis - LinbreNMS JSON extend for redis.
 
 =head1 SYNOPSIS
 
-logsize [B<-B>]
+redis [B<-B>] [B<-c> <config file>]
+
+redis [B<-v>|B<--version>]
+
+redis [B<-h>|B<--help>]
 
 =head1 SWITCHES
+
+=head2 -c
+
+Config file to use.
+
+Default: /usr/local/etc/redis_extend.json
 
 =head2 -B
 
@@ -37,6 +47,36 @@ Then set it up in SNMPD.
 
     # if running it via cron
     extend redis /usr/local/etc/snmp/redis.pl
+
+If for multiple instances or the default of 'redis-cli info'
+won't work, a config file will be needed. The config format
+is JSON.
+
+The config entries are as below.
+
+      - command :: If single instance, the command to use.
+          Type :: String
+          Default :: redis-cli
+
+      - instances :: A hash where the keys are the instances names
+                and the values for each key are the command to use.
+
+The default config would be like below, which will be what is used
+if no config file is specified/found.
+
+    {
+        "command": "redis-cli info"
+    }
+
+For something with two instances, "foo" on port 6379 and "bar" on port 6380
+it would be like below.
+
+    {
+        "instances": {
+            "foo": "redis-cli -p 6379",
+            "bar": "redis-cli -p 6380"
+        }
+    }
 
 =cut
 
