@@ -30,6 +30,9 @@ jobs:
           VALIDATE_PHP_PHPCS: false
           VALIDATE_PHP_PSALM: false
 
+          # errors on sanity checking in snmp/wireguard.pl
+          VALIDATE_JSCPD: false
+
           SHELLCHECK_OPTS: --severity=warning
 
           DEFAULT_BRANCH: master
