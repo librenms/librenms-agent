@@ -6,7 +6,7 @@ php-fpm - LibreNMS JSON SNMP extend for gathering information for php-fpm
 
 =head1 VERSION
 
-0.0.1
+0.0.2
 
 =head1 DESCRIPTION
 
@@ -14,7 +14,7 @@ For more information, see L<https://docs.librenms.org/Extensions/Applications/#p
 
 =head1 SWITCHES
 
-=head1 -c <config file>
+=head2 -f <config file>
 
 The config file to use.
 
@@ -24,11 +24,11 @@ Default: /usr/local/etc/php-fpm_extend.json
 
 Do not compress the information return using GZip+Base64.
 
-=head1 -h|--help
+=head2 -h|--help
 
 Print help info.
 
-=head1 -v|--version
+=head2 -v|--version
 
 Print version info.
 
@@ -103,6 +103,7 @@ my $help;
 my $config_file = '/usr/local/etc/php-fpm_extend.json';
 GetOptions(
 	C       => \$do_not_compress,
+	'f=s'   => \$config_file,
 	v       => \$version,
 	version => \$version,
 	h       => \$help,
@@ -225,17 +226,17 @@ foreach my $item (@pools) {
 				}
 			}
 
-			if (defined($pool_data->{'processes'}) && ref($pool_data->{'processes'}) eq 'ARRAY') {
+			if ( defined( $pool_data->{'processes'} ) && ref( $pool_data->{'processes'} ) eq 'ARRAY' ) {
 				$to_return->{data}{pools}{$item}{'last request cpu'} = 0;
-				foreach my $proc_item (@{ $pool_data->{'processes'} }) {
-					if (defined( $proc_item->{'last request cpu'}) &&
-						ref($proc_item->{'last request cpu'}) eq '' &&
-						$proc_item->{'last request cpu'} =~ /\d+\.\d+/
-						) {
+				foreach my $proc_item ( @{ $pool_data->{'processes'} } ) {
+					if (   defined( $proc_item->{'last request cpu'} )
+						&& ref( $proc_item->{'last request cpu'} ) eq ''
+						&& $proc_item->{'last request cpu'} =~ /\d+\.\d+/ )
+					{
 						$to_return->{data}{pools}{$item}{'last request cpu'} += $proc_item->{'last request cpu'};
 					}
 				}
-			}
+			} ## end if ( defined( $pool_data->{'processes'} ) ...)
 		};
 		# if
 		if ($@) {
