@@ -66,9 +66,9 @@ Print version info.
 Install the depends.
 
     # FreeBSD
-    pkg install p5-JSON p5-TOML p5-MIME-Base64
+    pkg install p5-JSON p5-File-Slurp p5-MIME-Base64
     # Debian
-    apt-get install libjson-perl libmime-base64-perl
+    apt-get install libjson-perl libmime-base64-perl libfile-slurp-perl
 
 Then set it up in SNMPD.
 
@@ -144,7 +144,6 @@ use MIME::Base64;
 use IO::Compress::Gzip qw(gzip $GzipError);
 use File::Slurp;
 use Pod::Usage;
-use Socket;
 
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 
