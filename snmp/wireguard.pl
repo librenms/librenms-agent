@@ -520,7 +520,7 @@ foreach my $interface (@interfaces) {
 				delete( $wg_info{$interface}{$pubkey}{name} );
 			} else {
 				$name = $wg_info{$interface}{$pubkey}{hostname};
-				if ( $config->{use_short_hostname} ) {
+				if ( $config->{use_short_hostname} && $name !~ /^[0-9\.]+$/) {
 					$name =~ s/\..*$//;
 				}
 			}
