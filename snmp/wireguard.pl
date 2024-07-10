@@ -9,11 +9,11 @@ wireguard - LinbreNMS JSON extend for wireguard.
 
 =head1 VERSION
 
-0.0.1
+0.0.2
 
 =cut
 
-our $VERSION = '0.0.1';
+our $VERSION = '0.0.2';
 
 =head1 SYNOPSIS
 
@@ -148,7 +148,7 @@ use Pod::Usage;
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 
 sub main::VERSION_MESSAGE {
-	print 'wireguard LibreNMS extend v. '.$VERSION."\n";
+	print 'wireguard LibreNMS extend v. ' . $VERSION . "\n";
 }
 
 sub main::HELP_MESSAGE {
@@ -228,7 +228,7 @@ if ( $opts{h} ) {
 ##
 ##
 our $config = {
-	include_pubkey    => 0,
+	include_pubkey   => 0,
 	pubkey_resolvers =>
 		'config,endpoint_if_first_allowed_is_subnet_use_hosts,endpoint_if_first_allowed_is_subnet_use_ip,first_allowed_use_hosts,first_allowed_use_ip',
 	use_short_hostname           => 1,
@@ -289,7 +289,7 @@ $ENV{PATH} = $ENV{PATH} . ':/usr/bin:/usr/sbin:/usr/local/sbin:/usr/local/bin';
 ## get all the information
 ##
 ##
-my $wg_info = {};
+my %wg_info;
 
 # get endpoint info
 my $command_raw = `wg show all endpoints 2> /dev/null`;
@@ -308,15 +308,19 @@ if ( $? == 0 ) {
 			( $host, $port ) = host_port_split( $line_split[2] );
 		} else {
 			$pubkey = $line_split[0];
-			( $host, $port ) = host_port_split( $line_split[1] );
+			if ( $line_split[1] =~ /^[\[\]0-9\.A-Fa-f]+\:[0-9]+$/ ) {
+				( $host, $port ) = host_port_split( $line_split[1] );
+			}
 		}
 
-		$wg_info->{$interface} = {
-			$pubkey => {
-				endpoint_host => $host,
-				endpoint_port => $port,
-				allowed_ips   => [],
-			}
+		if ( !defined( $wg_info{$interface} ) ) {
+			$wg_info{$interface} = {};
+		}
+
+		$wg_info{$interface}{$pubkey} = {
+			endpoint_host => $host,
+			endpoint_port => $port,
+			allowed_ips   => [],
 		};
 	} ## end foreach my $line (@command_split)
 } ## end if ( $? == 0 )
@@ -328,8 +332,8 @@ if ( $? == 0 ) {
 	foreach my $line (@command_split) {
 		my ( $interface, $pubkey, $recv, $sent ) = split( /[\t\ ]+/, $line );
 		if ( defined($sent) ) {
-			$wg_info->{$interface}{$pubkey}{bytes_rcvd} = $recv;
-			$wg_info->{$interface}{$pubkey}{bytes_sent} = $sent;
+			$wg_info{$interface}{$pubkey}{bytes_rcvd} = $recv;
+			$wg_info{$interface}{$pubkey}{bytes_sent} = $sent;
 		}
 	}
 } ## end if ( $? == 0 )
@@ -342,9 +346,9 @@ if ( $? == 0 ) {
 	foreach my $line (@command_split) {
 		my ( $interface, $pubkey, $when ) = split( /[\t\ ]+/, $line );
 		if ( $when == 0 ) {
-			$wg_info->{$interface}{$pubkey}{minutes_since_last_handshake} = undef;
+			$wg_info{$interface}{$pubkey}{minutes_since_last_handshake} = undef;
 		} else {
-			$wg_info->{$interface}{$pubkey}{minutes_since_last_handshake} = ( $current_time - $when ) / 60;
+			$wg_info{$interface}{$pubkey}{minutes_since_last_handshake} = ( $current_time - $when ) / 60;
 		}
 	}
 } ## end if ( $? == 0 )
@@ -362,7 +366,7 @@ if ( $? == 0 ) {
 			} elsif ( $line_split[$int] =~ /^[A-Fa-f0-9\:]+\/128$/ ) {
 				$line_split[$int] =~ s/\/128//;
 			}
-			push( @{ $wg_info->{ $line_split[0] }{ $line_split[1] }{allowed_ips} }, $line_split[$int] );
+			push( @{ $wg_info{ $line_split[0] }{ $line_split[1] }{allowed_ips} }, $line_split[$int] );
 			$int++;
 		}
 	} ## end foreach my $line (@command_split)
@@ -430,10 +434,10 @@ sub hosts {
 	}
 	return undef;
 } ## end sub hosts
-my @interfaces = keys( %{$wg_info} );
+my @interfaces = keys(%wg_info);
 my @resolvers  = split( /\,+/, $config->{pubkey_resolvers} );
 foreach my $interface (@interfaces) {
-	my @pubkeys = keys( %{ $wg_info->{$interface} } );
+	my @pubkeys = keys( %{ $wg_info{$interface} } );
 	foreach my $pubkey (@pubkeys) {
 		my $matched       = 0;
 		my $resolvers_int = 0;
@@ -441,59 +445,59 @@ foreach my $interface (@interfaces) {
 			my $resolver = $resolvers[$resolvers_int];
 			if ( !$matched && $resolver eq 'config' ) {
 				if ( defined( $config->{public_key_to_arbitrary_name}{$pubkey} ) ) {
-					$wg_info->{$interface}{$pubkey}{name} = $config->{public_key_to_arbitrary_name}{$pubkey};
+					$wg_info{$interface}{$pubkey}{name} = $config->{public_key_to_arbitrary_name}{$pubkey};
 					$matched = 1;
 				}
 			} elsif ( !$matched && $resolver eq 'endpoint_if_first_allowed_is_subnet_use_getent' ) {
-				if (   defined( $wg_info->{$interface}{$pubkey}{allowed_ips}[0] )
-					&& $wg_info->{$interface}{$pubkey}{allowed_ips}[0] =~ /\//
-					&& defined( $wg_info->{$interface}{$pubkey}{endpoint_host} ) )
+				if (   defined( $wg_info{$interface}{$pubkey}{allowed_ips}[0] )
+					&& $wg_info{$interface}{$pubkey}{allowed_ips}[0] =~ /\//
+					&& defined( $wg_info{$interface}{$pubkey}{endpoint_host} ) )
 				{
-					my $name = getent_hosts( $wg_info->{$interface}{$pubkey}{endpoint_host} );
+					my $name = getent_hosts( $wg_info{$interface}{$pubkey}{endpoint_host} );
 					if ( defined($name) ) {
-						$wg_info->{$interface}{$pubkey}{name} = $name;
+						$wg_info{$interface}{$pubkey}{name} = $name;
 						$matched = 1;
 					}
-				} ## end if ( defined( $wg_info->{$interface}{$pubkey...}))
+				} ## end if ( defined( $wg_info{$interface}{$pubkey...}))
 			} elsif ( !$matched && $resolver eq 'endpoint_if_first_allowed_is_subnet_use_hosts' ) {
-				if (   defined( $wg_info->{$interface}{$pubkey}{allowed_ips}[0] )
-					&& $wg_info->{$interface}{$pubkey}{allowed_ips}[0] =~ /\//
-					&& defined( $wg_info->{$interface}{$pubkey}{endpoint_host} ) )
+				if (   defined( $wg_info{$interface}{$pubkey}{allowed_ips}[0] )
+					&& $wg_info{$interface}{$pubkey}{allowed_ips}[0] =~ /\//
+					&& defined( $wg_info{$interface}{$pubkey}{endpoint_host} ) )
 				{
-					my $name = hosts( $wg_info->{$interface}{$pubkey}{endpoint_host} );
+					my $name = hosts( $wg_info{$interface}{$pubkey}{endpoint_host} );
 					if ( defined($name) ) {
-						$wg_info->{$interface}{$pubkey}{name} = $name;
+						$wg_info{$interface}{$pubkey}{name} = $name;
 						$matched = 1;
 					}
-				} ## end if ( defined( $wg_info->{$interface}{$pubkey...}))
+				} ## end if ( defined( $wg_info{$interface}{$pubkey...}))
 			} elsif ( !$matched && $resolver eq 'endpoint_if_first_allowed_is_subnet_use_ip' ) {
-				if (   defined( $wg_info->{$interface}{$pubkey}{allowed_ips}[0] )
-					&& $wg_info->{$interface}{$pubkey}{allowed_ips}[0] =~ /\//
-					&& defined( $wg_info->{$interface}{$pubkey}{endpoint_host} ) )
+				if (   defined( $wg_info{$interface}{$pubkey}{allowed_ips}[0] )
+					&& $wg_info{$interface}{$pubkey}{allowed_ips}[0] =~ /\//
+					&& defined( $wg_info{$interface}{$pubkey}{endpoint_host} ) )
 				{
-					$wg_info->{$interface}{$pubkey}{name} = $wg_info->{$interface}{$pubkey}{endpoint_host};
+					$wg_info{$interface}{$pubkey}{name} = $wg_info{$interface}{$pubkey}{endpoint_host};
 					$matched = 1;
 				}
 			} elsif ( !$matched && $resolver eq 'first_allowed_use_getent' ) {
-				if ( defined( $wg_info->{$interface}{$pubkey}{allowed_ips}[0] ) ) {
-					my $host = $wg_info->{$interface}{$pubkey}{allowed_ips}[0];
+				if ( defined( $wg_info{$interface}{$pubkey}{allowed_ips}[0] ) ) {
+					my $host = $wg_info{$interface}{$pubkey}{allowed_ips}[0];
 					my $name = getent_hosts($host);
 					if ( defined($name) ) {
-						$wg_info->{$interface}{$pubkey}{name} = $name;
+						$wg_info{$interface}{$pubkey}{name} = $name;
 						$matched = 1;
 					}
 				}
 			} elsif ( !$matched && $resolver eq 'first_allowed_use_hosts' ) {
-				if ( defined( $wg_info->{$interface}{$pubkey}{allowed_ips}[0] ) ) {
-					my $host = $wg_info->{$interface}{$pubkey}{allowed_ips}[0];
+				if ( defined( $wg_info{$interface}{$pubkey}{allowed_ips}[0] ) ) {
+					my $host = $wg_info{$interface}{$pubkey}{allowed_ips}[0];
 					my $name = hosts($host);
 					if ( defined($name) ) {
-						$wg_info->{$interface}{$pubkey}{name} = $name;
+						$wg_info{$interface}{$pubkey}{name} = $name;
 						$matched = 1;
 					}
 				}
 			} elsif ( !$matched && $resolver eq 'first_allowed_use_ip' ) {
-				$wg_info->{$interface}{$pubkey}{name} = $wg_info->{$interface}{$pubkey}{allowed_ips}[0];
+				$wg_info{$interface}{$pubkey}{name} = $wg_info{$interface}{$pubkey}{allowed_ips}[0];
 				$matched = 1;
 			}
 			$resolvers_int++;
@@ -508,20 +512,20 @@ foreach my $interface (@interfaces) {
 ##
 
 foreach my $interface (@interfaces) {
-	my @pubkeys = keys( %{ $wg_info->{$interface} } );
+	my @pubkeys = keys( %{ $wg_info{$interface} } );
 	foreach my $pubkey (@pubkeys) {
-		if ( defined( $wg_info->{$interface}{$pubkey}{name} ) ) {
+		if ( defined( $wg_info{$interface}{$pubkey}{name} ) ) {
 			if ( !defined( $return_json->{data}{$interface} ) ) {
 				$return_json->{data}{$interface} = {};
 			}
-			$return_json->{data}{$interface}{ $wg_info->{$interface}{$pubkey}{name} } = $wg_info->{$interface}{$pubkey};
-			if ($config->{include_pubkey}) {
-				$return_json->{data}{$interface}{ $wg_info->{$interface}{$pubkey}{name} }{pubkey} = $pubkey;
-			}else {
-				$return_json->{data}{$interface}{ $wg_info->{$interface}{$pubkey}{name} }{pubkey} = undef;
+			$return_json->{data}{$interface}{ $wg_info{$interface}{$pubkey}{name} } = $wg_info{$interface}{$pubkey};
+			if ( $config->{include_pubkey} ) {
+				$return_json->{data}{$interface}{ $wg_info{$interface}{$pubkey}{name} }{pubkey} = $pubkey;
+			} else {
+				$return_json->{data}{$interface}{ $wg_info{$interface}{$pubkey}{name} }{pubkey} = undef;
 			}
-		}
-	}
+		} ## end if ( defined( $wg_info{$interface}{$pubkey...}))
+	} ## end foreach my $pubkey (@pubkeys)
 } ## end foreach my $interface (@interfaces)
 
 return_the_data( $return_json, $opts{B} );
