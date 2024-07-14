@@ -179,7 +179,8 @@ my $data = {
 		'check-sanity'                 => 0,
 		'pkg-depends'                  => 0,
 		'fetch-depends'                => 0,
-		'fetch checksum'               => 0,
+		'fetch'                        => 0,
+		'checksum'                     => 0,
 		'extract-depends'              => 0,
 		'extract'                      => 0,
 		'patch-depends'                => 0,
@@ -258,7 +259,8 @@ if ( $? == 0 ) {
 			'check-sanity'                 => 0,
 			'pkg-depends'                  => 0,
 			'fetch-depends'                => 0,
-			'fetch checksum'               => 0,
+			'fetch'                        => 0,
+			'checksum'                     => 0,
 			'extract-depends'              => 0,
 			'extract'                      => 0,
 			'patch-depends'                => 0,
@@ -311,19 +313,23 @@ if ( $? == 0 ) {
 		);
 
 		foreach my $item ( keys(%dir_size_stats) ) {
-			$found->{$item} = abs_path( $found->{$item} );
 			eval {
-				my @files = read_dir( $found->{$item} );
-				foreach my $to_stat (@files) {
-					if ( -f $found->{$item} . '/' . $to_stat ) {
-						my (
-							$dev,  $ino,   $mode,  $nlink, $uid,     $gid, $rdev,
-							$size, $atime, $mtime, $ctime, $blksize, $blocks
-						) = stat( $found->{$item} . '/' . $to_stat );
-						$found->{ $dir_size_stats{$item} } += $size;
-					}
-				}
-				$data->{stats}{ $dir_size_stats{$item} } = $found->{ $dir_size_stats{$item} };
+				if ( defined( $found->{$item} ) ) {
+					$found->{$item} = abs_path( $found->{$item} );
+					if ( defined( $found->{$item} ) ) {
+						my @files = read_dir( $found->{$item} );
+						foreach my $to_stat (@files) {
+							if ( -f $found->{$item} . '/' . $to_stat ) {
+								my (
+									$dev,  $ino,   $mode,  $nlink, $uid,     $gid, $rdev,
+									$size, $atime, $mtime, $ctime, $blksize, $blocks
+								) = stat( $found->{$item} . '/' . $to_stat );
+								$found->{ $dir_size_stats{$item} } += $size;
+							}
+						}
+						$data->{stats}{ $dir_size_stats{$item} } = $found->{ $dir_size_stats{$item} };
+					} ## end if ( defined( $found->{$item} ) )
+				} ## end if ( defined( $found->{$item} ) )
 			};
 		} ## end foreach my $item ( keys(%dir_size_stats) )
 
