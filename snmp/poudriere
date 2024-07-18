@@ -6,11 +6,11 @@ poudriere - LibreNMS JSON style SNMP extend for monitoring Poudriere
 
 =head1 VERSION
 
-0.1.0
+0.2.0
 
 =head1 SYNOPSIS
 
-poudriere [B<-w>] [B<-b>] [B<-o> <cache base>]
+poudriere [B<-w>] [B<-b>] [B<-o> <cache base>] [B<-a>]x
 
 poudriere --help|-h
 
@@ -25,6 +25,10 @@ or if using cron...
     extend poudriere cat /var/cache/poudriere.json.snmp
 
 =head1 FLAGS
+
+=head2 -a
+
+Include `poudriere status -a` as .data.history .
 
 =head2 -w
 
@@ -115,7 +119,9 @@ my $write;
 my $compress;
 my $version;
 my $help;
+my $history;
 GetOptions(
+	a       => \$history,
 	'o=s'   => \$cache_base,
 	w       => \$write,
 	b       => \$compress,
@@ -447,6 +453,13 @@ if ( $? == 0 ) {
 			}
 		} ## end elsif ( $line =~ /^\[.*\].*\:.*\|.*\:/ )
 	} ## end foreach my $line (@build_info_split)
+
+	#
+	# include this history if asked to
+	#
+	if ($history) {
+		$data->{history} = `poudriere -N status -a 2> /dev/null`;
+	}
 } else {
 	$to_return->{error}       = 1;
 	$to_return->{errorString} = 'non-zero exit for "poudriere status -f"';
