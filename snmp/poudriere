@@ -6,11 +6,11 @@ poudriere - LibreNMS JSON style SNMP extend for monitoring Poudriere
 
 =head1 VERSION
 
-0.1.0
+0.2.0
 
 =head1 SYNOPSIS
 
-poudriere [B<-w>] [B<-b>] [B<-o> <cache base>]
+poudriere [B<-w>] [B<-b>] [B<-o> <cache base>] [B<-a>] [B<-z>]
 
 poudriere --help|-h
 
@@ -26,6 +26,10 @@ or if using cron...
 
 =head1 FLAGS
 
+=head2 -a
+
+Include `poudriere status -a` as .data.history .
+
 =head2 -w
 
 Write the results out.
@@ -33,6 +37,11 @@ Write the results out.
 =head2 -b
 
 Print out the compressed data if GZip+Base64 is smaller.
+
+=head2 -z
+
+Zero the stats from `poudriere status` if it the status for a jail/ports/set
+set is not not building.
 
 =head2 -o <cache base>
 
@@ -115,10 +124,14 @@ my $write;
 my $compress;
 my $version;
 my $help;
+my $history;
+my $zero_non_build;
 GetOptions(
+	a       => \$history,
 	'o=s'   => \$cache_base,
 	w       => \$write,
 	b       => \$compress,
+	z       => \$zero_non_build,
 	v       => \$version,
 	version => \$version,
 	h       => \$help,
@@ -285,6 +298,17 @@ if ( $? == 0 ) {
 			$found->{FETCH}, $found->{REMAIN}, $found->{TIME}, $found->{LOGS}
 		) = split( / +/, $status_split[$status_split_int], 14 );
 
+		if ( $zero_non_build && $found->{STATUS} !~ /build/ ) {
+			$found->{QUEUE}  = 0;
+			$found->{BUILT}  = 0;
+			$found->{FAIL}   = 0;
+			$found->{SKIP}   = 0;
+			$found->{IGNORE} = 0;
+			$found->{FETCH}  = 0;
+			$found->{REMAIN} = 0;
+			$found->{TIME} = 0;
+		}
+
 		if ( $found->{STATUS} ne 'done' ) {
 			$data->{not_done} = 1;
 		}
@@ -339,7 +363,7 @@ if ( $? == 0 ) {
 			if ( $item eq 'TIME' ) {
 				$found->{$item} = time_to_seconds( $found->{$item} );
 			}
-			if ( $item =~ /^\d+$/ ) {
+			if ( $found->{$item} =~ /^\d+$/ ) {
 				$data->{stats}{$item} += $found->{$item};
 			}
 		}
@@ -447,6 +471,13 @@ if ( $? == 0 ) {
 			}
 		} ## end elsif ( $line =~ /^\[.*\].*\:.*\|.*\:/ )
 	} ## end foreach my $line (@build_info_split)
+
+	#
+	# include this history if asked to
+	#
+	if ($history) {
+		$data->{history} = `poudriere -N status -a 2> /dev/null`;
+	}
 } else {
 	$to_return->{error}       = 1;
 	$to_return->{errorString} = 'non-zero exit for "poudriere status -f"';
