@@ -6,11 +6,13 @@ poudriere - LibreNMS JSON style SNMP extend for monitoring Poudriere
 
 =head1 VERSION
 
-0.2.0
+0.3.0
 
 =head1 SYNOPSIS
 
-poudriere [B<-w>] [B<-b>] [B<-o> <cache base>] [B<-a>] [B<-z>]
+poudriere B<-w> [B<-o> <cache base>] [B<-a>] [B<-z>] [B<-q>]
+
+poudriere [<-b>] [B<-a>] [B<-z>]
 
 poudriere --help|-h
 
@@ -18,10 +20,14 @@ poudriere --version|-v
 
 =head1 SNMPD CONFIG
 
-    extend poudriere /etc/snmp/extends/poudriere -b
+    extend poudriere /usr/local/etc/snmp/poudriere -b -a -z
 
 or if using cron...
 
+    # cron
+    4/5 * * * * root /usr/local/etc/snmp/poudriere -b -a -z -q
+
+    # snmpd.conf
     extend poudriere cat /var/cache/poudriere.json.snmp
 
 =head1 FLAGS
@@ -30,13 +36,17 @@ or if using cron...
 
 Include `poudriere status -a` as .data.history .
 
+=head2 -b
+
+Encapsulate the result in GZip+Base64 if -w is not used.
+
+=head2 -q
+
+If -w is specified, do not print the results to stdout.
+
 =head2 -w
 
 Write the results out.
-
-=head2 -b
-
-Print out the compressed data if GZip+Base64 is smaller.
 
 =head2 -z
 
@@ -126,10 +136,12 @@ my $version;
 my $help;
 my $history;
 my $zero_non_build;
+my $if_write_be_quiet;
 GetOptions(
 	a       => \$history,
 	'o=s'   => \$cache_base,
 	w       => \$write,
+	q       => \$if_write_be_quiet,
 	b       => \$compress,
 	z       => \$zero_non_build,
 	v       => \$version,
@@ -306,8 +318,8 @@ if ( $? == 0 ) {
 			$found->{IGNORE} = 0;
 			$found->{FETCH}  = 0;
 			$found->{REMAIN} = 0;
-			$found->{TIME} = 0;
-		}
+			$found->{TIME}   = 0;
+		} ## end if ( $zero_non_build && $found->{STATUS} !~...)
 
 		if ( $found->{STATUS} ne 'done' ) {
 			$data->{not_done} = 1;
@@ -393,7 +405,7 @@ if ( $? == 0 ) {
 			eval {
 				$ps
 					= decode_json(
-					`ps -o 'jid %cpu %mem rss cow dsiz etimes inblk jobc majflt minflt msgrcv msgsnd nivcsw nlwp nsigs nswap nvcsw oublk ssiz systime time tsiz usertime' --libxo json -J $jails_string`
+					`ps -o 'jid %cpu %mem rss cow dsiz etimes inblk jobc majflt minflt msgrcv msgsnd nivcsw nlwp nsigs nswap nvcsw oublk ssiz systime time tsiz usertime' --libxo json -J $jails_string 2> /dev/null`
 					);
 			};
 			if ($@) {
@@ -503,16 +515,9 @@ if ($write) {
 	$compressed =~ s/\n//g;
 	$compressed = $compressed . "\n";
 	my $print_compressed = 0;
-	if ( length($compressed) > length($raw_json) ) {
-		write_file( $cache_base . '.snmp', $raw_json );
-	} else {
-		write_file( $cache_base . '.snmp', $compressed );
-		$print_compressed = 1;
-	}
+	write_file( $cache_base . '.snmp', $compressed );
 
-	if ( $compress && $print_compressed ) {
-		print $compressed;
-	} else {
+	if ( !$if_write_be_quiet ) {
 		print $raw_json;
 	}
 } else {
@@ -527,10 +532,5 @@ if ($write) {
 	my $compressed = encode_base64($compressed_string);
 	$compressed =~ s/\n//g;
 	$compressed = $compressed . "\n";
-	my $print_compressed = 0;
-	if ( length($compressed) > length($raw_json) ) {
-		print $raw_json;
-	} else {
-		print $compressed;
-	}
+	print $compressed;
 } ## end else [ if ($write) ]
