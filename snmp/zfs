@@ -6,7 +6,7 @@ zfs - LibreNMS JSON SNMP extend for gathering backups for ZFS
 
 =head1 VERSION
 
-0.1.0
+0.1.1
 
 =head1 DESCRIPTION
 
@@ -79,8 +79,6 @@ use File::Slurp;
 use MIME::Base64;
 use IO::Compress::Gzip qw(gzip $GzipError);
 use Pod::Usage;
-
-#$Getopt::Std::STANDARD_HELP_VERSION = 1;
 
 sub main::VERSION_MESSAGE {
 	pod2usage( -exitval => 255, -verbose => 99, -sections => qw(VERSION), -output => \*STDOUT, );
@@ -289,6 +287,13 @@ my $recently_used_percent;
 my $frequently_used_percent;
 if ( !defined( $stats_stuff->{p} ) && defined( $stats_stuff->{mfu_size} ) ) {
 	$stats_stuff->{p} = $stats_stuff->{size} - $stats_stuff->{mfu_size};
+} elsif ( !defined( $stats_stuff->{p} )
+	&& !defined( $stats_stuff->{mfu_size} )
+	&& defined( $stats_stuff->{pd} && defined( $stats_stuff->{pm} ) ) )
+{
+	# see https://github.com/librenms/librenms-agent/issues/518
+	# this should set the value for p in those cases
+	$stats_stuff->{p} = $stats_stuff->{pd} + $stats_stuff->{pm};
 }
 if ( $stats_stuff->{size} >= $stats_stuff->{c} ) {
 	if ( !defined($mfu_size) ) {
