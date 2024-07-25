@@ -10,9 +10,9 @@ poudriere - LibreNMS JSON style SNMP extend for monitoring Poudriere
 
 =head1 SYNOPSIS
 
-poudriere B<-w> [B<-o> <cache base>] [B<-a>] [B<-z>] [B<-q>]
+poudriere B<-w> [B<-o> <cache base>] [B<-a>] [B<-z>] [B<-q>] [B<-d>]
 
-poudriere [<-b>] [B<-a>] [B<-z>]
+poudriere [<-b>] [B<-a>] [B<-z>] [B<-d>]
 
 poudriere --help|-h
 
@@ -39,6 +39,10 @@ Include `poudriere status -a` as .data.history .
 =head2 -b
 
 Encapsulate the result in GZip+Base64 if -w is not used.
+
+=head2 -d
+
+Debug mode. This is noisy
 
 =head2 -q
 
@@ -137,18 +141,25 @@ my $help;
 my $history;
 my $zero_non_build;
 my $if_write_be_quiet;
+my $debug;
 GetOptions(
 	a       => \$history,
-	'o=s'   => \$cache_base,
-	w       => \$write,
-	q       => \$if_write_be_quiet,
 	b       => \$compress,
-	z       => \$zero_non_build,
-	v       => \$version,
-	version => \$version,
+	d       => \$debug,
 	h       => \$help,
 	help    => \$help,
+	'o=s'   => \$cache_base,
+	q       => \$if_write_be_quiet,
+	v       => \$version,
+	w       => \$write,
+	version => \$version,
+	z       => \$zero_non_build,
 );
+
+# include for dumping variables at parts
+if ($debug) {
+	eval "use Data::Dumper; \$Data::Dumper::Sortkeys = 1;";
+}
 
 if ($version) {
 	pod2usage( -exitval => 255, -verbose => 99, -sections => qw(VERSION), -output => \*STDOUT, );
@@ -246,17 +257,45 @@ my @poudriere_stats = ( 'QUEUE', 'BUILT', 'FAIL', 'SKIP', 'IGNORE', 'FETCH', 'RE
 
 my $status_raw = `poudriere -N status -f -l 2> /dev/null`;
 if ( $? == 0 ) {
+	if ($debug) {
+		print "###\n###\n### poudriere -N status -f -l 2> /dev/null \n###\n###\n" . $status_raw . "\n\n\n";
+	}
+
 	$data->{status}     = $status_raw;
-	$data->{build_info} = `poudriere -N status -f -b -l 2>&1`;
+	$data->{build_info} = `poudriere -N status -f -b -l 2>\&1`;
+
+	if ($debug) {
+		print "###\n###\n### poudriere -N status -f -b -l 2>\&1 \n###\n###\n"
+			. $data->{build_info}
+			. "\n\n\n###\n###\n###\n### jls --libxo json \n###\n###\n###\n";
+	}
+
+	my $jls;
+	eval { $jls = decode_json(`jls --libxo json`); };
+	if ($@) {
+		$jls = { 'jail-information' => { jail => [] } };
+		if ($debug) {
+			print "# failed to parse JSON... using empty hash... \n \$@ = "
+				. $@
+				. "\n\$jls = "
+				. Dumper($jls)
+				. "\n\n\n";
+		}
+	} else {
+		if ($debug) {
+			print "\$jls = " . Dumper($jls) . "\n\n\n";
+		}
+	}
+
+	if ($debug) {
+		print "###\n###\n###\n### starting line processing for status \n###\n###\n###\n";
+	}
 
 	my @status_split     = split( /\n/, $status_raw );
 	my $status_split_int = 1;
 	while ( defined( $status_split[$status_split_int] ) ) {
-
-		my $jls;
-		eval { $jls = decode_json(`jls --libxo json`); };
-		if ($@) {
-			$jls = { 'jail-information' => { jail => [] } };
+		if ($debug) {
+			print '#\n#\n# processing line ' . $status_split_int . ': ' . $status_split[$status_split_int] . "\n#\n#\n";
 		}
 
 		my $found = {
@@ -319,7 +358,13 @@ if ( $? == 0 ) {
 			$found->{FETCH}  = 0;
 			$found->{REMAIN} = 0;
 			$found->{TIME}   = 0;
-		} ## end if ( $zero_non_build && $found->{STATUS} !~...)
+
+			if ($debug) {
+				print '# zeroing... $zero_non_build = true && status = ' . $found->{STATUS} . " !~ /build/\n";
+			}
+		} elsif ($debug) {
+			print '# not zeroing ... $zero_non_build = false || status = ' . $found->{STATUS} . " =~ /build/\n";
+		}
 
 		if ( $found->{STATUS} ne 'done' ) {
 			$data->{not_done} = 1;
@@ -330,6 +375,9 @@ if ( $? == 0 ) {
 			$jailANDportsANDset = $found->{JAIL} . '-' . $found->{PORTS};
 		} else {
 			$jailANDportsANDset = $found->{JAIL} . '-' . $found->{PORTS} . '-' . $found->{SET};
+		}
+		if ($debug) {
+			print '# $jailANDportsANDset = ' . $jailANDportsANDset . "\n";
 		}
 
 		$found->{packages_dir_all}    = $found->{LOGS} . '/../../../../packages/' . $jailANDportsANDset . '/All';
@@ -386,14 +434,30 @@ if ( $? == 0 ) {
 		my @jails;
 		my $jail_regex = '^' . $jailANDportsANDset . '-job-[0-9]+';
 		my $jls_int    = 0;
+		if ($debug) {
+			print '# looking for jails matching... /' . $jail_regex . '/ or \'' . $jailANDportsANDset . "'\n";
+		}
 		while ( defined( $jls->{'jail-information'}{jail}[$jls_int] ) ) {
 			if (   $jls->{'jail-information'}{jail}[$jls_int]{hostname} eq $jailANDportsANDset
 				|| $jls->{'jail-information'}{jail}[$jls_int]{hostname} =~ /$jail_regex/ )
 			{
 				push( @jails, $jls->{'jail-information'}{jail}[$jls_int]{jid} );
+				if ($debug) {
+					print 'match $jls->{"jail-information"}{"jail"}['
+						. $jls_int
+						. ']{hostname} = '
+						. $jls->{'jail-information'}{jail}[$jls_int]{hostname} . "\n";
+				}
+			} else {
+				if ($debug) {
+					print '!match $jls->{"jail-information"}{"jail"}['
+						. $jls_int
+						. ']{hostname} = '
+						. $jls->{'jail-information'}{jail}[$jls_int]{hostname} . "\n";
+				}
 			}
 			$jls_int++;
-		}
+		} ## end while ( defined( $jls->{'jail-information'}{jail...}))
 
 		##
 		## if we have found jails, grab the information via ps
@@ -401,8 +465,16 @@ if ( $? == 0 ) {
 		if ( defined( $jails[0] ) ) {
 			my $jails_string = join( ',', @jails );
 
+			if ($debug) {
+				print "# \$jails[0] defined \n# \$jails_string = " . $jails_string . "\n";
+			}
+
 			my $ps;
 			eval {
+				if ($debug) {
+					print
+						"##\n##\n## ps -o 'jid \%cpu \%mem rss cow dsiz etimes inblk jobc majflt minflt msgrcv msgsnd nivcsw nlwp nsigs nswap nvcsw oublk ssiz systime time tsiz usertime' --libxo json -J $jails_string 2> /dev/null\n##\n##\n";
+				}
 				$ps
 					= decode_json(
 					`ps -o 'jid %cpu %mem rss cow dsiz etimes inblk jobc majflt minflt msgrcv msgsnd nivcsw nlwp nsigs nswap nvcsw oublk ssiz systime time tsiz usertime' --libxo json -J $jails_string 2> /dev/null`
@@ -410,6 +482,12 @@ if ( $? == 0 ) {
 			};
 			if ($@) {
 				$ps = { 'process-information' => { process => [] } };
+				if ($debug) {
+					print '# JSON parsing errored... using default... ' . $@ . "\n";
+				}
+			}
+			if ($debug) {
+				print '$ps = ' . Dumper($ps) . "\n";
 			}
 			my $ps_int = 0;
 			while ( defined( $ps->{'process-information'}{process}[$ps_int] ) ) {
@@ -423,19 +501,38 @@ if ( $? == 0 ) {
 				}
 				$ps_int++;
 			} ## end while ( defined( $ps->{'process-information'}...))
-		} ## end if ( defined( $jails[0] ) )
+		} else {
+			if ($debug) {
+				print "# \$jails[0] is undef\n";
+			}
+		}
 
 		$data->{jailANDportsANDset}{$jailANDportsANDset} = $found;
 		$status_split_int++;
+
+		if ($debug) {
+			print "\$data->{jailANDportsANDset}{$jailANDportsANDset} = "
+				. Dumper( $data->{jailANDportsANDset}{$jailANDportsANDset} ) . " \n\n";
+		}
 	} ## end while ( defined( $status_split[$status_split_int...]))
+
+	if ($debug) {
+		print "#\n#\n# processing \$data->{build_info}\n#\n#\n";
+	}
 
 	my @build_info_split = split( /\n/, $data->{build_info} );
 	my $current_section;
 	foreach my $line (@build_info_split) {
+		if ($debug) {
+			print "# processing line:  " . $line . "\n";
+		}
 		if ( $line =~ /^\[.*\]\ \[.*\] .*Queued.*Built/ ) {
 			$current_section = $line;
 			$current_section =~ s/^\[//;
 			$current_section =~ s/\].*$//;
+			if ($debug) {
+				print '# found section line... \$current_section = ' . $current_section . "\n";
+			}
 		} elsif ( $line =~ /^\[.*\].*\:.*\|.*\:/ ) {
 			my $type;
 			if ( $line =~ /[\ \t]check\-sanity[\ \t]/ ) {
@@ -480,6 +577,11 @@ if ( $? == 0 ) {
 				if ( defined( $data->{jailANDportsANDset}{$current_section} ) ) {
 					$data->{jailANDportsANDset}{$current_section}{$type}++;
 				}
+				if ($debug) {
+					print '# type line found... $type = ' . $type . "\n";
+				}
+			} elsif ($debug) {
+				print "# line not matched";
 			}
 		} ## end elsif ( $line =~ /^\[.*\].*\:.*\|.*\:/ )
 	} ## end foreach my $line (@build_info_split)
@@ -489,10 +591,17 @@ if ( $? == 0 ) {
 	#
 	if ($history) {
 		$data->{history} = `poudriere -N status -a 2> /dev/null`;
+		if ($debug) {
+			print "#\n#\n# including as .data.history ... poudriere -N status -a 2> /dev/null\n#\n";
+		}
+	} else {
+		if ($debug) {
+			print "#\n#\n# not including as .data.history ... poudriere -N status -a 2> /dev/null";
+		}
 	}
 } else {
 	$to_return->{error}       = 1;
-	$to_return->{errorString} = 'non-zero exit for "poudriere status -f"';
+	$to_return->{errorString} = 'non-zero exit for "poudriere -N status -f -l"';
 }
 
 ###
