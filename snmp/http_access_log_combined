@@ -20,7 +20,7 @@ http_access_log_combined --version|-v
 
 =head1 SNMPD CONFIG
 
-    extend http_access_log_combined /usr/local/etc/snmp/poudriere -b
+    extend http_access_log_combined /usr/local/etc/snmp/http_access_log_combined -b
 
 or if using cron...
 
@@ -28,7 +28,7 @@ or if using cron...
     4/5 * * * * root /usr/local/etc/snmp/http_access_log_combined -b -q
 
     # snmpd.conf
-    extend poudriere cat /var/cache/http_access_log_combined.json.snmp
+    extend http_access_log_combined cat /var/cache/http_access_log_combined.json.snmp
 
 =head1 FLAGS
 
@@ -321,6 +321,7 @@ my $data = {
 		'218'        => 0,
 		'226'        => 0,
 		'3xx'        => 0,
+		'300'        => 0,
 		'301'        => 0,
 		'302'        => 0,
 		'303'        => 0,
@@ -355,6 +356,8 @@ my $data = {
 		'423'        => 0,
 		'424'        => 0,
 		'425'        => 0,
+		'426'        => 0,
+		'428'        => 0,
 		'429'        => 0,
 		'431'        => 0,
 		'444'        => 0,
@@ -430,6 +433,7 @@ foreach my $log_name ( keys( %{ $config->{access} } ) ) {
 		'218'        => 0,
 		'226'        => 0,
 		'3xx'        => 0,
+		'300'        => 0,
 		'301'        => 0,
 		'302'        => 0,
 		'303'        => 0,
@@ -464,6 +468,8 @@ foreach my $log_name ( keys( %{ $config->{access} } ) ) {
 		'423'        => 0,
 		'424'        => 0,
 		'425'        => 0,
+		'426'        => 0,
+		'428'        => 0,
 		'429'        => 0,
 		'431'        => 0,
 		'444'        => 0,
