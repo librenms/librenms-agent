@@ -1,48 +1,40 @@
-#!/usr/local/bin/perl
+#!/usr/bin/env perl
 
 =head1 NAME
 
-poudriere - LibreNMS JSON style SNMP extend for monitoring Poudriere
+samba - LibreNMS JSON style SNMP extend for monitoring Samba
 
 =head1 VERSION
 
-0.4.0
+0.1.0
 
 =head1 SYNOPSIS
 
-poudriere B<-w> [B<-o> <cache base>] [B<-a>] [B<-z>] [B<-q>] [B<-d>]
+samba B<-w> [B<-o> <cache base>] [B<-q>]
 
-poudriere [<-b>] [B<-a>] [B<-z>] [B<-d>]
+samba [<-b>] [B<-d>]
 
-poudriere --help|-h
+samba --help|-h
 
-poudriere --version|-v
+samba --version|-v
 
 =head1 SNMPD CONFIG
 
-    extend poudriere /usr/local/etc/snmp/poudriere -b -a -z
+    extend samba /usr/local/etc/snmp/samba -b -a -z
 
 or if using cron...
 
     # cron
-    4/5 * * * * root /usr/local/etc/snmp/poudriere -b -a -z -q
+    4/5 * * * * root /usr/local/etc/snmp/samba -b -a -z -q
 
     # snmpd.conf
-    extend poudriere cat /var/cache/poudriere.json.snmp
+    extend samba cat /var/cache/samba.json.snmp
 
 =head1 FLAGS
-
-=head2 -a
-
-Include `poudriere status -a` as .data.history .
 
 =head2 -b
 
 Encapsulate the result in GZip+Base64 if -w is not used.
-
-=head2 -d
-
-Debug mode. This is noisy
 
 =head2 -q
 
@@ -52,27 +44,28 @@ If -w is specified, do not print the results to stdout.
 
 Write the results out.
 
-=head2 -z
-
-Zero the stats from `poudriere status` if it the status for a jail/ports/set
-set is not not building.
-
 =head2 -o <cache base>
 
-Where to write the results to. Defaults to '/var/cache/poudriere.json',
+Where to write the results to. Defaults to '/var/cache/samba.json',
 meaning it will be written out to the two locations.
 
-    /var/cache/poudriere.json
-    /var/cache/poudriere.json.snmp
+    /var/cache/samba.json
+    /var/cache/samba.json.snmp
 
 The later is for use with returning data for SNMP. Will be compressed
 if possible.
 
 =head1 REQUIREMENTS
 
-    p5-File-Slurp
-    p5-MIME-Base64
-    p5-JSON
+    File::Slurp
+    MIME::Base64
+    JSON
+
+    # FreeBSD
+    pkg add  p5-File-Slurp p5-MIME-Base64 p5-JSON
+
+    # Debian
+    apt-get install libfile-slurp-perl libmime-base64-perl libjson-perl
 
 =cut
 
@@ -84,47 +77,6 @@ use MIME::Base64;
 use IO::Compress::Gzip qw(gzip $GzipError);
 use Pod::Usage;
 use JSON;
-use Cwd 'abs_path';
-
-sub time_to_seconds {
-	my $time = $_[0];
-
-	if ( !defined($time) ) {
-		return 0;
-	}
-
-	if ( $time =~ /^0\:[0-9]+\.[0-9]+$/ ) {
-		$time =~ s/^0\://;
-		return $time;
-	} elsif ( $time =~ /^[0-9]+\:[0-9]+\.[0-9]+$/
-		|| $time =~ /^[0-9]+\:[0-9]+$/ )
-	{
-		my $minutes = $time;
-		$minutes =~ s/\:.*//;
-		$time    =~ s/.*\://;
-		$time = ( $minutes * 60 ) + $time;
-		return $time;
-	} elsif ( $time =~ /^[0-9]+\:[0-9]+\:[0-9]+\.[0-9]+$/
-		|| $time =~ /^[0-9]+\:[0-9]+\:[0-9]+$/ )
-	{
-		my ( $hours, $minutes, $seconds ) = split( /:/, $time );
-		$time = ( $hours * 3600 ) + ( $minutes * 60 ) + $seconds;
-		return $time;
-	} elsif ( $time =~ /^[0-9]+D\:[0-9]+\:[0-9]+\.[0-9]+$/
-		|| $time =~ /^[0-9]+D\:[0-9]+\:[0-9]+$/ )
-	{
-		my $days = $time;
-		$days =~ s/D\:.*$//;
-		my $minutes = $time;
-		$minutes =~ s/^.*D\://;
-		$minutes =~ s/\:.*//;
-		$time = ( $days * 86400 ) + ( $minutes * 60 ) + $time;
-		return $time;
-	} ## end elsif ( $time =~ /^[0-9]+D\:[0-9]+\:[0-9]+\.[0-9]+$/...)
-
-	# return 0 for anything unknown
-	return 0;
-} ## end sub time_to_seconds
 
 #the version of returned data
 my $VERSION = 1;
@@ -133,19 +85,14 @@ my $VERSION = 1;
 $ENV{PATH} = $ENV{PATH} . ':/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin';
 
 my $pretty;
-my $cache_base = '/var/cache/poudriere.json';
+my $cache_base = '/var/cache/samba.json';
 my $write;
 my $compress;
 my $version;
 my $help;
-my $history;
-my $zero_non_build;
 my $if_write_be_quiet;
-my $debug;
 GetOptions(
-	a       => \$history,
 	b       => \$compress,
-	d       => \$debug,
 	h       => \$help,
 	help    => \$help,
 	'o=s'   => \$cache_base,
@@ -153,13 +100,7 @@ GetOptions(
 	v       => \$version,
 	w       => \$write,
 	version => \$version,
-	z       => \$zero_non_build,
 );
-
-# include for dumping variables at parts
-if ($debug) {
-	eval "use Data::Dumper; \$Data::Dumper::Sortkeys = 1;";
-}
 
 if ($version) {
 	pod2usage( -exitval => 255, -verbose => 99, -sections => qw(VERSION), -output => \*STDOUT, );
@@ -243,9 +184,8 @@ my $data = {
 		nt_transact_time        => 0,
 		nt_transact_count       => 0,
 	},
-	procs => [
-			  ],
-			shares=>[],
+	procs  => [],
+	shares => [],
 };
 
 ###
@@ -255,12 +195,10 @@ my $data = {
 ###
 my @profiling_lines = grep( !/^\*/, split( /\n/, `smbstatus -P 2> /dev/null` ) );
 foreach my $line (@profiling_lines) {
-	$line =~ s/[\ \t]//g;
+	$line =~ s/\s//g;
 	my @line_split = split( /\:/, $line );
-	if ( $line_split[1] =~ /^\d+$/ ) {
-		if ( defined( $data->{general}{ $line_split[0] } ) ) {
-			$data->{general}{ $line_split[0] } = $line_split[1];
-		} elsif ( $line_split[0] =~ /^syscall_/ ) {
+	if ( $line_split[1] =~ /^[0-9]+$/ ) {
+		if ( $line_split[0] =~ /^syscall_/ ) {
 			if ( $line_split[0] =~ /read/ || $line_split[0] =~ /recv/ ) {
 				if ( $line_split[0] =~ /count/ ) {
 					$data->{general}{syscall_count}      = $data->{general}{syscall_count} + $line_split[1];
@@ -400,8 +338,10 @@ foreach my $line (@profiling_lines) {
 					$data->{general}{smb2_other_idle} = $data->{general}{smb2_other_idle} + $line_split[1];
 				}
 			} ## end else [ if ( $line_split[0] =~ /read/ || $line_split...)]
-		} ## end elsif ( $line_split[0] =~ /^smb2_/ )
-	} ## end if ( $line_split[1] =~ /^\d+$/ )
+		} else {
+			$data->{general}{ $line_split[0] } = $line_split[1];
+		}
+	} ## end if ( $line_split[1] =~ /^[0-9]+$/ )
 } ## end foreach my $line (@profiling_lines)
 
 ###
@@ -411,8 +351,8 @@ foreach my $line (@profiling_lines) {
 ###
 my @process_lines = grep( /^\d/, split( /\n/, `smbstatus -p 2> /dev/null` ) );
 foreach my $line (@process_lines) {
-	# lines look like this
-	# 5420    bar      foo      192.168.1.2 (ipv4:192.168.1.2:497)  SMB3_11           -                    partial(AES-128-CMAC)
+# lines look like this
+# 5420    bar      foo      192.168.1.2 (ipv4:192.168.1.2:497)  SMB3_11           -                    partial(AES-128-CMAC)
 	my $new_proc = {};
 	my $client_info;
 	(
@@ -441,23 +381,19 @@ my @share_lines = grep( /^\w+\s+\d+/, split( /\n/, `smbstatus -S 2> /dev/null` )
 foreach my $line (@share_lines) {
 	# lines look like... sometimes spaces on the end
 	# foo          5423    192.168.1.2 Tue Jul 16 02:39:53 2024 CDT     -            -
-	my $new_share={};
+	my $new_share = {};
 	my $rest_of_line;
-	(
-	 $new_share->{service}, $new_share->{pid}, $new_share->{machine}, $rest_of_line
-	 ) = split( /\s+/, $line, 4 );
-	$rest_of_line=~s/\s+$//;
+	( $new_share->{service}, $new_share->{pid}, $new_share->{machine}, $rest_of_line ) = split( /\s+/, $line, 4 );
+	$rest_of_line =~ s/\s+$//;
 	# reverse it to make parsing out the date easy
-	$rest_of_line=reverse $rest_of_line;
-	(
-	 $new_share->{signing}, $new_share->{encryption}, $new_share->{connected_at}
-	 ) = split( /\s+/, $rest_of_line, 3 );
-	$new_share->{signing} = reverse $new_share->{signing};
-	$new_share->{encryption} = reverse $new_share->{encryption};
+	$rest_of_line = reverse $rest_of_line;
+	( $new_share->{signing}, $new_share->{encryption}, $new_share->{connected_at} ) = split( /\s+/, $rest_of_line, 3 );
+	$new_share->{signing}      = reverse $new_share->{signing};
+	$new_share->{encryption}   = reverse $new_share->{encryption};
 	$new_share->{connected_at} = reverse $new_share->{connected_at};
 
 	push( @{ $data->{shares} }, $new_share );
-}
+} ## end foreach my $line (@share_lines)
 
 ###
 ###
@@ -465,7 +401,7 @@ foreach my $line (@share_lines) {
 ###
 ###
 my @lock_lines = grep( /^\d+\s+/, split( /\n/, `smbstatus -L 2> /dev/null` ) );
-$data->{general}{lock_count}=$#lock_lines + 1;
+$data->{general}{lock_count} = $#lock_lines + 1;
 
 ###
 ###
