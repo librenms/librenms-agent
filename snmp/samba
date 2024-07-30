@@ -339,7 +339,9 @@ foreach my $line (@profiling_lines) {
 				}
 			} ## end else [ if ( $line_split[0] =~ /read/ || $line_split...)]
 		} else {
-			$data->{general}{ $line_split[0] } = $line_split[1];
+			if (defined($line_split[1])) {
+				$data->{general}{ $line_split[0] } = $line_split[1];
+			}
 		}
 	} ## end if ( $line_split[1] =~ /^[0-9]+$/ )
 } ## end foreach my $line (@profiling_lines)
