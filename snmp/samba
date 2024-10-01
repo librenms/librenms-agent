@@ -1,0 +1,446 @@
+#!/usr/bin/env perl
+
+=head1 NAME
+
+samba - LibreNMS JSON style SNMP extend for monitoring Samba
+
+=head1 VERSION
+
+0.1.0
+
+=head1 SYNOPSIS
+
+samba B<-w> [B<-o> <cache base>] [B<-q>]
+
+samba [<-b>] [B<-d>]
+
+samba --help|-h
+
+samba --version|-v
+
+=head1 SNMPD CONFIG
+
+    extend samba /usr/local/etc/snmp/samba -b -a -z
+
+or if using cron...
+
+    # cron
+    4/5 * * * * root /usr/local/etc/snmp/samba -b -a -z -q
+
+    # snmpd.conf
+    extend samba cat /var/cache/samba.json.snmp
+
+=head1 FLAGS
+
+=head2 -b
+
+Encapsulate the result in GZip+Base64 if -w is not used.
+
+=head2 -q
+
+If -w is specified, do not print the results to stdout.
+
+=head2 -w
+
+Write the results out.
+
+=head2 -o <cache base>
+
+Where to write the results to. Defaults to '/var/cache/samba.json',
+meaning it will be written out to the two locations.
+
+    /var/cache/samba.json
+    /var/cache/samba.json.snmp
+
+The later is for use with returning data for SNMP. Will be compressed
+if possible.
+
+=head1 REQUIREMENTS
+
+    File::Slurp
+    MIME::Base64
+    JSON
+
+    # FreeBSD
+    pkg add  p5-File-Slurp p5-MIME-Base64 p5-JSON
+
+    # Debian
+    apt-get install libfile-slurp-perl libmime-base64-perl libjson-perl
+
+=cut
+
+use strict;
+use warnings;
+use Getopt::Long;
+use File::Slurp;
+use MIME::Base64;
+use IO::Compress::Gzip qw(gzip $GzipError);
+use Pod::Usage;
+use JSON;
+
+#the version of returned data
+my $VERSION = 1;
+
+# ensure sbin is in the path
+$ENV{PATH} = $ENV{PATH} . ':/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin';
+
+my $pretty;
+my $cache_base = '/var/cache/samba.json';
+my $write;
+my $compress;
+my $version;
+my $help;
+my $if_write_be_quiet;
+GetOptions(
+	b       => \$compress,
+	h       => \$help,
+	help    => \$help,
+	'o=s'   => \$cache_base,
+	q       => \$if_write_be_quiet,
+	v       => \$version,
+	w       => \$write,
+	version => \$version,
+);
+
+if ($version) {
+	pod2usage( -exitval => 255, -verbose => 99, -sections => qw(VERSION), -output => \*STDOUT, );
+	exit 255;
+}
+
+if ($help) {
+	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
+	exit 255;
+}
+
+#the data to return
+my $to_return = {
+	'version'     => $VERSION,
+	'error'       => '0',
+	'errorString' => '',
+};
+my $data = {
+	general => {
+		connect_count           => undef,
+		disconnect_count        => undef,
+		idle_count              => undef,
+		cpu_user_time           => undef,
+		cpu_system_time         => undef,
+		request_count           => undef,
+		push_sec_ctx_count      => undef,
+		push_sec_ctx_time       => undef,
+		set_sec_ctx_count       => undef,
+		set_sec_ctx_time        => undef,
+		set_root_sec_ctx_count  => undef,
+		set_root_sec_ctx_time   => undef,
+		pop_sec_ctx_count       => undef,
+		pop_sec_ctx_time        => undef,
+		syscall_count           => 0,
+		syscall_time            => 0,
+		syscall_idle            => 0,
+		syscall_bytes           => 0,
+		syscall_read_bytes      => 0,
+		syscall_read_time       => 0,
+		syscall_read_idle       => 0,
+		syscall_read_count      => 0,
+		syscall_write_bytes     => 0,
+		syscall_write_count     => 0,
+		syscall_write_time      => 0,
+		syscall_write_idle      => 0,
+		syscall_other_count     => 0,
+		syscall_other_time      => 0,
+		acl_count               => 0,
+		acl_time                => 0,
+		acl_get_count           => 0,
+		acl_get_time            => 0,
+		acl_set_count           => 0,
+		acl_set_time            => 0,
+		statcache_lookups_count => undef,
+		statcache_misses_count  => undef,
+		statcache_hits_count    => undef,
+		smb_count               => 0,
+		smb_time                => 0,
+		smb_read_count          => 0,
+		smb_read_time           => 0,
+		smb_write_count         => 0,
+		smb_write_time          => 0,
+		smb_other_count         => 0,
+		smb_other_time          => 0,
+		smb2_count              => 0,
+		smb2_time               => 0,
+		smb2_bytes              => 0,
+		smb2_idle               => 0,
+		smb2_read_count         => 0,
+		smb2_read_time          => 0,
+		smb2_read_bytes         => 0,
+		smb2_read_idle          => 0,
+		smb2_write_count        => 0,
+		smb2_write_time         => 0,
+		smb2_write_bytes        => 0,
+		smb2_write_idle         => 0,
+		smb2_other_count        => 0,
+		smb2_other_time         => 0,
+		trans2_time             => 0,
+		trans2_count            => 0,
+		nt_transact_time        => 0,
+		nt_transact_count       => 0,
+	},
+	procs  => [],
+	shares => [],
+};
+
+###
+###
+### get profiling info via smbstatus -P
+###
+###
+my @profiling_lines = grep( !/^\*/, split( /\n/, `smbstatus -P 2> /dev/null` ) );
+foreach my $line (@profiling_lines) {
+	$line =~ s/\s//g;
+	my @line_split = split( /\:/, $line );
+	if ( $line_split[1] =~ /^[0-9]+$/ ) {
+		if ( $line_split[0] =~ /^syscall_/ ) {
+			if ( $line_split[0] =~ /read/ || $line_split[0] =~ /recv/ ) {
+				if ( $line_split[0] =~ /count/ ) {
+					$data->{general}{syscall_count}      = $data->{general}{syscall_count} + $line_split[1];
+					$data->{general}{syscall_read_count} = $data->{general}{syscall_read_count} + $line_split[1];
+				} elsif ( $line_split[0] =~ /bytes/ ) {
+					$data->{general}{syscall_bytes}      = $data->{general}{syscall_bytes} + $line_split[1];
+					$data->{general}{syscall_read_bytes} = $data->{general}{syscall_read_bytes} + $line_split[1];
+				} elsif ( $line_split[0] =~ /time/ ) {
+					$data->{general}{syscall_time}      = $data->{general}{syscall_time} + $line_split[1];
+					$data->{general}{syscall_read_time} = $data->{general}{syscall_read_time} + $line_split[1];
+				} elsif ( $line_split[0] =~ /idle/ ) {
+					$data->{general}{syscall_idle}      = $data->{general}{syscall_idle} + $line_split[1];
+					$data->{general}{syscall_read_idle} = $data->{general}{syscall_read_idle} + $line_split[1];
+				}
+			} elsif ( $line_split[0] =~ /write/ || $line_split[0] =~ /send/ ) {
+				if ( $line_split[0] =~ /count/ ) {
+					$data->{general}{syscall_count}       = $data->{general}{syscall_count} + $line_split[1];
+					$data->{general}{syscall_write_count} = $data->{general}{syscall_write_count} + $line_split[1];
+				} elsif ( $line_split[0] =~ /bytes/ ) {
+					$data->{general}{syscall_bytes}       = $data->{general}{syscall_bytes} + $line_split[1];
+					$data->{general}{syscall_write_bytes} = $data->{general}{syscall_write_bytes} + $line_split[1];
+				} elsif ( $line_split[0] =~ /time/ ) {
+					$data->{general}{syscall_time}       = $data->{general}{syscall_time} + $line_split[1];
+					$data->{general}{syscall_write_time} = $data->{general}{syscall_write_time} + $line_split[1];
+				}
+			} elsif ( $line_split[0] =~ /idle/ ) {
+				$data->{general}{syscall_idle}       = $data->{general}{syscall_idle} + $line_split[1];
+				$data->{general}{syscall_write_idle} = $data->{general}{syscall_write_idle} + $line_split[1];
+			} else {
+				if ( $line_split[0] =~ /count/ ) {
+					$data->{general}{syscall_count}       = $data->{general}{syscall_count} + $line_split[1];
+					$data->{general}{syscall_other_count} = $data->{general}{syscall_other_count} + $line_split[1];
+				} elsif ( $line_split[0] =~ /time/ ) {
+					$data->{general}{syscall_time}       = $data->{general}{syscall_time} + $line_split[1];
+					$data->{general}{syscall_other_time} = $data->{general}{syscall_other_time} + $line_split[1];
+				} elsif ( $line_split[0] =~ /idle/ ) {
+					$data->{general}{syscall_idle}       = $data->{general}{syscall_idle} + $line_split[1];
+					$data->{general}{syscall_other_idle} = $data->{general}{syscall_other_idle} + $line_split[1];
+				}
+			} ## end else [ if ( $line_split[0] =~ /read/ || $line_split...)]
+		} elsif ( $line_split[0] =~ /^[fgs]+et_nt_acl/ ) {
+			if ( $line_split[0] =~ /get/ ) {
+				if ( $line_split[0] =~ /count/ ) {
+					$data->{general}{acl_count}     = $data->{general}{acl_count} + $line_split[1];
+					$data->{general}{acl_get_count} = $data->{general}{acl_get_count} + $line_split[1];
+				} elsif ( $line_split[0] =~ /time/ ) {
+					$data->{general}{acl_time}     = $data->{general}{acl_time} + $line_split[1];
+					$data->{general}{acl_get_time} = $data->{general}{acl_get_time} + $line_split[1];
+				}
+			} elsif ( $line_split[0] =~ /set/ ) {
+				if ( $line_split[0] =~ /count/ ) {
+					$data->{general}{acl_count}     = $data->{general}{acl_count} + $line_split[1];
+					$data->{general}{acl_set_count} = $data->{general}{acl_set_count} + $line_split[1];
+				} elsif ( $line_split[0] =~ /time/ ) {
+					$data->{general}{acl_time}     = $data->{general}{acl_time} + $line_split[1];
+					$data->{general}{acl_set_time} = $data->{general}{acl_set_time} + $line_split[1];
+				}
+			}
+		} elsif ( $line_split[0] =~ /^SMB/ ) {
+	 # Samba apparent does not have byte counters for these... that said looks like this one is not really used any more
+			if ( $line_split[0] =~ /read/ ) {
+				if ( $line_split[0] =~ /count/ ) {
+					$data->{general}{smb_count}      = $data->{general}{smb_count} + $line_split[1];
+					$data->{general}{smb_read_count} = $data->{general}{smb_read_count} + $line_split[1];
+				} elsif ( $line_split[0] =~ /time/ ) {
+					$data->{general}{smb_time}      = $data->{general}{smb_time} + $line_split[1];
+					$data->{general}{smb_read_time} = $data->{general}{smb_read_time} + $line_split[1];
+				}
+			} elsif ( $line_split[0] =~ /write/ ) {
+				if ( $line_split[0] =~ /count/ ) {
+					$data->{general}{smb_count}       = $data->{general}{smb_count} + $line_split[1];
+					$data->{general}{smb_write_count} = $data->{general}{smb_write_count} + $line_split[1];
+				} elsif ( $line_split[0] =~ /time/ ) {
+					$data->{general}{smb_time}       = $data->{general}{smb_time} + $line_split[1];
+					$data->{general}{smb_write_time} = $data->{general}{smb_write_time} + $line_split[1];
+				}
+			} else {
+				if ( $line_split[0] =~ /count/ ) {
+					$data->{general}{smb_count}       = $data->{general}{smb_count} + $line_split[1];
+					$data->{general}{smb_other_count} = $data->{general}{smb_other_count} + $line_split[1];
+				} elsif ( $line_split[0] =~ /time/ ) {
+					$data->{general}{smb_time}       = $data->{general}{smb_time} + $line_split[1];
+					$data->{general}{smb_other_time} = $data->{general}{smb_other_time} + $line_split[1];
+				}
+			}
+		} elsif ( $line_split[0] =~ /^Trans2_/ ) {
+			# Samba does not appear to have any that are read/write for this really... also no bytes coutners
+			if ( $line_split[0] =~ /count/ ) {
+				$data->{general}{trans2_count} = $data->{general}{trans2_count} + $line_split[1];
+			} elsif ( $line_split[0] =~ /time/ ) {
+				$data->{general}{trans2_time} = $data->{general}{trans2_time} + $line_split[1];
+			}
+		} elsif ( $line_split[0] =~ /^NT_transact_/ ) {
+			if ( $line_split[0] =~ /count/ ) {
+				$data->{general}{nt_transact_count} = $data->{general}{nt_transact_count} + $line_split[1];
+			} elsif ( $line_split[0] =~ /time/ ) {
+				$data->{general}{nt_transact_time} = $data->{general}{nt_transact_time} + $line_split[1];
+			}
+		} elsif ( $line_split[0] =~ /^smb2_/ ) {
+			if ( $line_split[0] =~ /read/ || $line_split[0] =~ /recv/ ) {
+				if ( $line_split[0] =~ /count/ ) {
+					$data->{general}{smb2_count}      = $data->{general}{smb2_count} + $line_split[1];
+					$data->{general}{smb2_read_count} = $data->{general}{smb2_read_count} + $line_split[1];
+				} elsif ( $line_split[0] =~ /bytes/ ) {
+					$data->{general}{smb2_bytes}      = $data->{general}{smb2_bytes} + $line_split[1];
+					$data->{general}{smb2_read_bytes} = $data->{general}{smb2_read_bytes} + $line_split[1];
+				} elsif ( $line_split[0] =~ /time/ ) {
+					$data->{general}{smb2_time}      = $data->{general}{smb2_time} + $line_split[1];
+					$data->{general}{smb2_read_time} = $data->{general}{smb2_read_time} + $line_split[1];
+				} elsif ( $line_split[0] =~ /idle/ ) {
+					$data->{general}{smb2_idle}      = $data->{general}{smb2_idle} + $line_split[1];
+					$data->{general}{smb2_read_idle} = $data->{general}{smb2_read_idle} + $line_split[1];
+				}
+			} elsif ( $line_split[0] =~ /write/ || $line_split[0] =~ /send/ ) {
+				if ( $line_split[0] =~ /count/ ) {
+					$data->{general}{smb2_count}       = $data->{general}{smb2_count} + $line_split[1];
+					$data->{general}{smb2_write_count} = $data->{general}{smb2_write_count} + $line_split[1];
+				} elsif ( $line_split[0] =~ /bytes/ ) {
+					$data->{general}{smb2_bytes}       = $data->{general}{smb2_bytes} + $line_split[1];
+					$data->{general}{smb2_write_bytes} = $data->{general}{smb2_write_bytes} + $line_split[1];
+				} elsif ( $line_split[0] =~ /time/ ) {
+					$data->{general}{smb2_time}       = $data->{general}{smb2_time} + $line_split[1];
+					$data->{general}{smb2_write_time} = $data->{general}{smb2_write_time} + $line_split[1];
+				}
+			} elsif ( $line_split[0] =~ /idle/ ) {
+				$data->{general}{smb2_idle}       = $data->{general}{smb2_idle} + $line_split[1];
+				$data->{general}{smb2_write_idle} = $data->{general}{smb2_write_idle} + $line_split[1];
+			} else {
+				if ( $line_split[0] =~ /count/ ) {
+					$data->{general}{smb2_count}       = $data->{general}{smb2_count} + $line_split[1];
+					$data->{general}{smb2_other_count} = $data->{general}{smb2_other_count} + $line_split[1];
+				} elsif ( $line_split[0] =~ /time/ ) {
+					$data->{general}{smb2_time}       = $data->{general}{smb2_time} + $line_split[1];
+					$data->{general}{smb2_other_time} = $data->{general}{smb2_other_time} + $line_split[1];
+				} elsif ( $line_split[0] =~ /idle/ ) {
+					$data->{general}{smb2_idle}       = $data->{general}{smb2_idle} + $line_split[1];
+					$data->{general}{smb2_other_idle} = $data->{general}{smb2_other_idle} + $line_split[1];
+				}
+			} ## end else [ if ( $line_split[0] =~ /read/ || $line_split...)]
+		} else {
+			if (defined($line_split[1])) {
+				$data->{general}{ $line_split[0] } = $line_split[1];
+			}
+		}
+	} ## end if ( $line_split[1] =~ /^[0-9]+$/ )
+} ## end foreach my $line (@profiling_lines)
+
+###
+###
+### get process info via smbstatus -p
+###
+###
+my @process_lines = grep( /^\d/, split( /\n/, `smbstatus -p 2> /dev/null` ) );
+foreach my $line (@process_lines) {
+# lines look like this
+# 5420    bar      foo      192.168.1.2 (ipv4:192.168.1.2:497)  SMB3_11           -                    partial(AES-128-CMAC)
+	my $new_proc = {};
+	my $client_info;
+	(
+		$new_proc->{pid}, $new_proc->{user},    $new_proc->{group},      $new_proc->{machine},
+		$client_info,     $new_proc->{version}, $new_proc->{encryption}, $new_proc->{signing},
+	) = split( /\s+/, $line, 8 );
+	$client_info =~ s/^\(//;
+	$client_info =~ s/\)$//;
+	$new_proc->{ip} = $client_info;
+	$new_proc->{ip} =~ s/^[a-zA-Z0-9]+\://;
+	$new_proc->{ip} =~ s/:\d+$//;
+	$new_proc->{ip} =~ s/[\[\]]//g;
+	$new_proc->{port} = $client_info;
+	$new_proc->{port} =~ s/.*\]//g;
+	$new_proc->{port} =~ s/.*\://g;
+
+	push( @{ $data->{procs} }, $new_proc );
+} ## end foreach my $line (@process_lines)
+
+###
+###
+### get share info via smbstatus -S
+###
+###
+my @share_lines = grep( /^\w+\s+\d+/, split( /\n/, `smbstatus -S 2> /dev/null` ) );
+foreach my $line (@share_lines) {
+	# lines look like... sometimes spaces on the end
+	# foo          5423    192.168.1.2 Tue Jul 16 02:39:53 2024 CDT     -            -
+	my $new_share = {};
+	my $rest_of_line;
+	( $new_share->{service}, $new_share->{pid}, $new_share->{machine}, $rest_of_line ) = split( /\s+/, $line, 4 );
+	$rest_of_line =~ s/\s+$//;
+	# reverse it to make parsing out the date easy
+	$rest_of_line = reverse $rest_of_line;
+	( $new_share->{signing}, $new_share->{encryption}, $new_share->{connected_at} ) = split( /\s+/, $rest_of_line, 3 );
+	$new_share->{signing}      = reverse $new_share->{signing};
+	$new_share->{encryption}   = reverse $new_share->{encryption};
+	$new_share->{connected_at} = reverse $new_share->{connected_at};
+
+	push( @{ $data->{shares} }, $new_share );
+} ## end foreach my $line (@share_lines)
+
+###
+###
+### get locks info via smbstatus -L
+###
+###
+my @lock_lines = grep( /^\d+\s+/, split( /\n/, `smbstatus -L 2> /dev/null` ) );
+$data->{general}{lock_count} = $#lock_lines + 1;
+
+###
+###
+### finalize it
+###
+###
+
+#add the data has to the return hash
+$to_return->{data} = $data;
+
+#finally render the JSON
+my $raw_json = encode_json($to_return);
+if ($write) {
+	write_file( $cache_base, $raw_json );
+	# compress and write to the cache file for it
+	my $compressed_string;
+	gzip \$raw_json => \$compressed_string;
+	my $compressed = encode_base64($compressed_string);
+	$compressed =~ s/\n//g;
+	$compressed = $compressed . "\n";
+	my $print_compressed = 0;
+	write_file( $cache_base . '.snmp', $compressed );
+
+	if ( !$if_write_be_quiet ) {
+		print $raw_json;
+	}
+} else {
+	if ( !$compress ) {
+		print $raw_json. "\n";
+		exit;
+	}
+
+	# compress and write to the cache file for it
+	my $compressed_string;
+	gzip \$raw_json => \$compressed_string;
+	my $compressed = encode_base64($compressed_string);
+	$compressed =~ s/\n//g;
+	$compressed = $compressed . "\n";
+	print $compressed;
+} ## end else [ if ($write) ]

@@ -9,13 +9,19 @@
 :foreach i in [/interface bridge vlan find] do={
     :local intf [/interface bridge vlan get $i bridge]
     :local vlid [/interface bridge vlan get $i vlan-ids]
+    :local vname
+
+    :foreach i in [/interface vlan find where vlan-id=$vlid] do={
+        :local intname [/interface vlan get $i name]
+        :set $vname ($intname)
+    }
 
     :foreach t in [/interface bridge vlan get $i tagged] do={
-        :set $vlanst ($vlanst, "$vlid,$t")
+        :set $vlanst ($vlanst, "$vlid,$t,$vname")
     }
 
     :foreach u in [/interface bridge vlan get $i current-untagged] do={
-        :set $vlansu ($vlansu, "$vlid,$u")
+        :set $vlansu ($vlansu, "$vlid,$u,$vname")
     }
 
     :foreach u in [/interface bridge port find where bridge=$intf and pvid=$vlid] do={
@@ -28,7 +34,7 @@
             }
         }
         :if ( $fl != 1 ) do={
-            :set $vlansu ($vlansu, "$vlid,$iu")
+            :set $vlansu ($vlansu, "$vlid,$iu,$vname")
         }
     }
 }
@@ -36,6 +42,7 @@
 :foreach vl in [/interface vlan find ] do={
     :local intf [/interface vlan get $vl interface]
     :local vlid [/interface vlan get $vl vlan-id]
+    :local vname [/interface vlan get $vl name]
     :local fl 0
 
     :foreach tmp in $vlanst do={
@@ -45,7 +52,7 @@
         }
     }
     :if ( $fl != 1 ) do={
-        :set $vlanst ($vlanst, "$vlid,$intf")
+        :set $vlanst ($vlanst, "$vlid,$intf,$vname")
     }
 }
 

@@ -1,0 +1,271 @@
+#!/usr/bin/env perl
+
+=head1 NAME
+
+php-fpm - LibreNMS JSON SNMP extend for gathering information for php-fpm
+
+=head1 VERSION
+
+0.0.2
+
+=head1 DESCRIPTION
+
+For more information, see L<https://docs.librenms.org/Extensions/Applications/#php-fpm>.
+
+=head1 SWITCHES
+
+=head2 -f <config file>
+
+The config file to use.
+
+Default: /usr/local/etc/php-fpm_extend.json
+
+=head2 -C
+
+Do not compress the information return using GZip+Base64.
+
+=head2 -h|--help
+
+Print help info.
+
+=head2 -v|--version
+
+Print version info.
+
+=head1 CONFIG FILE
+
+The config file is a JSON file.
+
+    - .pools :: An hash of pools to fetch. The key represents the
+            pool name and value is the URL to fetch, minus the '?json' bit.
+        Default :: undef
+
+    - .use_exec :: A boolean for pools values should be treated as a command
+            instead of a URL. All poolss must be a command and can not be a lone URL.
+            The returned data is expected to be parsable JSON data.
+        Default :: 0
+
+Example...
+
+    {
+      "pools": {
+        "thefrog": "https://thefrog/fpm-status",
+        "foobar": "https://foo.bar/fpm-status"
+      }
+    }
+
+A use_exec example...
+
+    {
+      "pools": {
+        "thefrog": "curl 'https://thefrog/fpm-status?json&full' 2> /dev/null",
+        "foobar": "curl 'https://foo.bar/fpm-status?json&full' 2> /dev/null",
+      },
+      "use_exec": 1
+    }
+
+=cut
+
+use strict;
+use warnings;
+use JSON;
+use Getopt::Long;
+use File::Slurp;
+use IO::Compress::Gzip qw(gzip $GzipError);
+use MIME::Base64;
+use Pod::Usage;
+use String::ShellQuote;
+
+sub return_the_data {
+	my $to_return       = $_[0];
+	my $do_not_compress = $_[1];
+
+	my $to_return_string = encode_json($to_return);
+
+	if ($do_not_compress) {
+		print $to_return_string . "\n";
+		return;
+	}
+
+	my $toReturnCompressed;
+	gzip \$to_return_string => \$toReturnCompressed;
+	my $compressed = encode_base64($toReturnCompressed);
+	$compressed =~ s/\n//g;
+	$compressed = $compressed . "\n";
+	print $compressed;
+} ## end sub return_the_data
+
+#gets the options
+my %opts;
+my $do_not_compress;
+my $version;
+my $help;
+my $config_file = '/usr/local/etc/php-fpm_extend.json';
+GetOptions(
+	C       => \$do_not_compress,
+	'f=s'   => \$config_file,
+	v       => \$version,
+	version => \$version,
+	h       => \$help,
+	help    => \$help,
+);
+
+if ($version) {
+	pod2usage( -exitval => 255, -verbose => 99, -sections => qw(VERSION), -output => \*STDOUT, );
+}
+
+if ($help) {
+	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
+}
+
+my @to_total = (
+	'accepted conn',
+	'active processes',
+	'idle processes',
+	'listen queue',
+	'listen queue len',
+	'max active processes',
+	'max children reached',
+	'max listen queue',
+	'slow requests',
+	'total processes',
+	'last request cpu',
+);
+
+my @to_migrate = @to_total;
+push( @to_migrate, 'start since', 'start time', 'pool', 'process manager' );
+
+my $to_return = {
+	data => {
+		pools       => {},
+		pool_errors => {},
+		errored     => 0,
+		totals      => {
+			'accepted conn'        => 0,
+			'active processes'     => 0,
+			'idle processes'       => 0,
+			'listen queue'         => 0,
+			'listen queue len'     => 0,
+			'max active processes' => 0,
+			'max children reached' => 0,
+			'max listen queue'     => 0,
+			'slow requests'        => 0,
+			'total processes'      => 0,
+			'start since'          => undef,
+			'last request cpu'     => 0,
+		},
+	},
+	version     => 1,
+	error       => 0,
+	errorString => '',
+};
+
+# error if the config does not exist
+if ( !-f $config_file ) {
+	$to_return->{errorString} = 'Config file, "' . $config_file . '", does not exist';
+	$to_return->{error}       = 1;
+	return_the_data( $to_return, $do_not_compress );
+	exit 1;
+}
+
+# read the config and decode it
+my $config;
+eval {
+	my $raw_config = read_file($config_file);
+	$config = decode_json($raw_config);
+};
+if ($@) {
+	$to_return->{errorString} = 'Reading config errored... ' . $@;
+	$to_return->{error}       = 2;
+	return_the_data( $to_return, $do_not_compress );
+	exit 1;
+}
+
+# ensure the config is basically sane
+if ( !defined( $config->{pools} ) ) {
+	$to_return->{errorString} = '.pools does not exist in the config';
+	$to_return->{error}       = 3;
+	return_the_data( $to_return, $do_not_compress );
+	exit 1;
+}
+if ( ref( $config->{pools} ) ne 'HASH' ) {
+	$to_return->{errorString} = '.pools is not a hash';
+	$to_return->{error}       = 3;
+	return_the_data( $to_return, $do_not_compress );
+	exit 1;
+}
+if ( defined( $config->{use_exec} ) && ref( $config->{use_exec} ) ne '' ) {
+	$to_return->{errorString} = '.use_exec is defined and is a hash or array';
+	$to_return->{error}       = 3;
+	return_the_data( $to_return, $do_not_compress );
+	exit 1;
+}
+
+# get a list of pools and process each pool
+my @pools = keys( %{ $config->{pools} } );
+foreach my $item (@pools) {
+	if ( ref( $config->{pools}{$item} ) eq '' ) {
+		my $command;
+		if ( !$config->{use_exec} ) {
+			$command = 'curl ' . shell_quote( $config->{pools}{$item} . '?json&full' ) . ' 2> /dev/null';
+		} else {
+			$command = $config->{pools}{$item};
+		}
+		eval {
+			my $pool_data_raw = `$command`;
+			if ( $? ne 0 ) {
+				$command =~ s/\"/\\\"/g;
+				die( 'command "' . $command . '" exited non-zero returnining... ' . $pool_data_raw );
+			}
+			my $pool_data = decode_json($pool_data_raw);
+			$to_return->{data}{pools}{$item} = {};
+			# ensure the hash only includes what we want and nothing unexpected
+			foreach my $migrate_item (@to_migrate) {
+				if ( defined( $pool_data->{$migrate_item} ) && ref( $pool_data->{$migrate_item} ) eq '' ) {
+					$to_return->{data}{pools}{$item}{$migrate_item} = $pool_data->{$migrate_item};
+				}
+			}
+
+			if ( defined( $pool_data->{'processes'} ) && ref( $pool_data->{'processes'} ) eq 'ARRAY' ) {
+				$to_return->{data}{pools}{$item}{'last request cpu'} = 0;
+				foreach my $proc_item ( @{ $pool_data->{'processes'} } ) {
+					if (   defined( $proc_item->{'last request cpu'} )
+						&& ref( $proc_item->{'last request cpu'} ) eq ''
+						&& $proc_item->{'last request cpu'} =~ /\d+\.\d+/ )
+					{
+						$to_return->{data}{pools}{$item}{'last request cpu'} += $proc_item->{'last request cpu'};
+					}
+				}
+			} ## end if ( defined( $pool_data->{'processes'} ) ...)
+		};
+		# if
+		if ($@) {
+			$to_return->{data}{pools}{$item}       = {};
+			$to_return->{data}{pool_errors}{$item} = $@;
+			$to_return->{data}{errored}            = 1;
+		} else {
+			# add the the pool to the totals
+			foreach my $total_item (@to_total) {
+				if ( defined( $to_return->{data}{pools}{$item}{$total_item} )
+					&& $to_return->{data}{pools}{$item}{$total_item} =~ /^(\d+|\d+\.\d+)$/ )
+				{
+					$to_return->{data}{totals}{$total_item} += $to_return->{data}{pools}{$item}{$total_item};
+				}
+			}
+
+			# handle start since min
+			if ( defined( $to_return->{data}{pools}{$item}{'start since'} )
+				&& $to_return->{data}{pools}{$item}{'start since'} =~ /^\d+$/ )
+			{
+				if ( !defined( $to_return->{data}{totals}{'start since'} )
+					|| $to_return->{data}{pools}{$item}{'start since'} < $to_return->{data}{totals}{'start since'} )
+				{
+					$to_return->{data}{totals}{'start since'} = $to_return->{data}{pools}{$item}{'start since'};
+				}
+			}
+		} ## end else [ if ($@) ]
+	} ## end if ( ref( $config->{pools}{$item} ) eq '' )
+} ## end foreach my $item (@pools)
+
+return_the_data( $to_return, $do_not_compress );
+exit 0;

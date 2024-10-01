@@ -1,0 +1,662 @@
+#!/usr/bin/env perl
+
+=head1 NAME
+
+http_access_log_combined - LibreNMS JSON style SNMP extend for monitoring Apache style combined HTTP access logs
+
+=head1 VERSION
+
+0.1.0
+
+=head1 SYNOPSIS
+
+http_access_log_combined B<-w> [B<-o> <cache base>] [B<-a>] [B<-q>] [B<-c> <config>]
+
+http_access_log_combined [<-b>] [B<-a>] [B<-z>] [B<-c> <config>]
+
+http_access_log_combined --help|-h
+
+http_access_log_combined --version|-v
+
+=head1 SNMPD CONFIG
+
+    extend http_access_log_combined /usr/local/etc/snmp/http_access_log_combined -b
+
+or if using cron...
+
+    # cron
+    4/5 * * * * root /usr/local/etc/snmp/http_access_log_combined -b -q
+
+    # snmpd.conf
+    extend http_access_log_combined cat /var/cache/http_access_log_combined.json.snmp
+
+=head1 FLAGS
+
+=head2 -b
+
+Encapsulate the result in GZip+Base64 if -w is not used.
+
+=head2 -c <config>
+
+Config file to use.
+
+Default is /usr/local/etc/http_access_log_combined_extend.json .
+
+=head2 -q
+
+If -w is specified, do not print the results to stdout.
+
+=head2 -w
+
+Write the results out.
+
+=head2 -o <cache base>
+
+Where to write the results to. Defaults to '/var/cache/http_access_log_combined.json',
+meaning it will be written out to the two locations.
+
+    /var/cache/http_access_log_combined.json
+    /var/cache/http_access_log_combined.json.snmp
+
+The later is for use with returning data for SNMP. Will be compressed
+if possible.
+
+=head1 CONFIG
+
+=head2 manual
+
+    - access :: An hash of files to process.
+        type :: hash
+        defualt :: {}
+
+    - errors :: An hash of error files to get the size of. The key is matched keys in the access hash.
+        type :: hash
+        defualt :: {}
+
+    # a example with a log named foo
+    {
+        "access":{
+            "foo":"/var/log/www/foo.log"
+        },
+        "error":{
+            "foo":"/var/log/www/foo-error.log"
+        }
+    }
+
+=head2 auto
+
+Auto will attempt to generate a list of log files to process. Will look under the directory specified
+for files matching the built regexp. The regexp is built by joining the access/error regexps to the end regexp.
+so for access it would be come '-access.log$'.
+
+    - auto :: If auto mode should be used or not. If not defined and .access
+        is not defined, then it will default to 1. Other wise it is undef, false.
+
+    - auto_dir :: The dir to look for files in.
+        default :: /var/log/apache/
+
+    - auto_end_regex :: What to match files ending in.
+        default :: .log$
+
+    - auto_access_regex :: What will be prepended to the end regexp for looking for access log files.
+        default :: -access
+
+    - auto_error_regex :: What will be prepended to the end regexp for looking for error log files.
+        default :: -error
+
+    # default
+    {
+        "auto": 1,
+        "auto_dir": "/var/log/apache/",
+        "auto_end_regex": ".log$",
+        "auto_access_regex": "-access",
+        "auto_error_regex": "-error",
+    }
+
+=head1 REQUIREMENTS
+
+    File::Slurp
+    MIME-Base64
+    JSON
+    Statistics::Lite
+    File::ReadBackwards
+
+    # FreeBSD
+    pkg install p5-File-Slurp p5-MIME-Base64 p5-JSON p5-Statistics-Lite p5-File-ReadBackwards
+
+    # Debian
+    apt-get install libfile-slurp-perl libmime-base64-perl libjson-perl libstatistics-lite-perl libfile-readbackwards-perl
+
+=cut
+
+use strict;
+use warnings;
+use Getopt::Long;
+use File::Slurp;
+use MIME::Base64;
+use IO::Compress::Gzip qw(gzip $GzipError);
+use Pod::Usage;
+use JSON;
+use File::ReadBackwards;
+use Time::Piece;
+use Statistics::Lite qw(:all);
+
+# get what to use for the target time
+my $current_time = time;
+my $target_time  = $current_time - 300;
+
+#
+# parses the specified line
+#
+sub parse {
+	my $line_tp_parse = shift;
+
+	my $to_return;
+	my $rest_of_line;
+	my $rest_of_line_p2;
+
+	( $to_return->{host}, $to_return->{user}, $to_return->{date}, $rest_of_line )
+		= $line_tp_parse =~ m,^([^\s]+)\s+-\s+([^ ]+)\s+\[(.*?)\]\s+(.*),;
+
+	my @date_split = split( /\s+/, $to_return->{date} );
+	my $log_time;
+	eval {
+		$log_time = Time::Piece->strptime( $date_split[0] . $date_split[1], '%d/%h/%Y:%H:%M:%S%z' );
+		$to_return->{timestamp} = $log_time->epoch;
+	};
+	if ($@) {
+		$to_return->{timestamp} = 0;
+	}
+
+	if ( defined($rest_of_line) ) {
+		(
+			$to_return->{method}, $to_return->{path},  $to_return->{proto},
+			$to_return->{code},   $to_return->{bytes}, $rest_of_line_p2
+		) = split( /\s/, $rest_of_line, 6 );
+		$to_return->{method} =~ tr/\"//d;
+		$to_return->{proto}  =~ tr/\"//d;
+
+		if ( defined($rest_of_line_p2) ) {
+			my @rest_of_line_p2_split = split( /\"/, $rest_of_line_p2 );
+			$to_return->{refer} = $rest_of_line_p2_split[1];
+			$to_return->{agent} = $rest_of_line_p2_split[3];
+		}
+	} ## end if ( defined($rest_of_line) )
+
+	return $to_return;
+} ## end sub parse
+
+#the version of returned data
+my $VERSION = 1;
+
+my $pretty;
+my $cache_base = '/var/cache/http_access_log_combined.json';
+my $write;
+my $compress;
+my $version;
+my $help;
+my $history;
+my $if_write_be_quiet;
+my $debug;
+my $config_file = '/usr/local/etc/http_access_log_combined_extend.json';
+GetOptions(
+	b       => \$compress,
+	'c=s'   => \$config_file,
+	h       => \$help,
+	help    => \$help,
+	'o=s'   => \$cache_base,
+	q       => \$if_write_be_quiet,
+	v       => \$version,
+	w       => \$write,
+	version => \$version,
+);
+
+if ($version) {
+	pod2usage( -exitval => 255, -verbose => 99, -sections => qw(VERSION), -output => \*STDOUT, );
+	exit 255;
+}
+
+if ($help) {
+	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
+	exit 255;
+}
+
+# read in the config file
+my $config;
+if ( -f $config_file && !-r $config_file ) {
+	die( $config_file . ' is not readable' );
+} elsif ( -f $config_file ) {
+	$config = decode_json( read_file($config_file) );
+	if ( ref($config) ne 'HASH' ) {
+		die( '"' . ref($config) . '" is the base ref type for the config instead of HASH' );
+	}
+} else {
+	$config = {};
+}
+if ( !defined( $config->{access} ) ) {
+	$config->{auto}   = 1;
+	$config->{access} = {};
+}
+if ( !defined( $config->{error} ) ) {
+	$config->{error} = {};
+}
+if ( $config->{auto} ) {
+	if ( !defined( $config->{auto_dir} ) ) {
+		$config->{auto_dir} = '/var/log/apache/';
+	}
+	if ( !defined( $config->{auto_end_regex} ) ) {
+		$config->{auto_end_regex} = '.log$';
+	}
+	if ( !defined( $config->{auto_access_regex} ) ) {
+		$config->{auto_access_regex} = '-access';
+	}
+	if ( !defined( $config->{auto_error_regex} ) ) {
+		$config->{auto_error_regex} = '-error';
+	}
+	if ( -d $config->{auto_dir} && -r $config->{auto_dir} ) {
+		my $access_log_regex = $config->{auto_access_regex} . $config->{auto_end_regex};
+		my $error_log_regex  = $config->{auto_access_regex} . $config->{auto_end_regex};
+		my @dir              = read_dir( $config->{auto_dir} );
+		foreach my $dir_entry (@dir) {
+			my $full_path = $config->{auto_dir} . '/' . $dir_entry;
+			if ( -f $full_path && -r $full_path && $dir_entry =~ /$access_log_regex/ ) {
+				my $name = $dir_entry;
+				$name =~ s/$access_log_regex//;
+				$config->{access}{$name} = $full_path;
+			} elsif ( -f $full_path && -r $full_path && $dir_entry =~ /$error_log_regex/ ) {
+				my $name = $dir_entry;
+				$name =~ s/$error_log_regex//;
+				$config->{error}{$name} = $full_path;
+			}
+		} ## end foreach my $dir_entry (@dir)
+	} ## end if ( -d $config->{auto_dir} && -r $config->...)
+} ## end if ( $config->{auto} )
+
+#the data to return
+my $to_return = {
+	'version'     => $VERSION,
+	'error'       => '0',
+	'errorString' => '',
+};
+my $data = {
+	totals => {
+		'GET'        => 0,
+		'HEAD'       => 0,
+		'POST'       => 0,
+		'PUT'        => 0,
+		'DELETE'     => 0,
+		'CONNECT'    => 0,
+		'OPTIONS'    => 0,
+		'PATCH'      => 0,
+		refer        => 0,
+		no_refer     => 0,
+		user         => 0,
+		no_user      => 0,
+		bytes        => 0,
+		bytes_min    => 0,
+		bytes_max    => 0,
+		bytes_range  => 0,
+		bytes_mean   => 0,
+		bytes_median => 0,
+		bytes_mode   => 0,
+		http1_0      => 0,
+		http1_1      => 0,
+		http2        => 0,
+		http3        => 0,
+		'1xx'        => 0,
+		'100'        => 0,
+		'101'        => 0,
+		'102'        => 0,
+		'103'        => 0,
+		'2xx'        => 0,
+		'200'        => 0,
+		'201'        => 0,
+		'202'        => 0,
+		'203'        => 0,
+		'204'        => 0,
+		'205'        => 0,
+		'206'        => 0,
+		'207'        => 0,
+		'208'        => 0,
+		'218'        => 0,
+		'226'        => 0,
+		'3xx'        => 0,
+		'300'        => 0,
+		'301'        => 0,
+		'302'        => 0,
+		'303'        => 0,
+		'304'        => 0,
+		'305'        => 0,
+		'306'        => 0,
+		'307'        => 0,
+		'308'        => 0,
+		'4xx'        => 0,
+		'400'        => 0,
+		'401'        => 0,
+		'402'        => 0,
+		'403'        => 0,
+		'404'        => 0,
+		'405'        => 0,
+		'406'        => 0,
+		'407'        => 0,
+		'408'        => 0,
+		'409'        => 0,
+		'410'        => 0,
+		'411'        => 0,
+		'412'        => 0,
+		'413'        => 0,
+		'414'        => 0,
+		'415'        => 0,
+		'416'        => 0,
+		'417'        => 0,
+		'419'        => 0,
+		'420'        => 0,
+		'421'        => 0,
+		'422'        => 0,
+		'423'        => 0,
+		'424'        => 0,
+		'425'        => 0,
+		'426'        => 0,
+		'428'        => 0,
+		'429'        => 0,
+		'431'        => 0,
+		'444'        => 0,
+		'451'        => 0,
+		'494'        => 0,
+		'495'        => 0,
+		'496'        => 0,
+		'497'        => 0,
+		'499'        => 0,
+		'5xx'        => 0,
+		'500'        => 0,
+		'501'        => 0,
+		'502'        => 0,
+		'503'        => 0,
+		'504'        => 0,
+		'505'        => 0,
+		'506'        => 0,
+		'507'        => 0,
+		'508'        => 0,
+		'509'        => 0,
+		'510'        => 0,
+		'511'        => 0,
+		size         => 0,
+		error_size   => 0,
+	},
+	logs => {
+
+	},
+};
+my @bytes_total;
+
+foreach my $log_name ( keys( %{ $config->{access} } ) ) {
+	my @bytes_log;
+	my $new_entry = {
+		GET          => 0,
+		HEAD         => 0,
+		POST         => 0,
+		PUT          => 0,
+		DELETE       => 0,
+		CONNECT      => 0,
+		OPTIONS      => 0,
+		PATCH        => 0,
+		refer        => 0,
+		no_refer     => 0,
+		user         => 0,
+		no_user      => 0,
+		bytes        => 0,
+		bytes_min    => 0,
+		bytes_max    => 0,
+		bytes_range  => 0,
+		bytes_mean   => 0,
+		bytes_median => 0,
+		bytes_mode   => 0,
+		http1_0      => 0,
+		http1_1      => 0,
+		http2        => 0,
+		http3        => 0,
+		'1xx'        => 0,
+		'100'        => 0,
+		'101'        => 0,
+		'102'        => 0,
+		'103'        => 0,
+		'2xx'        => 0,
+		'200'        => 0,
+		'201'        => 0,
+		'202'        => 0,
+		'203'        => 0,
+		'204'        => 0,
+		'205'        => 0,
+		'206'        => 0,
+		'207'        => 0,
+		'208'        => 0,
+		'218'        => 0,
+		'226'        => 0,
+		'3xx'        => 0,
+		'300'        => 0,
+		'301'        => 0,
+		'302'        => 0,
+		'303'        => 0,
+		'304'        => 0,
+		'305'        => 0,
+		'306'        => 0,
+		'307'        => 0,
+		'308'        => 0,
+		'4xx'        => 0,
+		'400'        => 0,
+		'401'        => 0,
+		'402'        => 0,
+		'403'        => 0,
+		'404'        => 0,
+		'405'        => 0,
+		'406'        => 0,
+		'407'        => 0,
+		'408'        => 0,
+		'409'        => 0,
+		'410'        => 0,
+		'411'        => 0,
+		'412'        => 0,
+		'413'        => 0,
+		'414'        => 0,
+		'415'        => 0,
+		'416'        => 0,
+		'417'        => 0,
+		'419'        => 0,
+		'420'        => 0,
+		'421'        => 0,
+		'422'        => 0,
+		'423'        => 0,
+		'424'        => 0,
+		'425'        => 0,
+		'426'        => 0,
+		'428'        => 0,
+		'429'        => 0,
+		'431'        => 0,
+		'444'        => 0,
+		'451'        => 0,
+		'494'        => 0,
+		'495'        => 0,
+		'496'        => 0,
+		'497'        => 0,
+		'499'        => 0,
+		'5xx'        => 0,
+		'500'        => 0,
+		'501'        => 0,
+		'502'        => 0,
+		'503'        => 0,
+		'504'        => 0,
+		'505'        => 0,
+		'506'        => 0,
+		'507'        => 0,
+		'508'        => 0,
+		'509'        => 0,
+		'510'        => 0,
+		'511'        => 0,
+		size         => 0,
+		error_size   => 0,
+	};
+
+	eval {
+		my ( $dev, $ino, $mode, $nlink, $uid, $gid, $rdev, $size, $atime, $mtime, $ctime, $blksize, $blocks )
+			= stat( $config->{access}{$log_name} );
+		$new_entry->{size} = $size;
+		$data->{totals}{size} = $data->{totals}{size} + $size;
+
+		if ( defined( $config->{errors}{$log_name} ) ) {
+			if ( -f $config->{errors}{$log_name} ) {
+				( $dev, $ino, $mode, $nlink, $uid, $gid, $rdev, $size, $atime, $mtime, $ctime, $blksize, $blocks )
+					= stat( $config->{errors}{$log_name} );
+				$new_entry->{error_size} = $size;
+				$data->{totals}{error_size} = $data->{totals}{error_size} + $size;
+			}
+		}
+	};
+
+	eval {
+		my $bw          = File::ReadBackwards->new( $config->{access}{$log_name} );
+		my $line        = $bw->readline;
+		my $process_log = 1;
+		while ( $process_log && defined($line) ) {
+			my $parsed = parse($line);
+
+			# if not defined log_time, we faised to process the log time... don't process this entry
+			if ( $parsed->{timestamp} < $target_time ) {
+				# if true, then don't contiue process thig log file as we are now before the target time
+				$process_log = 0;
+			} else {
+				if ( defined( $parsed->{bytes} ) && $parsed->{bytes} =~ /^[0-9]+$/ ) {
+					$data->{totals}{bytes} += $parsed->{bytes};
+					$new_entry->{bytes} += $parsed->{bytes};
+					push( @bytes_total, $parsed->{bytes} );
+					push( @bytes_log,   $parsed->{bytes} );
+				}
+			}
+
+			if ( defined( $parsed->{proto} ) && defined( $new_entry->{ $parsed->{proto} } ) ) {
+				$new_entry->{ $parsed->{proto} }++;
+				$data->{totals}{ $parsed->{proto} }++;
+			}
+
+			if ( defined( $parsed->{method} ) && defined( $new_entry->{ $parsed->{method} } ) ) {
+				$new_entry->{ $parsed->{method} }++;
+				$data->{totals}{ $parsed->{method} }++;
+			}
+
+			if ( defined( $parsed->{code} ) ) {
+				if ( defined( $new_entry->{ $parsed->{code} } ) ) {
+					$new_entry->{ $parsed->{code} }++;
+					$data->{totals}{ $parsed->{code} }++;
+				}
+				if ( $parsed->{code} =~ /^1\d\d$/ ) {
+					$new_entry->{'1xx'}++;
+					$data->{totals}{'1xx'}++;
+				} elsif ( $parsed->{code} =~ /^2\d\d$/ ) {
+					$new_entry->{'2xx'}++;
+					$data->{totals}{'2xx'}++;
+				} elsif ( $parsed->{code} =~ /^3\d\d$/ ) {
+					$new_entry->{'3xx'}++;
+					$data->{totals}{'3xx'}++;
+				} elsif ( $parsed->{code} =~ /^4\d\d$/ ) {
+					$new_entry->{'4xx'}++;
+					$data->{totals}{'4xx'}++;
+				} elsif ( $parsed->{code} =~ /^5\d\d$/ ) {
+					$new_entry->{'5xx'}++;
+					$data->{totals}{'5xx'}++;
+				}
+			} ## end if ( defined( $parsed->{code} ) )
+
+			if ( defined( $parsed->{proto} ) ) {
+				if ( $parsed->{proto} eq 'HTTP/1.0' ) {
+					$new_entry->{'http1_0'}++;
+					$data->{totals}{'http1_0'}++;
+				} elsif ( $parsed->{proto} eq 'HTTP/1.1' ) {
+					$new_entry->{'http1_1'}++;
+					$data->{totals}{'http1_1'}++;
+				} elsif ( $parsed->{proto} eq 'HTTP/2' ) {
+					$new_entry->{'http2'}++;
+					$data->{totals}{'http2'}++;
+				} elsif ( $parsed->{proto} eq 'HTTP/3' ) {
+					$new_entry->{'http3'}++;
+					$data->{totals}{'http3'}++;
+				}
+			} ## end if ( defined( $parsed->{proto} ) )
+
+			if ( defined( $parsed->{user} ) ) {
+				if ( $parsed->{user} eq '-' ) {
+					$new_entry->{'no_user'}++;
+					$data->{totals}{'no_user'}++;
+				} else {
+					$new_entry->{'user'}++;
+					$data->{totals}{'user'}++;
+				}
+			}
+
+			if ( defined( $parsed->{refer} ) ) {
+				if ( $parsed->{refer} eq '-' ) {
+					$new_entry->{'no_refer'}++;
+					$data->{totals}{'no_refer'}++;
+				} else {
+					$new_entry->{'refer'}++;
+					$data->{totals}{'refer'}++;
+				}
+			}
+
+			if ($process_log) {
+				$line = $bw->readline;
+			}
+		} ## end while ( $process_log && defined($line) )
+	};
+	if ( defined( $bytes_log[0] ) ) {
+		$new_entry->{bytes_min}    = min(@bytes_log);
+		$new_entry->{bytes_max}    = max(@bytes_log);
+		$new_entry->{bytes_mean}   = mean(@bytes_log);
+		$new_entry->{bytes_median} = median(@bytes_log);
+		$new_entry->{bytes_mode}   = mode(@bytes_log);
+		$new_entry->{bytes_range}  = range(@bytes_log);
+	}
+	$data->{logs}{$log_name} = $new_entry;
+
+} ## end foreach my $log_name ( keys( %{ $config->{access...}}))
+
+if ( defined( $bytes_total[0] ) ) {
+	$data->{totals}{bytes_min}    = min(@bytes_total);
+	$data->{totals}{bytes_max}    = max(@bytes_total);
+	$data->{totals}{bytes_mean}   = mean(@bytes_total);
+	$data->{totals}{bytes_median} = median(@bytes_total);
+	$data->{totals}{bytes_mode}   = mode(@bytes_total);
+	$data->{totals}{bytes_range}  = range(@bytes_total);
+}
+
+#add the data has to the return hash
+$to_return->{data} = $data;
+
+#finally render the JSON
+my $raw_json = encode_json($to_return);
+if ($write) {
+	write_file( $cache_base, $raw_json );
+	# compress and write to the cache file for it
+	my $compressed_string;
+	gzip \$raw_json => \$compressed_string;
+	my $compressed = encode_base64($compressed_string);
+	$compressed =~ s/\n//g;
+	$compressed = $compressed . "\n";
+	my $print_compressed = 0;
+	write_file( $cache_base . '.snmp', $compressed );
+
+	if ( !$if_write_be_quiet ) {
+		print $raw_json;
+	}
+} else {
+	if ( !$compress ) {
+		print $raw_json. "\n";
+		exit;
+	}
+
+	# compress and write to the cache file for it
+	my $compressed_string;
+	gzip \$raw_json => \$compressed_string;
+	my $compressed = encode_base64($compressed_string);
+	$compressed =~ s/\n//g;
+	$compressed = $compressed . "\n";
+	print $compressed;
+} ## end else [ if ($write) ]

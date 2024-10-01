@@ -20,8 +20,6 @@ BIN_YUM='/usr/bin/env yum'
 CMD_YUM='-q check-update'
 BIN_DNF='/usr/bin/env dnf'
 CMD_DNF='-q check-update'
-BIN_TDNF='/usr/bin/env tdnf'
-CMD_TDNF='-q check-update'
 BIN_APT='/usr/bin/env apt-get'
 CMD_APT='-qq -s upgrade'
 BIN_PACMAN='/usr/bin/env pacman'
@@ -31,9 +29,11 @@ BIN_PKG='/usr/sbin/pkg'
 CMD_PKG=' audit -q -F'
 BIN_APK='/sbin/apk'
 CMD_APK=' version'
+SNMP_PERSISTENT_DIR="$(net-snmp-config --persistent-directory)"
+UNPRIV_SHARED_FILE="$SNMP_PERSISTENT_DIR/osupdates/stats.txt"
 
-# If using this as a agent and not a extend, uncomment the line below.
-#echo '<<<app-os-updates>>>'
+mkdir -p "$(dirname "$UNPRIV_SHARED_FILE" )"
+exec > "$UNPRIV_SHARED_FILE"
 
 ################################################################
 # Don't change anything unless you know what are you doing     #
@@ -53,15 +53,6 @@ elif command -v dnf &>/dev/null ; then
     UPDATES=$($BIN_DNF $CMD_DNF | $BIN_WC $CMD_WC)
     if [ "$UPDATES" -ge 1 ]; then
         echo $(($UPDATES-1));
-    else
-        echo "0";
-    fi
-elif command -v tdnf &>/dev/null ; then
-    # PhotonOS
-    # shellcheck disable=SC2086
-    UPDATES=$($BIN_TDNF $CMD_TDNF | $BIN_WC $CMD_WC)
-    if [ "$UPDATES" -ge 1 ]; then
-        echo "$UPDATES";
     else
         echo "0";
     fi

@@ -1,0 +1,1194 @@
+#!/usr/bin/env perl
+
+=head1 NAME
+
+nfs - LibreNMS JSON style SNMP extend for NFS monitoring
+
+=head1 VERSION
+
+0.0.2
+
+=head1 SYNOPSIS
+
+nfs [B<-w>] [B<-b>] [B<-o> <cache base>]
+
+nfs --help|-h
+
+nfs --version|-v
+
+=head1 SNMPD CONFIG
+
+    extend nfs /etc/snmp/extends/nfs -b
+
+or if using cron...
+
+    extend nfs cat /var/cache/nfs.json.snmp
+
+=head1 DESCRIPTION
+
+Uses showmount and nfsstat to gather information for the OSes below for NFS.
+
+    FreeBSD
+    Linux
+
+=head1 FLAGS
+
+=head2 -w
+
+Write the results out.
+
+=head2 -b
+
+Print out the compressed data if GZip+Base64 is smaller.
+
+=head2 -o <cache base>
+
+Where to write the results to. Defaults to '/var/cache/nfs.json',
+meaning it will be written out to the two locations.
+
+    /var/cache/nfs.json
+    /var/cache/nfs.json.snmp
+
+The later is for use with returning data for SNMP. Will be compressed
+if possible.
+
+=cut
+
+use strict;
+use warnings;
+use Getopt::Long;
+use File::Slurp;
+use MIME::Base64;
+use IO::Compress::Gzip qw(gzip $GzipError);
+use Pod::Usage;
+use JSON;
+
+#the version of returned data
+my $VERSION = 1;
+
+# ensure sbin is in the path
+$ENV{PATH} = $ENV{PATH} . ':/sbin:/usr/sbin';
+
+my $pretty;
+my $cache_base = '/var/cache/nfs.json';
+my $write;
+my $compress;
+my $version;
+my $help;
+GetOptions(
+	'o=s'   => \$cache_base,
+	w       => \$write,
+	b       => \$compress,
+	v       => \$version,
+	version => \$version,
+	h       => \$help,
+	help    => \$help,
+);
+
+if ($version) {
+	pod2usage( -exitval => 255, -verbose => 99, -sections => qw(VERSION), -output => \*STDOUT, );
+	exit 255;
+}
+
+if ($help) {
+	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
+	exit 255;
+}
+
+#the data to return
+my $to_return = {
+	'version'     => $VERSION,
+	'error'       => '0',
+	'errorString' => '',
+};
+my $data = {
+	is_client  => 0,
+	is_server  => 0,
+	os         => $^O,
+	mounts     => [],
+	mounted_by => [],
+	stats      => {
+		client_rpc_null             => 0,
+		client_rpc_root             => 0,
+		client_rpc_confirm          => 0,
+		client_rpc_server_caps      => 0,
+		client_rpc_fs_locations     => 0,
+		client_rpc_secinfo          => 0,
+		client_rpc_fsid_present     => 0,
+		client_rpc_sequence         => 0,
+		client_rpc_get_lease_time   => 0,
+		client_rpc_test_stateid     => 0,
+		client_rpc_secinfo_no       => 0,
+		client_rpc_getdevicelist    => 0,
+		client_rpc_layoutstats      => 0,
+		client_rpc_wrcache          => 0,
+		client_rpc_Getattr          => 0,
+		client_rpc_Setattr          => 0,
+		client_rpc_Lookup           => 0,
+		client_rpc_Readlink         => 0,
+		client_rpc_Read             => 0,
+		client_rpc_Write            => 0,
+		client_rpc_Create           => 0,
+		client_rpc_Remove           => 0,
+		client_rpc_Rename           => 0,
+		client_rpc_Link             => 0,
+		client_rpc_Symlink          => 0,
+		client_rpc_Mkdir            => 0,
+		client_rpc_Rmdir            => 0,
+		client_rpc_Readdir          => 0,
+		client_rpc_RdirPlus         => 0,
+		client_rpc_Access           => 0,
+		client_rpc_Mknod            => 0,
+		client_rpc_Fsstat           => 0,
+		client_rpc_FSinfo           => 0,
+		client_rpc_pathConf         => 0,
+		client_rpc_Commit           => 0,
+		client_rpc_SetClId          => 0,
+		client_rpc_SetClIdCf        => 0,
+		client_rpc_Lock             => 0,
+		client_rpc_LockT            => 0,
+		client_rpc_LockU            => 0,
+		client_rpc_Open             => 0,
+		client_rpc_OpenCfr          => 0,
+		client_rpc_OpenDownGr       => 0,
+		client_rpc_Close            => 0,
+		client_rpc_RelLckOwn        => 0,
+		client_rpc_FreeStateID      => 0,
+		client_rpc_PutRootFH        => 0,
+		client_rpc_DelegRet         => 0,
+		client_rpc_GetAcl           => 0,
+		client_rpc_SetAcl           => 0,
+		client_rpc_ExchangeId       => 0,
+		client_rpc_CreateSess       => 0,
+		client_rpc_DestroySess      => 0,
+		client_rpc_DestroyClId      => 0,
+		client_rpc_LayoutGet        => 0,
+		client_rpc_GetDevInfo       => 0,
+		client_rpc_LayoutCommit     => 0,
+		client_rpc_LayoutReturn     => 0,
+		client_rpc_ReclaimCompl     => 0,
+		client_rpc_ReadDataS        => 0,
+		client_rpc_WriteDataS       => 0,
+		client_rpc_CommitDataS      => 0,
+		client_rpc_OpenLayout       => 0,
+		client_rpc_CreateLayout     => 0,
+		client_rpc_BindConnSess     => 0,
+		client_rpc_LookupOpen       => 0,
+		client_rpc_IOAdvise         => 0,
+		client_rpc_Allocate         => 0,
+		client_rpc_Copy             => 0,
+		client_rpc_Seek             => 0,
+		client_rpc_SeekDataS        => 0,
+		client_rpc_GetExtattr       => 0,
+		client_rpc_SetExtattr       => 0,
+		client_rpc_RmExtattr        => 0,
+		client_rpc_ListExtattr      => 0,
+		client_rpc_Deallocate       => 0,
+		client_rpc_LayoutError      => 0,
+		client_OpenOwner            => 0,
+		client_Opens                => 0,
+		client_LockOwner            => 0,
+		client_Locks                => 0,
+		client_Delegs               => 0,
+		client_LocalOwn             => 0,
+		client_LocalOpen            => 0,
+		client_LocalLown            => 0,
+		client_LocalLock            => 0,
+		client_Layouts              => 0,
+		client_rpc_info_TimedOut    => 0,
+		client_rpc_info_Invalid     => 0,
+		client_rpc_info_X_Replies   => 0,
+		client_rpc_info_Retries     => 0,
+		client_rpc_info_Requests    => 0,
+		client_rpc_info_authrefrsh  => 0,
+		client_cache_Attr_Hits      => 0,
+		client_cache_Attr_Misses    => 0,
+		client_cache_Lkup_Hits      => 0,
+		client_cache_Lkup_Misses    => 0,
+		client_cache_BioR_Hits      => 0,
+		client_cache_BioR_Misses    => 0,
+		client_cache_BioW_Hits      => 0,
+		client_cache_BioW_Misses    => 0,
+		client_cache_BioRL_Hits     => 0,
+		client_cache_BioRL_Misses   => 0,
+		client_cache_BioD_Hits      => 0,
+		client_cache_BioD_Misses    => 0,
+		client_cache_DirE_Hits      => 0,
+		client_cache_DirE_Misses    => 0,
+		client_network_packets      => 0,
+		client_network_udp          => 0,
+		client_network_tcp          => 0,
+		client_network_tcpconn      => 0,
+		server_rpc_Getattr          => 0,
+		server_rpc_Setattr          => 0,
+		server_rpc_Lookup           => 0,
+		server_rpc_Readlink         => 0,
+		server_rpc_Read             => 0,
+		server_rpc_Write            => 0,
+		server_rpc_Create           => 0,
+		server_rpc_Remove           => 0,
+		server_rpc_Rename           => 0,
+		server_rpc_Link             => 0,
+		server_rpc_Symlink          => 0,
+		server_rpc_Mkdir            => 0,
+		server_rpc_Rmdir            => 0,
+		server_rpc_Readdir          => 0,
+		server_rpc_RdirPlus         => 0,
+		server_rpc_Access           => 0,
+		server_rpc_Mknod            => 0,
+		server_rpc_Fsstat           => 0,
+		server_rpc_FSinfo           => 0,
+		server_rpc_pathConf         => 0,
+		server_rpc_Commit           => 0,
+		server_rpc_LookupP          => 0,
+		server_rpc_SetClId          => 0,
+		server_rpc_SetClIdCf        => 0,
+		server_rpc_Open             => 0,
+		server_rpc_OpenAttr         => 0,
+		server_rpc_OpenDwnGr        => 0,
+		server_rpc_OpenCfrm         => 0,
+		server_rpc_DelePurge        => 0,
+		server_rpc_DelRet           => 0,
+		server_rpc_GetFH            => 0,
+		server_rpc_Lock             => 0,
+		server_rpc_LockT            => 0,
+		server_rpc_LockU            => 0,
+		server_rpc_Close            => 0,
+		server_rpc_Verify           => 0,
+		server_rpc_NVerify          => 0,
+		server_rpc_PutFH            => 0,
+		server_rpc_PutPubFH         => 0,
+		server_rpc_PutRootFH        => 0,
+		server_rpc_Renew            => 0,
+		server_rpc_RestoreFH        => 0,
+		server_rpc_SaveFH           => 0,
+		server_rpc_Secinfo          => 0,
+		server_rpc_RelLockOwn       => 0,
+		server_rpc_V4Create         => 0,
+		server_rpc_BackChannelCt    => 0,
+		server_rpc_BindConnToSes    => 0,
+		server_rpc_ExchangeID       => 0,
+		server_rpc_CreateSess       => 0,
+		server_rpc_DestroySess      => 0,
+		server_rpc_FreeStateID      => 0,
+		server_rpc_GetDirDeleg      => 0,
+		server_rpc_GetDevInfo       => 0,
+		server_rpc_GetDevList       => 0,
+		server_rpc_layoutCommit     => 0,
+		server_rpc_LayoutGet        => 0,
+		server_rpc_LayoutReturn     => 0,
+		server_rpc_GetDirDeleg      => 0,
+		server_rpc_GetDevInfo       => 0,
+		server_rpc_GetDevList       => 0,
+		server_rpc_layoutCommit     => 0,
+		server_rpc_LayoutGet        => 0,
+		server_rpc_LayoutReturn     => 0,
+		server_rpc_SecInfNoName     => 0,
+		server_rpc_Sequence         => 0,
+		server_rpc_SetSSV           => 0,
+		server_rpc_TestStateID      => 0,
+		server_rpc_WantDeleg        => 0,
+		server_rpc_DestroyClId      => 0,
+		server_rpc_ReclaimCompl     => 0,
+		server_rpc_Allocate         => 0,
+		server_rpc_Copy             => 0,
+		server_rpc_CopyNotify       => 0,
+		server_rpc_Deallocate       => 0,
+		server_rpc_IOAdvise         => 0,
+		server_rpc_LayoutError      => 0,
+		server_rpc_LayoutStats      => 0,
+		server_rpc_OffloadCncl      => 0,
+		server_rpc_OffloadStat      => 0,
+		server_rpc_ReadPlus         => 0,
+		server_rpc_Seek             => 0,
+		server_rpc_WriteSame        => 0,
+		server_rpc_Clone            => 0,
+		server_rpc_GetExtattr       => 0,
+		server_rpc_SetExtattr       => 0,
+		server_rpc_ListExtattr      => 0,
+		server_rpc_RmExtattr        => 0,
+		server_Clients              => 0,
+		server_OpenOwner            => 0,
+		server_Opens                => 0,
+		server_LockOwner            => 0,
+		server_Locks                => 0,
+		server_Delegs               => 0,
+		server_Layouts              => 0,
+		server_network_packets      => 0,
+		server_network_udp          => 0,
+		server_network_tcp          => 0,
+		server_network_tcpconn      => 0,
+		server_rpcStats_calls       => 0,
+		server_rpcStats_badcalls    => 0,
+		server_rpcStats_badfmt      => 0,
+		server_rpcStats_badauth     => 0,
+		server_rpcStats_badclnt     => 0,
+		server_cache_Inprog         => 0,
+		server_cache_NonIdem        => 0,
+		server_cache_Misses         => 0,
+		server_cache_CacheSize      => 0,
+		server_cache_TCPPeak        => 0,
+		server_cache_hits           => 0,
+		server_cache_nocache        => 0,
+		server_io_read              => 0,
+		server_io_write             => 0,
+		server_RAcache_0            => 0,
+		server_RAcache_1            => 0,
+		server_RAcache_2            => 0,
+		server_RAcache_3            => 0,
+		server_RAcache_4            => 0,
+		server_RAcache_5            => 0,
+		server_RAcache_6            => 0,
+		server_RAcache_7            => 0,
+		server_RAcache_8            => 0,
+		server_RAcache_9            => 0,
+		server_RAcache_notfound     => 0,
+		server_FHcache_lookup       => 0,
+		server_FHcache_anon         => 0,
+		server_FHcache_ncachedir    => 0,
+		server_FHcache_ncachenondir => 0,
+		server_FHcache_stale        => 0,
+		server_rpc_null             => 0,
+		server_rpc_root             => 0,
+		server_rpc_wrcache          => 0,
+		server_rpc_compound         => 0,
+		server_rpc_op0_unused       => 0,
+		server_rpc_op1_unused       => 0,
+		server_rpc_op2_future       => 0,
+	}
+};
+
+####
+####
+#### handle getting stats for FreeBSD
+####
+####
+if ( $^O eq 'freebsd' ) {
+	eval {
+		my $output_raw = `nfsstat -E  --libxo json`;
+		my $stats_json = decode_json($output_raw);
+		$data->{stats}{client_rpc_Getattr}  = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{getattr};
+		$data->{stats}{client_rpc_Setattr}  = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{setattr};
+		$data->{stats}{client_rpc_Lookup}   = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{lookup};
+		$data->{stats}{client_rpc_Readlink} = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{readlink};
+		$data->{stats}{client_rpc_Read}     = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{read};
+		$data->{stats}{client_rpc_Write}    = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{write};
+		$data->{stats}{client_rpc_Create}   = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{create};
+		$data->{stats}{client_rpc_Remove}   = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{remove};
+		$data->{stats}{client_rpc_Rename}   = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{rename};
+		$data->{stats}{client_rpc_Link}     = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{link};
+		$data->{stats}{client_rpc_Symlink}  = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{symlink};
+		$data->{stats}{client_rpc_Mkdir}    = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{mkdir};
+		$data->{stats}{client_rpc_Rmdir}    = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{rmdir};
+		$data->{stats}{client_rpc_Readdir}  = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{readdir};
+		$data->{stats}{client_rpc_RdirPlus} = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{rdirplus};
+		$data->{stats}{client_rpc_Access}   = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{rdirplus};
+		$data->{stats}{client_rpc_Mknod}    = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{mknod};
+		$data->{stats}{client_rpc_Fsstat}   = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{fsstat};
+		$data->{stats}{client_rpc_FSinfo}   = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{fsinfo};
+		$data->{stats}{client_rpc_pathConf} = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{pathconf};
+		$data->{stats}{client_rpc_Commit}   = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{commit};
+		$data->{stats}{client_rpc_SetClId}  = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{setclientid};
+		$data->{stats}{client_rpc_SetClIdCf}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{setclientidcf};
+		$data->{stats}{client_rpc_Lock}    = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{lock};
+		$data->{stats}{client_rpc_LockT}   = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{lockt};
+		$data->{stats}{client_rpc_LockU}   = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{locku};
+		$data->{stats}{client_rpc_Open}    = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{open};
+		$data->{stats}{client_rpc_OpenCfr} = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{opencfr};
+		$data->{stats}{client_rpc_OpenDownGr}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv41}{opendowngr};
+		$data->{stats}{client_rpc_Close} = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv41}{close};
+		$data->{stats}{client_rpc_RelLckOwn}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv41}{rellckown};
+		$data->{stats}{client_rpc_FreeStateID}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv41}{freestateid};
+		$data->{stats}{client_rpc_PutRootFH}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv41}{putrootfh};
+		$data->{stats}{client_rpc_DelegRet}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv41}{delegret};
+		$data->{stats}{client_rpc_GetAcl} = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv41}{getacl};
+		$data->{stats}{client_rpc_SetAcl} = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv41}{setacl};
+		$data->{stats}{client_rpc_ExchangeId}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv41}{exchangeid};
+		$data->{stats}{client_rpc_CreateSess}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv41}{createsess};
+		$data->{stats}{client_rpc_DestroySess}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv41}{destroysess};
+		$data->{stats}{client_rpc_DestroyClId}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv41}{destroyclid};
+		$data->{stats}{client_rpc_LayoutGet}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv41}{layoutget};
+		$data->{stats}{client_rpc_GetDevInfo}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv41}{getdevinfo};
+		$data->{stats}{client_rpc_LayoutCommit}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv41}{layoutcomit};
+		$data->{stats}{client_rpc_LayoutReturn}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv41}{layoutreturn};
+		$data->{stats}{client_rpc_ReclaimCompl}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv41}{reclaimcompl};
+		$data->{stats}{client_rpc_ReadDataS}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv41}{readdatas};
+		$data->{stats}{client_rpc_WriteDataS}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv41}{writedatas};
+		$data->{stats}{client_rpc_CommitDataS}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv41}{commitdatas};
+		$data->{stats}{client_rpc_OpenLayout}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv41}{openlayout};
+		$data->{stats}{client_rpc_CreateLayout}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv41}{createlayout};
+		$data->{stats}{client_rpc_BindConnSess}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv41}{bindconnsess};
+		$data->{stats}{client_rpc_LookupOpen}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv41}{lookupopen};
+		$data->{stats}{client_rpc_IOAdvise}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv42}{ioadvise};
+		$data->{stats}{client_rpc_Allocate}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv42}{allocate};
+		$data->{stats}{client_rpc_Copy} = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv42}{copy};
+		$data->{stats}{client_rpc_Seek} = $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv42}{seek};
+		$data->{stats}{client_rpc_SeekDataS}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv42}{seekdatas};
+		$data->{stats}{client_rpc_GetExtattr}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv42}{getextattr};
+		$data->{stats}{client_rpc_SetExtattr}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv42}{setextattr};
+		$data->{stats}{client_rpc_RmExtattr}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv42}{rmextattr};
+		$data->{stats}{client_rpc_ListExtattr}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv42}{listextattr};
+		$data->{stats}{client_rpc_Deallocate}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv42}{deallocate};
+		$data->{stats}{client_rpc_LayoutError}
+			= $stats_json->{nfsstat}{nfsv4}{clientstats}{operations}{nfsv42}{layouterror};
+		$data->{stats}{client_OpenOwner}          = $stats_json->{nfsstat}{nfsv4}{clientstats}{client}{openowner};
+		$data->{stats}{client_Opens}              = $stats_json->{nfsstat}{nfsv4}{clientstats}{client}{opens};
+		$data->{stats}{client_LockOwner}          = $stats_json->{nfsstat}{nfsv4}{clientstats}{client}{lockowner};
+		$data->{stats}{client_Locks}              = $stats_json->{nfsstat}{nfsv4}{clientstats}{client}{locks};
+		$data->{stats}{client_Delegs}             = $stats_json->{nfsstat}{nfsv4}{clientstats}{client}{delegs};
+		$data->{stats}{client_LocalOwn}           = $stats_json->{nfsstat}{nfsv4}{clientstats}{client}{localown};
+		$data->{stats}{client_LocalOpen}          = $stats_json->{nfsstat}{nfsv4}{clientstats}{client}{localopen};
+		$data->{stats}{client_LocalLown}          = $stats_json->{nfsstat}{nfsv4}{clientstats}{client}{locallown};
+		$data->{stats}{client_LocalLock}          = $stats_json->{nfsstat}{nfsv4}{clientstats}{client}{locallock};
+		$data->{stats}{client_Layouts}            = $stats_json->{nfsstat}{nfsv4}{clientstats}{client}{layouts};
+		$data->{stats}{client_rpc_info_TimedOut}  = $stats_json->{nfsstat}{nfsv4}{clientstats}{rpc}{timedout};
+		$data->{stats}{client_rpc_info_Invalid}   = $stats_json->{nfsstat}{nfsv4}{clientstats}{rpc}{invalid};
+		$data->{stats}{client_rpc_info_X_Replies} = $stats_json->{nfsstat}{nfsv4}{clientstats}{rpc}{timedout};
+		$data->{stats}{client_rpc_info_Retries}   = $stats_json->{nfsstat}{nfsv4}{clientstats}{rpc}{retries};
+		$data->{stats}{client_rpc_info_Requests}  = $stats_json->{nfsstat}{nfsv4}{clientstats}{rpc}{requests};
+		$data->{stats}{client_cache_Attr_Hits}    = $stats_json->{nfsstat}{nfsv4}{clientstats}{cache}{attrhits};
+		$data->{stats}{client_cache_Attr_Misses}  = $stats_json->{nfsstat}{nfsv4}{clientstats}{cache}{attrmisses};
+		$data->{stats}{client_cache_Lkup_Hits}    = $stats_json->{nfsstat}{nfsv4}{clientstats}{cache}{lkuphits};
+		$data->{stats}{client_cache_Lkup_Misses}  = $stats_json->{nfsstat}{nfsv4}{clientstats}{cache}{lkupmisses};
+		$data->{stats}{client_cache_BioR_Hits}    = $stats_json->{nfsstat}{nfsv4}{clientstats}{cache}{biorhits};
+		$data->{stats}{client_cache_BioR_Misses}  = $stats_json->{nfsstat}{nfsv4}{clientstats}{cache}{biormisses};
+		$data->{stats}{client_cache_BioW_Hits}    = $stats_json->{nfsstat}{nfsv4}{clientstats}{cache}{biowhits};
+		$data->{stats}{client_cache_BioW_Misses}  = $stats_json->{nfsstat}{nfsv4}{clientstats}{cache}{biowmisses};
+		$data->{stats}{client_cache_BioRL_Hits}   = $stats_json->{nfsstat}{nfsv4}{clientstats}{cache}{biorlhits};
+		$data->{stats}{client_cache_BioRL_Misses} = $stats_json->{nfsstat}{nfsv4}{clientstats}{cache}{biorlmisses};
+		$data->{stats}{client_cache_BioD_Hits}    = $stats_json->{nfsstat}{nfsv4}{clientstats}{cache}{biodhits};
+		$data->{stats}{client_cache_BioD_Misses}  = $stats_json->{nfsstat}{nfsv4}{clientstats}{cache}{biodmisses};
+		$data->{stats}{client_cache_DirE_Hits}    = $stats_json->{nfsstat}{nfsv4}{clientstats}{cache}{direhits};
+		$data->{stats}{client_cache_DirE_Misses}  = $stats_json->{nfsstat}{nfsv4}{clientstats}{cache}{diremisses};
+		$data->{stats}{server_rpc_Getattr}        = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{getattr};
+		$data->{stats}{server_rpc_Setattr}        = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{setattr};
+		$data->{stats}{server_rpc_Lookup}         = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{lookup};
+		$data->{stats}{server_rpc_Readlink}       = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{readlink};
+		$data->{stats}{server_rpc_Read}           = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{read};
+		$data->{stats}{server_rpc_Write}          = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{write};
+		$data->{stats}{server_rpc_Create}         = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{create};
+		$data->{stats}{server_rpc_Remove}         = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{remove};
+		$data->{stats}{server_rpc_Rename}         = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{rename};
+		$data->{stats}{server_rpc_Link}           = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{link};
+		$data->{stats}{server_rpc_Symlink}        = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{symlink};
+		$data->{stats}{server_rpc_Mkdir}          = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{mkdir};
+		$data->{stats}{server_rpc_Rmdir}          = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{rmdir};
+		$data->{stats}{server_rpc_Readdir}        = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{readdir};
+		$data->{stats}{server_rpc_RdirPlus}       = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{rdirplus};
+		$data->{stats}{server_rpc_Access}         = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{access};
+		$data->{stats}{server_rpc_Mknod}          = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{mknod};
+		$data->{stats}{server_rpc_Fsstat}         = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{fsstat};
+		$data->{stats}{server_rpc_FSinfo}         = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{fsinfo};
+		$data->{stats}{server_rpc_pathConf}       = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{pathconf};
+		$data->{stats}{server_rpc_Commit}         = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{commit};
+		$data->{stats}{server_rpc_LookupP}        = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{lookupp};
+		$data->{stats}{server_rpc_SetClId}        = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{setclientid};
+		$data->{stats}{server_rpc_SetClIdCf}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{setclientidcfrm};
+		$data->{stats}{server_rpc_Open}       = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{open};
+		$data->{stats}{server_rpc_OpenAttr}   = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{openattr};
+		$data->{stats}{server_rpc_OpenDwnGr}  = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{opendwgr};
+		$data->{stats}{server_rpc_OpenCfrm}   = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{opencfrm};
+		$data->{stats}{server_rpc_DelePurge}  = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{delepurge};
+		$data->{stats}{server_rpc_DelRet}     = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{getattr};
+		$data->{stats}{server_rpc_GetFH}      = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{getfh};
+		$data->{stats}{server_rpc_Lock}       = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{lock};
+		$data->{stats}{server_rpc_LockT}      = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{lockt};
+		$data->{stats}{server_rpc_LockU}      = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{locku};
+		$data->{stats}{server_rpc_Close}      = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{close};
+		$data->{stats}{server_rpc_Verify}     = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{verify};
+		$data->{stats}{server_rpc_NVerify}    = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nverify};
+		$data->{stats}{server_rpc_PutFH}      = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{putfh};
+		$data->{stats}{server_rpc_PutPubFH}   = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{putpubfh};
+		$data->{stats}{server_rpc_PutRootFH}  = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{putrootfh};
+		$data->{stats}{server_rpc_Renew}      = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{renew};
+		$data->{stats}{server_rpc_RestoreFH}  = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{restore};
+		$data->{stats}{server_rpc_SaveFH}     = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{savefh};
+		$data->{stats}{server_rpc_Secinfo}    = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{secinfo};
+		$data->{stats}{server_rpc_RelLockOwn} = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{rellockown};
+		$data->{stats}{server_rpc_V4Create}   = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{v4create};
+		$data->{stats}{server_rpc_BackChannelCt}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv41}{backchannelctrl};
+		$data->{stats}{server_rpc_BindConnToSes}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv41}{bindconntosess};
+		$data->{stats}{server_rpc_ExchangeID}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv41}{exchangeid};
+		$data->{stats}{server_rpc_CreateSess}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv41}{createsess};
+		$data->{stats}{server_rpc_DestroySess}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv41}{destroysess};
+		$data->{stats}{server_rpc_FreeStateID}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv41}{freestateid};
+		$data->{stats}{server_rpc_GetDirDeleg}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv41}{getdirdeleg};
+		$data->{stats}{server_rpc_GetDevInfo}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv41}{getdevinfo};
+		$data->{stats}{server_rpc_GetDevList}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv41}{getdevlist};
+		$data->{stats}{server_rpc_layoutCommit}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv41}{layoutcommit};
+		$data->{stats}{server_rpc_LayoutGet}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv41}{layoutget};
+		$data->{stats}{server_rpc_LayoutReturn}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv41}{layoutreturn};
+		$data->{stats}{server_rpc_GetDirDeleg}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv41}{getdirdeleg};
+		$data->{stats}{server_rpc_GetDevInfo}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv41}{getdevinfo};
+		$data->{stats}{server_rpc_GetDevList}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv41}{getdevlist};
+		$data->{stats}{server_rpc_layoutCommit}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv41}{layoutcommit};
+		$data->{stats}{server_rpc_LayoutGet}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv41}{layoutget};
+		$data->{stats}{server_rpc_LayoutReturn}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv41}{layoutreturn};
+		$data->{stats}{server_rpc_SecInfNoName}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv41}{reclaimcompl};
+		$data->{stats}{server_rpc_Sequence}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv41}{sequence};
+		$data->{stats}{server_rpc_SetSSV} = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv41}{setssv};
+		$data->{stats}{server_rpc_TestStateID}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv41}{teststateid};
+		$data->{stats}{server_rpc_WantDeleg}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv41}{wantdeleg};
+		$data->{stats}{server_rpc_DestroyClId}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv41}{destroyclid};
+		$data->{stats}{server_rpc_ReclaimCompl}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv41}{reclaimcompl};
+		$data->{stats}{server_rpc_Allocate}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv42}{allocate};
+		$data->{stats}{server_rpc_Copy} = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv42}{copy};
+		$data->{stats}{server_rpc_CopyNotify}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv42}{copynotify};
+		$data->{stats}{server_rpc_Deallocate}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv42}{deallocate};
+		$data->{stats}{server_rpc_IOAdvise}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv42}{ioadvise};
+		$data->{stats}{server_rpc_LayoutError}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv42}{layouterror};
+		$data->{stats}{server_rpc_LayoutStats}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv42}{layoutstats};
+		$data->{stats}{server_rpc_OffloadCncl}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv42}{offloadcncl};
+		$data->{stats}{server_rpc_OffloadStat}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv42}{offloadstat};
+		$data->{stats}{server_rpc_ReadPlus}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv42}{readplus};
+		$data->{stats}{server_rpc_Seek} = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv42}{seek};
+		$data->{stats}{server_rpc_WriteSame}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv42}{writesame};
+		$data->{stats}{server_rpc_Clone} = $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv42}{clone};
+		$data->{stats}{server_rpc_GetExtattr}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv42}{getextattr};
+		$data->{stats}{server_rpc_SetExtattr}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv42}{setextattr};
+		$data->{stats}{server_rpc_ListExtattr}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv42}{listextattr};
+		$data->{stats}{server_rpc_RmExtattr}
+			= $stats_json->{nfsstat}{nfsv4}{serverstats}{operations}{nfsv42}{rmextattr};
+		$data->{stats}{server_Clients}         = $stats_json->{nfsstat}{nfsv4}{serverstats}{server}{clients};
+		$data->{stats}{server_OpenOwner}       = $stats_json->{nfsstat}{nfsv4}{serverstats}{server}{openowner};
+		$data->{stats}{server_Opens}           = $stats_json->{nfsstat}{nfsv4}{serverstats}{server}{opens};
+		$data->{stats}{server_LockOwner}       = $stats_json->{nfsstat}{nfsv4}{serverstats}{server}{lockowner};
+		$data->{stats}{server_Locks}           = $stats_json->{nfsstat}{nfsv4}{serverstats}{server}{locks};
+		$data->{stats}{server_Delegs}          = $stats_json->{nfsstat}{nfsv4}{serverstats}{server}{delegs};
+		$data->{stats}{server_Layouts}         = $stats_json->{nfsstat}{nfsv4}{serverstats}{server}{layouts};
+		$data->{stats}{server_cache_Inprog}    = $stats_json->{nfsstat}{nfsv4}{serverstats}{cache}{inprog};
+		$data->{stats}{server_cache_NonIdem}   = $stats_json->{nfsstat}{nfsv4}{serverstats}{cache}{nonidem};
+		$data->{stats}{server_cache_Misses}    = $stats_json->{nfsstat}{nfsv4}{serverstats}{cache}{misses};
+		$data->{stats}{server_cache_CacheSize} = $stats_json->{nfsstat}{nfsv4}{serverstats}{cache}{cachesize};
+		$data->{stats}{server_cache_TCPPeak}   = $stats_json->{nfsstat}{nfsv4}{serverstats}{cache}{tcppeak};
+	};
+} ## end if ( $^O eq 'freebsd' )
+
+####
+####
+#### handle getting stats for Linux
+####
+####
+if ( $^O eq 'linux' ) {
+	my $output_raw    = `nfsstat -2 -3 -4 -v| sed 's/[0-9\.]*\%//g'`;
+	my @output_split  = split( /\n/, $output_raw );
+	my $previous_line = '';
+	my $mode          = '';
+
+	foreach my $line (@output_split) {
+		$line =~ s/\t/\ /g;
+		$line =~ s/\ +$//g;
+		if ( $line =~ /^[Cc]lient/ ) {
+			$mode = 'client';
+		} elsif ( $line =~ /^[Ss]erver/ ) {
+			$mode = 'server';
+		}
+		if ( $previous_line =~ /^packets\ +udp\ +tcp\ +tcpconn/ && $mode eq 'server' ) {
+			(
+				$data->{stats}{server_network_packets}, $data->{stats}{server_network_udp},
+				$data->{stats}{server_network_tcp},     $data->{stats}{server_network_tcpconn},
+			) = split( /[\t\ ]+/, $line );
+		} elsif ( $previous_line =~ /^calls\ +badcalls\ +badfmt\ +badauth\ +badclnt/ && $mode eq 'server' ) {
+			(
+				$data->{stats}{server_rpcStats_calls},  $data->{stats}{server_rpcStats_badcalls},
+				$data->{stats}{server_rpcStats_badfmt}, $data->{stats}{server_rpcStats_badauth},
+				$data->{stats}{server_rpcStats_badclnt},
+			) = split( /[\t\ ]+/, $line );
+		} elsif ( $previous_line =~ /^hits\ +misses\ +nocache/ && $mode eq 'server' ) {
+			(
+				$data->{stats}{server_cache_hits},
+				$data->{stats}{server_cache_Misses},
+				$data->{stats}{server_cache_nocache},
+			) = split( /[\t\ ]+/, $line );
+		} elsif ( $previous_line =~ /^read\ +write/ && $mode eq 'server' ) {
+			( $data->{stats}{server_io_read}, $data->{stats}{server_io_write}, ) = split( /[\t\ ]+/, $line );
+		} elsif ( $previous_line
+			=~ /^size\ +0\-10\%\ +10\-20\%\ +20\-3\0%\ +30\-40\%\ +40\-50\%\ +50\-60\%\ +60\-70\%\ +70\-80\%\ +80\-90\%\ +90\-100\%\ +notfound/
+			&& $mode eq 'server' )
+		{
+			(
+				$data->{stats}{server_RAcache_0}, $data->{stats}{server_RAcache_1},
+				$data->{stats}{server_RAcache_2}, $data->{stats}{server_RAcache_3},
+				$data->{stats}{server_RAcache_4}, $data->{stats}{server_RAcache_5},
+				$data->{stats}{server_RAcache_6}, $data->{stats}{server_RAcache_7},
+				$data->{stats}{server_RAcache_8}, $data->{stats}{server_RAcache_9},
+				$data->{stats}{server_RAcache_notfound}
+			) = split( /[\t\ ]+/, $line );
+		} elsif ( $previous_line =~ /^lookup\ +anon\ +ncachedir\ +ncachenondir\ +stale/ && $mode eq 'server' ) {
+			(
+				$data->{stats}{server_FHcache_lookup},    $data->{stats}{server_FHcache_anon},
+				$data->{stats}{server_FHcache_ncachedir}, $data->{stats}{server_FHcache_ncachenondir},
+				$data->{stats}{server_FHcache_stale},
+			) = split( /[\t\ ]+/, $line );
+		} elsif ( $previous_line =~ /^null\ +getattr\ +setattr\ +root\ +lookup/ && $mode eq 'server' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_null}    += $split[0];
+			$data->{stats}{server_rpc_Getattr} += $split[1];
+			$data->{stats}{server_rpc_Setattr} += $split[2];
+			$data->{stats}{server_rpc_root}    += $split[3];
+			$data->{stats}{server_rpc_Lookup}  += $split[4];
+		} elsif ( $previous_line =~ /^readlink\ +read\ +wrcache\ +write\ +create/ && $mode eq 'server' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_Readlink} += $split[0];
+			$data->{stats}{server_rpc_Read}     += $split[1];
+			$data->{stats}{server_rpc_wrcache}  += $split[2];
+			$data->{stats}{server_rpc_Write}    += $split[3];
+			$data->{stats}{server_rpc_Create}   += $split[4];
+		} elsif ( $previous_line =~ /^remove\ +rename\ +link\ +symlink\ +mkdir/ && $mode eq 'server' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_Remove}  += $split[0];
+			$data->{stats}{server_rpc_Rename}  += $split[1];
+			$data->{stats}{server_rpc_Link}    += $split[2];
+			$data->{stats}{server_rpc_Symlink} += $split[3];
+			$data->{stats}{server_rpc_Mkdir}   += $split[4];
+		} elsif ( $previous_line =~ /^rmdir\ +readdir\ +fsstat/ && $mode eq 'server' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_Rmdir}   += $split[0];
+			$data->{stats}{server_rpc_Readdir} += $split[1];
+			$data->{stats}{server_rpc_Fsstat}  += $split[2];
+		} elsif ( $previous_line =~ /^null\ +getattr\ +setattr\ +lookup\ +access/ && $mode eq 'server' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_null}    += $split[0];
+			$data->{stats}{server_rpc_Getattr} += $split[1];
+			$data->{stats}{server_rpc_Setattr} += $split[2];
+			$data->{stats}{server_rpc_Lookup}  += $split[3];
+			$data->{stats}{server_rpc_Access}  += $split[4];
+		} elsif ( $previous_line =~ /^readlink\ +read\ +write\ +create\ +mkdir/ && $mode eq 'server' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_Readlink} += $split[0];
+			$data->{stats}{server_rpc_Read}     += $split[1];
+			$data->{stats}{server_rpc_Write}    += $split[2];
+			$data->{stats}{server_rpc_Create}   += $split[3];
+			$data->{stats}{server_rpc_Mkdir}    += $split[4];
+		} elsif ( $previous_line =~ /^symlink\ +mknod\ +remove\ +rmdir\ +rename/ && $mode eq 'server' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_Symlink} += $split[0];
+			$data->{stats}{server_rpc_Mknod}   += $split[1];
+			$data->{stats}{server_rpc_Remove}  += $split[2];
+			$data->{stats}{server_rpc_Rmdir}   += $split[3];
+			$data->{stats}{server_rpc_Rename}  += $split[4];
+		} elsif ( $previous_line =~ /^link\ +readdir\ +readdirplus\ +fsstat\ +fsinfo/ && $mode eq 'server' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_Link}     += $split[0];
+			$data->{stats}{server_rpc_Readdir}  += $split[1];
+			$data->{stats}{server_rpc_ReadPlus} += $split[2];
+			$data->{stats}{server_rpc_Fsstat}   += $split[3];
+			$data->{stats}{server_rpc_FSinfo}   += $split[4];
+		} elsif ( $previous_line =~ /^pathconf\ +commit/ && $mode eq 'server' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_pathConf} += $split[0];
+			$data->{stats}{server_rpc_Commit}   += $split[1];
+		} elsif ( $previous_line =~ /^null\ +compound/ && $mode eq 'server' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_null}     += $split[0];
+			$data->{stats}{server_rpc_compound} += $split[1];
+		} elsif ( $previous_line =~ /^op0\-unused\ +op1\-unused\ +op2\-future\ +access\ +close/ && $mode eq 'server' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_op0_unused} += $split[0];
+			$data->{stats}{server_rpc_op1_unused} += $split[1];
+			$data->{stats}{server_rpc_op2_future} += $split[2];
+			$data->{stats}{server_rpc_Access}     += $split[3];
+			$data->{stats}{server_rpc_Close}      += $split[4];
+		} elsif ( $previous_line =~ /^commit\ +create\ +delegpurge\ +delegreturn\ +getattr/ && $mode eq 'server' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_Commit} += $split[0];
+			$data->{stats}{server_rpc_Create} += $split[1];
+			$data->{stats}{server_rpc_DelePurge} = $split[2];
+			$data->{stats}{server_rpc_DelRet}    = $split[3];
+			$data->{stats}{server_rpc_Getattr} += $split[4];
+		} elsif ( $previous_line =~ /^getfh\ +link\ +lock\ +lockt\ +locku/ && $mode eq 'server' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_GetFH} += $split[0];
+			$data->{stats}{server_rpc_Link}  += $split[1];
+			$data->{stats}{server_rpc_Lock}  += $split[2];
+			$data->{stats}{server_rpc_LockT} += $split[3];
+			$data->{stats}{server_rpc_LockU} += $split[4];
+		} elsif ( $previous_line =~ /^lookup\ +lookup_root\ +nverify\ +open\ +openattr/ && $mode eq 'server' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_Lookup}  += $split[0];
+			$data->{stats}{server_rpc_LookupP} += $split[1];
+			$data->{stats}{server_rpc_NVerify} += $split[2];
+			$data->{stats}{server_rpc_Open}    += $split[3];
+			$data->{stats}{server_rpc_OpeAttr} += $split[4];
+		} elsif ( $previous_line =~ /^open_conf\ +open_dgrd\ +putfh\ +putpubfh\ +putrootfh/ && $mode eq 'server' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_OpenCfrm}  += $split[0];
+			$data->{stats}{server_rpc_OpenDwnGr} += $split[1];
+			$data->{stats}{server_rpc_PutFH}     += $split[2];
+			$data->{stats}{server_rpc_PutPubFH}  += $split[3];
+			$data->{stats}{server_rpc_PutRootFH} += $split[4];
+		} elsif ( $previous_line =~ /^read\ +readdir\ +readlink\ +remove\ +rename/ && $mode eq 'server' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_Read}     += $split[0];
+			$data->{stats}{server_rpc_Readdir}  += $split[1];
+			$data->{stats}{server_rpc_Readlink} += $split[2];
+			$data->{stats}{server_rpc_Remove}   += $split[3];
+			$data->{stats}{server_rpc_Rename}   += $split[4];
+		} elsif ( $previous_line =~ /^renew\ +restorefh\ +savefh\ +secinfo\ +setattr/ && $mode eq 'server' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_Renew}     += $split[0];
+			$data->{stats}{server_rpc_RestoreFH} += $split[1];
+			$data->{stats}{server_rpc_SaveFH}    += $split[2];
+			$data->{stats}{server_rpc_Secinfo}   += $split[3];
+			$data->{stats}{server_rpc_Setattr}   += $split[4];
+		} elsif ( $previous_line =~ /^setcltid\ +setcltidconf\ +verify\ +write\ +rellockowner/ && $mode eq 'server' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_SetClId}    += $split[0];
+			$data->{stats}{server_rpc_SetClIdCf}  += $split[1];
+			$data->{stats}{server_rpc_Verify}     += $split[2];
+			$data->{stats}{server_rpc_Write}      += $split[3];
+			$data->{stats}{server_rpc_RelLockOwn} += $split[4];
+		} elsif ( $previous_line =~ /^bc_ctl\ +bind_conn\ +exchange_id\ +create_ses\ +destroy_ses/ && $mode eq 'server' )
+		{
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_BackChannelCt} += $split[0];
+			$data->{stats}{server_rpc_BindConnToSes} += $split[1];
+			$data->{stats}{server_rpc_ExchangeID}    += $split[2];
+			$data->{stats}{server_rpc_CreateSess}    += $split[3];
+			$data->{stats}{server_rpc_DestroySess}   += $split[4];
+		} elsif ( $previous_line =~ /^bc_ctl\ +bind_conn\ +exchange_id\ +create_ses\ +destroy_ses/ && $mode eq 'server' )
+		{
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_BackChannelCt} += $split[0];
+			$data->{stats}{server_rpc_BindConnToSes} += $split[1];
+			$data->{stats}{server_rpc_ExchangeID}    += $split[2];
+			$data->{stats}{server_rpc_CreateSess}    += $split[3];
+			$data->{stats}{server_rpc_DestroySess}   += $split[4];
+		} elsif ( $previous_line =~ /^free_stateid\ +getdirdeleg\ +getdevinfo\ +getdevlist\ +layoutcommit/
+			&& $mode eq 'server' )
+		{
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_FreeStateID}  += $split[0];
+			$data->{stats}{server_rpc_GetDirDeleg}  += $split[1];
+			$data->{stats}{server_rpc_GetDevInfo}   += $split[2];
+			$data->{stats}{server_rpc_GetDevList}   += $split[3];
+			$data->{stats}{server_rpc_layoutCommit} += $split[4];
+		} elsif ( $previous_line =~ /^layoutget\ +layoutreturn\ +secinfononam\ +sequence\ +set_ssv/
+			&& $mode eq 'server' )
+		{
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_LayoutGet}    += $split[0];
+			$data->{stats}{server_rpc_LayoutReturn} += $split[1];
+			$data->{stats}{server_rpc_SecInfNoName} += $split[2];
+			$data->{stats}{server_rpc_Sequence}     += $split[3];
+			$data->{stats}{server_rpc_SetSSV}       += $split[4];
+		} elsif ( $previous_line =~ /^test_stateid\ +want_deleg\ +destroy_clid\ +reclaim_comp\ +allocate/
+			&& $mode eq 'server' )
+		{
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_TestStateID}  += $split[0];
+			$data->{stats}{server_rpc_WantDeleg}    += $split[1];
+			$data->{stats}{server_rpc_DestroyClId}  += $split[2];
+			$data->{stats}{server_rpc_ReclaimCompl} += $split[3];
+			$data->{stats}{server_rpc_Allocate}     += $split[4];
+		} elsif ( $previous_line =~ /^copy\ +copy_notify\ +deallocate\ +ioadvise\ +layouterror/ && $mode eq 'server' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_Copy}        += $split[0];
+			$data->{stats}{server_rpc_CopyNotify}  += $split[1];
+			$data->{stats}{server_rpc_Deallocate}  += $split[2];
+			$data->{stats}{server_rpc_IOAdvise}    += $split[3];
+			$data->{stats}{server_rpc_LayoutError} += $split[4];
+		} elsif ( $previous_line =~ /^layoutstats\ +offloadcancel\ +offloadstatus\ +readplus\ +seek/
+			&& $mode eq 'server' )
+		{
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_LayoutStats} += $split[0];
+			$data->{stats}{server_rpc_OffloadCncl} += $split[1];
+			$data->{stats}{server_rpc_OffloadStat} += $split[2];
+			$data->{stats}{server_rpc_ReadPlus}    += $split[3];
+			$data->{stats}{server_rpc_Seek}        += $split[4];
+		} elsif ( $previous_line =~ /^write_same/ && $mode eq 'server' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{server_rpc_WriteSame} += $split[0];
+		} elsif ( $previous_line =~ /^packets\ +udp\ +tcp\ +tcpconn/ && $mode eq 'client' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{client_network_packets} += $split[0];
+			$data->{stats}{client_network_udp}     += $split[1];
+			$data->{stats}{client_network_tcp}     += $split[2];
+			$data->{stats}{client_network_tcpconn} += $split[3];
+		} elsif ( $previous_line =~ /calls\ +retrans\ +authrefrsh/ && $mode eq 'client' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{client_rpc_info_calls}      += $split[0];
+			$data->{stats}{client_rpc_info_Retries}    += $split[1];
+			$data->{stats}{client_rpc_info_authrefrsh} += $split[2];
+		} elsif ( $previous_line =~ /^null\ +getattr\ +setattr\ +root\ +lookup/ && $mode eq 'client' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{client_rpc_null}    += $split[0];
+			$data->{stats}{client_rpc_Getattr} += $split[1];
+			$data->{stats}{client_rpc_Setattr} += $split[2];
+			$data->{stats}{client_rpc_root}    += $split[3];
+			$data->{stats}{client_rpc_Lookup}  += $split[4];
+		} elsif ( $previous_line =~ /^readlink\ +read\ +wrcache\ +write\ +create/ && $mode eq 'client' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{client_rpc_Readlink} += $split[0];
+			$data->{stats}{client_rpc_Read}     += $split[1];
+			$data->{stats}{client_rpc_wrcache}  += $split[2];
+			$data->{stats}{client_rpc_Write}    += $split[3];
+			$data->{stats}{client_rpc_Create}   += $split[4];
+		} elsif ( $previous_line =~ /^remove\ +rename\ +link\ +symlink\ +mkdir/ && $mode eq 'client' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{client_rpc_Remove}  += $split[0];
+			$data->{stats}{client_rpc_Rename}  += $split[1];
+			$data->{stats}{client_rpc_Link}    += $split[2];
+			$data->{stats}{client_rpc_Symlink} += $split[3];
+			$data->{stats}{client_rpc_Mkdir}   += $split[4];
+		} elsif ( $previous_line =~ /^rmdir\ +readdir\ +fsstat/ && $mode eq 'client' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{client_rpc_Rmdir}   += $split[0];
+			$data->{stats}{client_rpc_Readdir} += $split[1];
+			$data->{stats}{client_rpc_Fsstat}  += $split[2];
+		} elsif ( $previous_line =~ /^null\ +getattr\ +setattr\ +lookup\ +access/ && $mode eq 'client' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{client_rpc_null}    += $split[0];
+			$data->{stats}{client_rpc_Getattr} += $split[1];
+			$data->{stats}{client_rpc_Setattr} += $split[2];
+			$data->{stats}{client_rpc_Lookup}  += $split[3];
+			$data->{stats}{client_rpc_Access}  += $split[4];
+		} elsif ( $previous_line =~ /^readlink\ +read\ +write\ +create\ +mkdir/ && $mode eq 'client' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{client_rpc_Readlink} += $split[0];
+			$data->{stats}{client_rpc_Read}     += $split[1];
+			$data->{stats}{client_rpc_Write}    += $split[2];
+			$data->{stats}{client_rpc_Create}   += $split[3];
+			$data->{stats}{client_rpc_Mkdir}    += $split[4];
+		} elsif ( $previous_line =~ /^symlink\ +mknod\ +remove\ +rmdir\ +rename/ && $mode eq 'client' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{client_rpc_Symlink} += $split[0];
+			$data->{stats}{client_rpc_Mknod}   += $split[1];
+			$data->{stats}{client_rpc_Remove}  += $split[2];
+			$data->{stats}{client_rpc_Rmdir}   += $split[3];
+			$data->{stats}{client_rpc_Rename}  += $split[4];
+		} elsif ( $previous_line =~ /^link\ +readdir\ +readdirplus\ +fsstat\ +fsinfo/ && $mode eq 'client' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{client_rpc_Link}    += $split[0];
+			$data->{stats}{client_rpc_Readdir} += $split[1];
+			$data->{stats}{client_rpc_Readdir} += $split[2];
+			$data->{stats}{client_rpc_Fsstat}  += $split[3];
+			$data->{stats}{client_rpc_FSinfo}  += $split[4];
+		} elsif ( $previous_line =~ /^pathconf\ +commit/ && $mode eq 'client' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{client_rpc_pathConf} += $split[0];
+			$data->{stats}{client_rpc_Commit}   += $split[1];
+		} elsif ( $previous_line =~ /^null\ +read\ +write\ +commit\ +open/ && $mode eq 'client' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{client_rpc_null}   += $split[0];
+			$data->{stats}{client_rpc_Read}   += $split[1];
+			$data->{stats}{client_rpc_Write}  += $split[2];
+			$data->{stats}{client_rpc_Commit} += $split[3];
+			$data->{stats}{client_rpc_Open}   += $split[4];
+		} elsif ( $previous_line =~ /^open_conf\ +open_noat\ +open_dgrd\ +close\ +setattr/ && $mode eq 'client' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{client_rpc_OpenCfr}    += $split[0];
+			$data->{stats}{client_rpc_OpenLayout} += $split[1];
+			$data->{stats}{client_rpc_OpenDownGr} += $split[2];
+			$data->{stats}{client_rpc_Close}      += $split[3];
+			$data->{stats}{client_rpc_Setattr}    += $split[4];
+		} elsif ( $previous_line =~ /^fsinfo\ +renew\ +setclntid\ +confirm\ +lock/ && $mode eq 'client' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{client_rpc_FSinfo}  += $split[0];
+			$data->{stats}{client_rpc_Rename}  += $split[1];
+			$data->{stats}{client_rpc_SetClId} += $split[2];
+			$data->{stats}{client_rpc_confirm} += $split[3];
+			$data->{stats}{client_rpc_Lock}    += $split[4];
+		} elsif ( $previous_line =~ /^lockt\ +locku\ +access\ +getattr\ +lookup/ && $mode eq 'client' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{client_rpc_LockT}   += $split[0];
+			$data->{stats}{client_rpc_LockU}   += $split[1];
+			$data->{stats}{client_rpc_Access}  += $split[2];
+			$data->{stats}{client_rpc_Getattr} += $split[3];
+			$data->{stats}{client_rpc_Lookup}  += $split[4];
+		} elsif ( $previous_line =~ /^lookup_root\ +remove\ +rename\ +link\ +symlink/ && $mode eq 'client' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{client_rpc_LookupOpen} += $split[0];
+			$data->{stats}{client_rpc_Remove}     += $split[1];
+			$data->{stats}{client_rpc_Rename}     += $split[2];
+			$data->{stats}{client_rpc_Link}       += $split[3];
+			$data->{stats}{client_rpc_Symlink}    += $split[4];
+		} elsif ( $previous_line =~ /^create\ +pathconf\ +statfs\ +readlink\ +readdir/ && $mode eq 'client' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{client_rpc_Create}   += $split[0];
+			$data->{stats}{client_rpc_pathConf} += $split[1];
+			$data->{stats}{client_rpc_Fsstat}   += $split[2];
+			$data->{stats}{client_rpc_Readlink} += $split[3];
+			$data->{stats}{client_rpc_Readdir}  += $split[4];
+		} elsif ( $previous_line =~ /^server_caps\ +delegreturn\ +getacl\ +setacl\ +fs_locations/ && $mode eq 'client' )
+		{
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{client_rpc_server_caps}  += $split[0];
+			$data->{stats}{client_rpc_DelegRet}     += $split[1];
+			$data->{stats}{client_rpc_Getattr}      += $split[2];
+			$data->{stats}{client_rpc_SetAcl}       += $split[3];
+			$data->{stats}{client_rpc_fs_locations} += $split[4];
+		} elsif ( $previous_line =~ /^rel_lkowner\ +secinfo\ +fsid_present\ +exchange_id\ +create_session/
+			&& $mode eq 'client' )
+		{
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{client_rpc_RelLckOwn}    += $split[0];
+			$data->{stats}{client_rpc_secinfo}      += $split[1];
+			$data->{stats}{client_rpc_fsid_present} += $split[2];
+			$data->{stats}{client_rpc_ExchangeId}   += $split[3];
+			$data->{stats}{client_rpc_CreateSess}   += $split[4];
+		} elsif ( $previous_line =~ /^destroy_session\ +sequence\ +get_lease_time\ +reclaim_comp\ +layoutget/
+			&& $mode eq 'client' )
+		{
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{client_rpc_DestroySess}    += $split[0];
+			$data->{stats}{client_rpc_sequence}       += $split[1];
+			$data->{stats}{client_rpc_get_lease_time} += $split[2];
+			$data->{stats}{client_rpc_ReclaimCompl}   += $split[3];
+			$data->{stats}{client_rpc_LayoutGet}      += $split[4];
+		} elsif ( $previous_line =~ /^getdevinfo\ +layoutcommit\ +layoutreturn\ +secinfo_no\ +test_stateid/
+			&& $mode eq 'client' )
+		{
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{client_rpc_GetDevInfo}   += $split[0];
+			$data->{stats}{client_rpc_LayoutCommit} += $split[1];
+			$data->{stats}{client_rpc_LayoutReturn} += $split[2];
+			$data->{stats}{client_rpc_secinfo_no}   += $split[3];
+			$data->{stats}{client_rpc_test_stateid} += $split[4];
+		} elsif ( $previous_line =~ /^free_stateid\ +getdevicelist\ +bind_conn_to_ses\ +destroy_clientid\ +seek/
+			&& $mode eq 'client' )
+		{
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{client_rpc_FreeStateID}   += $split[0];
+			$data->{stats}{client_rpc_getdevicelist} += $split[1];
+			$data->{stats}{client_rpc_BindConnSess}  += $split[2];
+			$data->{stats}{client_rpc_DestroyClId}   += $split[3];
+			$data->{stats}{client_rpc_Seek}          += $split[4];
+		} elsif ( $previous_line =~ /^allocate\ +deallocate\ +layoutstats\ +clone/ && $mode eq 'client' ) {
+			my @split = split( /[\t\ ]+/, $line );
+			$data->{stats}{client_rpc_Allocate}    += $split[0];
+			$data->{stats}{client_rpc_Deallocate}  += $split[1];
+			$data->{stats}{client_rpc_layoutstats} += $split[2];
+			$data->{stats}{client_rpc_Close}       += $split[3];
+		}
+		$previous_line = $line;
+	} ## end foreach my $line (@output_split)
+} ## end if ( $^O eq 'linux' )
+
+####
+####
+#### figure out if is a client and/or server
+####
+####
+my @stat_keys = keys( %{ $data->{stats} } );
+foreach my $item (@stat_keys) {
+	if ( $item =~ /^client/ && defined( $data->{stats}{$item} ) && $data->{stats}{$item} > 0 ) {
+		$data->{is_client} = 1;
+	} elsif ( $item =~ /^server/ && defined( $data->{stats}{$item} ) && $data->{stats}{$item} > 0 ) {
+		$data->{is_server} = 1;
+	}
+}
+
+####
+####
+#### if server, call showmount
+####
+####
+if ( $data->{is_server} ) {
+	my $output_raw   = `showmount -a`;
+	my @output_split = split( /\n/, $output_raw );
+	foreach my $line (@output_split) {
+		if ( $line =~ /\:\// ) {
+			my ( $host, $path ) = split( /\:\//, $line );
+			push( @{ $data->{mounted_by} }, { host => $host, path => '/' . $path } );
+		}
+	}
+} ## end if ( $data->{is_server} )
+
+####
+####
+#### if client, call nfsstat -m
+####
+####
+if ( $data->{is_client} ) {
+	if ( $^O eq 'freebsd' ) {
+		my $output_raw   = `nfsstat -m`;
+		my @output_split = split( /\n/, $output_raw );
+		my $host;
+		my $rpath;
+		my $lpath;
+		foreach my $line (@output_split) {
+			if ( $line =~ /\:\/.* on \// ) {
+				$host = $line;
+				$host =~ s/\:\/.*$//;
+
+				$rpath = $line;
+				$rpath =~ s/\ on\ \/.*$//;
+				$rpath =~ s/^.*\:\///;
+				$rpath = '/' . $rpath;
+
+				$lpath = $line;
+				$lpath =~ s/^.*\:\/.*\ on \///;
+				$lpath = '/' . $lpath;
+			} elsif ( $line =~ /\,/ && defined($host) && defined($rpath) && defined($lpath) ) {
+				my @flags;
+				my %opts;
+				my @line_split = split( /\,/, $line );
+				foreach my $item (@line_split) {
+					if ( $item =~ /\=/ ) {
+						my ( $var, $val ) = split( /\=/, $item );
+						$opts{$var} = $val;
+					} else {
+						push( @flags, $item );
+					}
+				}
+				push(
+					@{ $data->{mounts} },
+					{ host => $host, rpath => $rpath, lpath => $lpath, flags => \@flags, opts => \%opts }
+				);
+			} ## end elsif ( $line =~ /\,/ && defined($host) && defined...)
+		} ## end foreach my $line (@output_split)
+	} elsif ( $^O eq 'linux' ) {
+		my $output_raw   = `nfsstat -m`;
+		my @output_split = split( /\n/, $output_raw );
+		my $host;
+		my $rpath;
+		my $lpath;
+		foreach my $line (@output_split) {
+			if ( $line =~ /^\/.*\ from\ .*\:\/.*/ ) {
+				$lpath = $line;
+				$lpath =~ s/\ from\ .*$//;
+
+				$host = $line;
+				$host =~ s/.*\ from\ //;
+				$host =~ s/\:\/.*$//;
+
+				$rpath = $line;
+				$rpath =~ s/^.*\:\///;
+				$rpath = '/' . $rpath;
+			} elsif ( $line =~ /Flags\:[\ \t]+/ && defined($lpath) && defined($host) && defined($rpath) ) {
+				$line =~ s/^.*Flags\:[\ \t]+//;
+				my @flags;
+				my %opts;
+				my @line_split = split( /\,/, $line );
+				foreach my $item (@line_split) {
+					if ( $item =~ /\=/ ) {
+						my ( $var, $val ) = split( /\=/, $item );
+						$opts{$var} = $val;
+					} else {
+						push( @flags, $item );
+					}
+				}
+				push(
+					@{ $data->{mounts} },
+					{ host => $host, rpath => $rpath, lpath => $lpath, flags => \@flags, opts => \%opts }
+				);
+			} ## end elsif ( $line =~ /Flags\:[\ \t]+/ && defined(...))
+		} ## end foreach my $line (@output_split)
+	} ## end elsif ( $^O eq 'linux' )
+} ## end if ( $data->{is_client} )
+
+#add the data has to the return hash
+$to_return->{data} = $data;
+
+#finally render the JSON
+my $raw_json = encode_json($to_return);
+if ($write) {
+	write_file( $cache_base, $raw_json );
+	# compress and write to the cache file for it
+	my $compressed_string;
+	gzip \$raw_json => \$compressed_string;
+	my $compressed = encode_base64($compressed_string);
+	$compressed =~ s/\n//g;
+	$compressed = $compressed . "\n";
+	my $print_compressed = 0;
+	if ( length($compressed) > length($raw_json) ) {
+		write_file( $cache_base . '.snmp', $raw_json );
+	} else {
+		write_file( $cache_base . '.snmp', $compressed );
+		$print_compressed = 1;
+	}
+
+	if ( $compress && $print_compressed ) {
+		print $compressed;
+	} else {
+		print $raw_json;
+	}
+} else {
+	if ( !$compress ) {
+		print $raw_json. "\n";
+		exit;
+	}
+
+	# compress and write to the cache file for it
+	my $compressed_string;
+	gzip \$raw_json => \$compressed_string;
+	my $compressed = encode_base64($compressed_string);
+	$compressed =~ s/\n//g;
+	$compressed = $compressed . "\n";
+	my $print_compressed = 0;
+	if ( length($compressed) > length($raw_json) ) {
+		print $raw_json;
+	} else {
+		print $compressed;
+	}
+} ## end else [ if ($write) ]

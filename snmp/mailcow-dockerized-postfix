@@ -20,6 +20,9 @@
 # please adjust librenms_poller_interval according to your LibreNMS setup - default to 5 minutes
 # requirements: mailcow-dockerized and pflogsumm
 #
+# Note to users that struggle with the setup: Make sure, that your SNMP Daemon can use the docker command
+# So please make sure, that the e.G. Debian-snmp user is added to the docker group!
+#
 
 import json
 import re
@@ -47,7 +50,7 @@ def cli_command():
         + libre_to_mcd_postfix(librenms_poller_interval)
         + "m "
         + cli_get_docker_container()
-        + "| pflogsumm --smtpd-stats"
+        + "| pflogsumm --smtpd-stats 2>&1 | grep -v 'Use of uninitialized value'"
     )
     return cli_part
 

@@ -12,7 +12,7 @@ if [ $# -ne 1 ]; then
 fi
 
 # Extract frequency
-frequency=$(/usr/sbin/iw dev "$1" info | /bin/grep channel | /usr/bin/cut -f 2- -s -d" " | /usr/bin/cut -f 2- -s -d"(" | /usr/bin/cut -f 1 -s -d" ")
+frequency=$(/usr/sbin/iw dev "$1" info 2>/dev/null | /bin/grep channel | /usr/bin/cut -f 2- -s -d" " | /usr/bin/cut -f 2- -s -d"(" | /usr/bin/cut -f 1 -s -d" ")
 
 # Return snmp result
 /bin/echo "$frequency"

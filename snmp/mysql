@@ -158,6 +158,8 @@ if (!isset($called_by_script_server)) {
          $output[] = $item;
       }
       list($short, $val) = explode(":", $item);
+      # ensure returned values do not exceed max limits in RRD
+      $val = $val % ( 124999999999 + 1 );
       echo(strtolower($short).":".strtolower($val)."\n");
    }
    debug(array("Final result", $output));
@@ -1310,6 +1312,7 @@ function to_int ( $str ) {
 function run_query($sql, $conn) {
    global $debug;
    debug($sql);
+   mysqli_report(MYSQLI_REPORT_OFF);
    $result = @mysqli_query($conn, $sql);
    if ( $debug && strpos($sql, 'SHOW SLAVE STATUS ') === false ) {
       $error = @mysqli_error($conn);
@@ -1319,13 +1322,15 @@ function run_query($sql, $conn) {
       }
    }
    $array = array();
-   $count = @mysqli_num_rows($result);
-   if ( $count > 10000 ) {
-      debug('Abnormal number of rows returned: ' . $count);
-   }
-   else {
-      while ( $row = @mysqli_fetch_array($result) ) {
-         $array[] = $row;
+   if ( $result ) {
+      $count = @mysqli_num_rows($result);
+      if ( $count > 10000 ) {
+         debug('Abnormal number of rows returned: ' . $count);
+      }
+      else {
+         while ( $row = @mysqli_fetch_array($result) ) {
+	    $array[] = $row;
+         }
       }
    }
    debug(array($sql, $array));

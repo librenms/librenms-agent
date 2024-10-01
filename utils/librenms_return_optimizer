@@ -1,0 +1,109 @@
+#!/usr/bin/env perl
+
+#Copyright (c) 2022, Zane C. Bowers-Hadley
+#All rights reserved.
+#
+#Redistribution and use in source and binary forms, with or without modification,
+#are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+#THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+#WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+#IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, 
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, 
+#DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+#LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+#THE POSSIBILITY OF SUCH DAMAGE.
+
+use MIME::Base64;
+use Gzip::Faster;
+use Getopt::Long;
+use warnings;
+use strict;
+use IPC::Cmd qw[ run ];
+
+sub version{
+	print "librenms_return_optimizer v. 0.0.2\n";
+}
+
+my $version;
+my $help;
+my $extract;
+my $new_line;
+GetOptions(
+		   'e' => \$extract,
+		   'n' => \$new_line,
+		   'h' => \$help,
+		   'help' => \$help,
+		   'v' => \$version,
+		   'version' => \$version,
+		   );
+
+if ($version) {
+	version;
+	exit;
+}
+
+if ($help) {
+	version;
+
+	print '
+foo | librenms_return_otimizer
+librenms_return_otimizer -- /path/to/some/extend -some -args
+
+
+-e         Operate in extract mode instead.
+-n         Include newlines with the base64.
+
+-h         Print help.
+--help     Print help.
+-v         Print version info.
+--version  Print version info.
+';
+
+	exit;
+}
+
+my $data = '';
+if ( ! $extract ) {
+	if (defined($ARGV[0])) {
+		my( $success, $error_message, $full_buf, $stdout_buf, $stderr_buf ) =
+        run( command => \@ARGV, verbose => 0 );
+		$data=join '', @$full_buf;
+	}else {
+		foreach my $line (<STDIN>) {
+			$data = $data . $line;
+		}
+	}
+}
+
+if ($extract) {
+	if ($data =~ /^[A-Za-z0-9\/\+\n]+\=*\n*$/ ) {
+		print gunzip(decode_base64($data));
+	}else {
+		print $data;
+	}
+}else {
+	# gzip and print encode in base64
+	# base64 is needed as snmp does not like 
+	my $compressed = encode_base64(gzip($data));
+	if (!$new_line) {
+		$compressed =~ s/\n//g;
+		$compressed = $compressed . "\n";
+	}
+
+	# check which is smaller and prints it
+	if (length($compressed) > length($data)) {
+		print $data;
+	}else {
+		print $compressed;
+	}
+}

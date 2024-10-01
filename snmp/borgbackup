@@ -1,0 +1,446 @@
+#!/usr/bin/env perl
+
+#Copyright (c) 2023, Zane C. Bowers-Hadley
+#All rights reserved.
+#
+#Redistribution and use in source and binary forms, with or without modification,
+#are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+#THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+#WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+#IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+#DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+#LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+#THE POSSIBILITY OF SUCH DAMAGE.
+
+=head1 NAME
+
+borgbackup - LibreNMS JSON SNMP extend for gathering backups for borg
+
+=head1 VERSION
+
+0.0.1
+
+=head1 SYNOPSIS
+
+borgbackup [B<-c> <config file>] [B<-o> <output dir>]
+
+borgbackup [B<--help>|B<-h>]
+
+borgbackup [B<--version>|B<-v>]
+
+=head1 DESCRIPTION
+
+This uses 'borg info $repo --json' to fetch info on the specified borg repos
+and write the info out to files.
+
+The information is then writen out two two files under the output directory.
+
+    - extend_return :: This file contains the data for the extend in
+        gzip+base64 compressed format if applicable.
+
+    - pretty :: Pretty printed and sorted JSON.
+
+This is done for three reasons. The first is SNMPD and the users with read perms
+for the repos are likely to be different. The second is lock time out, even with
+1 second, means the command likely won't complete in a timely manner for larger
+repos.
+
+For SNMPD generally going to be setup like this.
+
+    extend borgbackup /bin/cat /var/cache/borgbackup_extend
+
+Then the extend is set to be ran via cron.
+
+    */5 * * * * /etc/snmp/extends/borgbackup
+
+=head1 FLAGS
+
+=head2 -c <config file>
+
+The config file to use for the extend.
+
+Default :: /usr/local/etc/borgbackup_extend.ini
+
+=head2 -o <output dir>
+
+The output directory write the pretty JSON file to and the file to use
+for the SNMP extend.
+
+Default :: /var/cache/borgbackup_extend
+
+=head2 -h|--help
+
+Print help info.
+
+=head2 -v|--version
+
+Print version info.
+
+=head1 CONFIG
+
+The config file is a ini file and handled by L<Coonfig::Tiny>.
+
+    - mode :: single or multi, for if this is a single repo or for
+            multiple repos.
+        - Default :: single
+
+    - repo :: Directory for the borg backup repo.
+        - Default :: undef
+
+    - passphrase :: Passphrase for the borg backup repo.
+        - Default :: undef
+
+    - passcommand :: Passcommand for the borg backup repo.
+        - Default :: undef
+
+For single repos all those variables are in the root section of the config,
+so lets the repo is at '/backup/borg' with a passphrase of '1234abc'.
+
+    repo=/backup/borg
+    repo=1234abc
+
+For multi, each section outside of the root represents a repo. So if there is
+'/backup/borg1' with a passphrase of 'foobar' and '/backup/derp' with a passcommand
+of 'pass show backup' it would be like below.
+
+    mode=multi
+
+    [borg1]
+    repo=/backup/borg1
+    passphrase=foobar
+
+    [derp]
+    repo=/backup/derp
+    passcommand=pass show backup
+
+If 'passphrase' and 'passcommand' are both specified, then passcommand is used.
+
+=head1 JSON RETURN
+
+The return is a LibreNMS JSON style SNMP extend as defined at
+L<https://docs.librenms.org/Developing/Application-Notes/#librenms-json-snmp-extends>
+
+The following key info is relevant to the .data .
+
+    - .mode :: The mode it was ran in, either single or multi.
+
+Totaled info is in the hash .totals.
+
+    - .totals.errored :: Total number of repos that info could not be fetched for.
+        - Type :: repos
+
+    - .totals.locked :: Total number of locked repos
+        - Type :: repos
+
+    - .totals.locked_for :: Longest time any repo has been locked.
+        - Type :: seconds
+
+    - .totals.time_since_last_modified :: Largest time - mtime for the repo directory
+        - Type :: seconds
+
+    - .total.total_chunks :: Total number of checks between all repos.
+        - Type :: chunks
+
+    - .total.total_csize :: Total compressed size of all archives in all repos.
+        - Type :: bytes
+
+    - .total.total_size :: Total uncompressed size of all archives in all repos.
+        - Type :: bytes
+
+    - .total.total_unique_chunks :: Total number of unique chuckes in all repos.
+        - Type :: chunks
+
+    - .total.unique_csize :: Total deduplicated size of all archives in all repos.
+        - Type :: bytes
+
+    - .total.unique_size :: Total number of chunks in all repos.
+        - Type :: chunks
+
+Each repo then has it's own hash under .repo .
+
+    - .repo.$repo.error :: If defined, this is the error encounted when
+            attempting to get repo info.
+        - Type :: string
+
+    - .repo.$repo.locked_for :: How long the repo has been locked for if
+            locked. If it is not locked this is undef.
+        - Type :: seconds
+
+    - .repo.$repo.time_since_last_modified :: time - mtime for the repo directory
+        - Type :: seconds
+
+    - .repo.$repo.total_chunks :: Total number of checks for the repo.
+        - Type :: chunks
+
+    - .repo.$repo.total_csize :: Total compressed size of all archives for the repo.
+        - Type :: bytes
+
+    - .repo.$repo.total_size :: Total uncompressed size of all archives the repo.
+        - Type :: bytes
+
+    - .repo.$repo.total_unique_chunks :: Total number of unique chuckes the repo.
+        - Type :: chunks
+
+    - .repo.$repo.unique_csize :: Total deduplicated size of all archives the repo.
+        - Type :: bytes
+
+    - .repo.$repo.unique_size :: Total number of chunks in the repo.
+        - Type :: chunks
+
+=cut
+
+use strict;
+use warnings;
+use Config::Tiny;
+use JSON;
+use Getopt::Long;
+use File::Slurp;
+use File::Path qw(make_path);
+use MIME::Base64;
+use IO::Compress::Gzip qw(gzip $GzipError);
+use String::ShellQuote;
+use Pod::Usage;
+
+our $output_dir = '/var/cache/borgbackup_extend';
+my $config_file = '/usr/local/etc/borgbackup_extend.ini';
+my $version;
+my $help;
+GetOptions(
+	'c=s'   => \$config_file,
+	'o=s'   => \$output_dir,
+	v       => \$version,
+	version => \$version,
+	h       => \$help,
+	help    => \$help,
+);
+
+if ($version) {
+	pod2usage( -exitval => 255, -verbose => 99, -sections => qw(VERSION), -output => \*STDOUT, );
+}
+
+if ($help) {
+	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
+}
+
+# save the return
+sub finish {
+	my (%opts) = @_;
+
+	if ( !-e $output_dir ) {
+		make_path($output_dir) or die( 'could not create the output dir, "' . $output_dir . '",' );
+	} elsif ( -e $output_dir && !-d $output_dir ) {
+		die( '"' . $output_dir . '" exists, but is not a directory' );
+	}
+
+	my $j = JSON->new;
+
+	my $return_string = $j->encode( $opts{to_return} );
+
+	my $compressed_string;
+	gzip \$return_string => \$compressed_string;
+	my $compressed = encode_base64($compressed_string);
+	$compressed =~ s/\n//g;
+	$compressed = $compressed . "\n";
+	if ( length($compressed) > length($return_string) ) {
+		write_file( $output_dir . '/extend_return', $return_string );
+	} else {
+		write_file( $output_dir . '/extend_return', $compressed );
+	}
+
+	$j->pretty(1);
+	$j->canonical(1);
+	$return_string = $j->encode( $opts{to_return} );
+
+	write_file( $output_dir . '/pretty', $return_string );
+
+	print $return_string;
+
+	exit $opts{to_return}->{error};
+} ## end sub finish
+
+my $to_return = {
+	data => {
+		mode   => 'single',
+		totals => {
+			total_chunks             => 0,
+			total_csize              => 0,
+			total_size               => 0,
+			total_unique_chunks      => 0,
+			unique_csize             => 0,
+			unique_size              => 0,
+			locked                   => 0,
+			time_since_last_modified => undef,
+			errored                  => 0,
+			locked_for               => undef,
+		},
+		repos => {},
+	},
+	version     => 1,
+	error       => 0,
+	errorString => '',
+};
+
+# attempt to read in the config
+my $config;
+eval {
+	my $raw_config = read_file($config_file);
+	($config) = Config::Tiny->read_string($raw_config);
+};
+if ($@) {
+	$to_return->{error}       = 1;
+	$to_return->{errorString} = 'Failed reading config file "' . $config_file . '"... ' . $@;
+	finish( to_return => $to_return );
+}
+
+if ( !defined( $config->{_}{mode} ) ) {
+	$config->{_}{mode} = 'single';
+} elsif ( $config->{_}{mode} ne 'single' && $config->{_}{mode} ne 'multi' ) {
+	$to_return->{error}       = 2;
+	$to_return->{errorString} = '"' . $config->{_}{mode} . '" mode is not set to single or multi';
+	finish( to_return => $to_return );
+}
+
+# get a list of repos to use
+my @repos;
+if ( $config->{_}{mode} eq 'single' ) {
+	# if single, just create a single repo
+	push( @repos, 'single' );
+	$config->{single} = {};
+
+	# make sure we have passcommand or passphrase with passphrase being used as the default
+	if ( !defined( $config->{_}{passcommand} ) && !defined( $config->{_}{passphrase} ) ) {
+		$to_return->{error}       = 3;
+		$to_return->{errorString} = 'Neither passcommand or passphrase defined';
+		finish( to_return => $to_return );
+	} elsif ( $config->{_}{passphrase} ) {
+		$config->{single}{passphrase} = $config->{_}{passphrase};
+	} elsif ( $config->{_}{passcommand} ) {
+		$config->{single}{passcommand} = $config->{_}{passcommand};
+	}
+
+	# make sure have a repo specified
+	if ( !defined( $config->{_}{repo} ) ) {
+		$to_return->{error}       = 4;
+		$to_return->{errorString} = 'repo is not defined';
+		finish( to_return => $to_return );
+	}
+	$config->{single}{repo} = $config->{_}{repo};
+
+} else {
+	# we don't want _ as that is the root of the ini file
+	@repos = grep( !/^\_$/, keys( %{$config} ) );
+}
+
+my @totals
+	= ( 'total_chunks', 'total_csize', 'total_size', 'total_unique_chunks', 'unique_csize', 'unique_size', 'locked' );
+my @stats = ( 'total_chunks', 'total_csize', 'total_size', 'total_unique_chunks', 'unique_csize', 'unique_size' );
+
+foreach my $repo (@repos) {
+	my $process = 1;
+
+	# unset borg pass bits
+	delete( $ENV{BORG_PASSPHRASE} );
+	delete( $ENV{BORG_PASSCOMMAND} );
+
+	my $repo_info = {
+		total_chunks             => 0,
+		total_csize              => 0,
+		total_size               => 0,
+		total_unique_chunks      => 0,
+		unique_csize             => 0,
+		unique_size              => 0,
+		locked                   => 0,
+		time_since_last_modified => undef,
+		error                    => undef,
+		locked_for               => undef,
+	};
+
+	if ( !defined( $config->{$repo}{passcommand} ) && !defined( $config->{$repo}{passphrase} ) ) {
+		$to_return->{error} = 3;
+		$to_return->{errorString}
+			= $to_return->{errorString} . "\n" . 'Neither passcommand or passphrase defined for ' . $repo;
+		$process = 0;
+	}
+
+	if ( !defined( $config->{$repo}{repo} ) ) {
+		$to_return->{error}       = 4;
+		$to_return->{errorString} = $to_return->{errorString} . "\n" . 'repo is not defined for ' . $repo;
+		$process                  = 0;
+	}
+
+	if ($process) {
+		my ( $dev, $ino, $mode, $nlink, $uid, $gid, $rdev, $size, $atime, $mtime, $ctime, $blksize, $blocks )
+			= stat( $config->{$repo}{repo} . '/nonce' );
+
+		my $time_diff = time - $mtime;
+		$repo_info->{time_since_last_modified} = $time_diff;
+
+		# if we don't have a largest time diff or if it is larger than then
+		# the old one save the time diff
+		if ( !defined( $to_return->{data}{totals}{time_since_last_modified} )
+			|| $to_return->{data}{totals}{time_since_last_modified} < $time_diff )
+		{
+			$to_return->{data}{totals}{time_since_last_modified} = $time_diff;
+		}
+
+		if ( defined( $config->{$repo}{passcommand} ) ) {
+			$ENV{BORG_PASSCOMMAND} = $config->{$repo}{passcommand};
+		} else {
+			$ENV{BORG_PASSPHRASE} = $config->{$repo}{passphrase};
+		}
+
+		my $command    = 'borg info ' . shell_quote( $config->{$repo}{repo} ) . ' --json 2>&1';
+		my $output_raw = `$command`;
+
+		my $info;
+		eval { $info = decode_json($output_raw); };
+		if ($@) {
+			my $error = $@;
+			if ( $output_raw =~ /lock.*lock\.exclusive/ ) {
+				$repo_info->{locked} = 1;
+
+				my $lock_file = $config->{$repo}{repo} . '/lock.exclusive';
+				( $dev, $ino, $mode, $nlink, $uid, $gid, $rdev, $size, $atime, $mtime, $ctime, $blksize, $blocks )
+					= stat($lock_file);
+				$repo_info->{locked_for} = time - $ctime;
+			} else {
+				$repo_info->{error} = $error;
+			}
+		} else {
+			if ( defined( $info->{cache} ) && defined( $info->{cache}{stats} ) ) {
+				for my $stat (@stats) {
+					$repo_info->{$stat} = $info->{cache}{stats}{$stat};
+				}
+			}
+		}
+
+		for my $total (@totals) {
+			$to_return->{data}{totals}{$total} = $to_return->{data}{totals}{$total} + $repo_info->{$total};
+		}
+
+		if ( defined( $repo_info->{error} ) ) {
+			$to_return->{data}{totals}{errored}++;
+		}
+
+		if ( !defined( $to_return->{data}{totals}{locked_for} )
+			|| $to_return->{data}{totals}{locked_for} < $repo_info->{locked_for} )
+		{
+			$to_return->{data}{totals}{locked_for} = $repo_info->{locked_for};
+		}
+	} ## end if ($process)
+
+	$to_return->{data}{repos}{$repo} = $repo_info;
+} ## end foreach my $repo (@repos)
+
+finish( to_return => $to_return );

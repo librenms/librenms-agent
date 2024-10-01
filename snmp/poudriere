@@ -1,0 +1,645 @@
+#!/usr/local/bin/perl
+
+=head1 NAME
+
+poudriere - LibreNMS JSON style SNMP extend for monitoring Poudriere
+
+=head1 VERSION
+
+0.4.0
+
+=head1 SYNOPSIS
+
+poudriere B<-w> [B<-o> <cache base>] [B<-a>] [B<-z>] [B<-q>] [B<-d>]
+
+poudriere [<-b>] [B<-a>] [B<-z>] [B<-d>]
+
+poudriere --help|-h
+
+poudriere --version|-v
+
+=head1 SNMPD CONFIG
+
+    extend poudriere /usr/local/etc/snmp/poudriere -b -a -z
+
+or if using cron...
+
+    # cron
+    4/5 * * * * root /usr/local/etc/snmp/poudriere -b -a -z -q
+
+    # snmpd.conf
+    extend poudriere cat /var/cache/poudriere.json.snmp
+
+=head1 FLAGS
+
+=head2 -a
+
+Include `poudriere status -a` as .data.history .
+
+=head2 -b
+
+Encapsulate the result in GZip+Base64 if -w is not used.
+
+=head2 -d
+
+Debug mode. This is noisy
+
+=head2 -q
+
+If -w is specified, do not print the results to stdout.
+
+=head2 -w
+
+Write the results out.
+
+=head2 -z
+
+Zero the stats from `poudriere status` if it the status for a jail/ports/set
+set is not not building.
+
+=head2 -o <cache base>
+
+Where to write the results to. Defaults to '/var/cache/poudriere.json',
+meaning it will be written out to the two locations.
+
+    /var/cache/poudriere.json
+    /var/cache/poudriere.json.snmp
+
+The later is for use with returning data for SNMP. Will be compressed
+if possible.
+
+=head1 REQUIREMENTS
+
+    p5-File-Slurp
+    p5-MIME-Base64
+    p5-JSON
+
+=cut
+
+use strict;
+use warnings;
+use Getopt::Long;
+use File::Slurp;
+use MIME::Base64;
+use IO::Compress::Gzip qw(gzip $GzipError);
+use Pod::Usage;
+use JSON;
+use Cwd 'abs_path';
+
+sub time_to_seconds {
+	my $time = $_[0];
+
+	if ( !defined($time) ) {
+		return 0;
+	}
+
+	if ( $time =~ /^0\:[0-9]+\.[0-9]+$/ ) {
+		$time =~ s/^0\://;
+		return $time;
+	} elsif ( $time =~ /^[0-9]+\:[0-9]+\.[0-9]+$/
+		|| $time =~ /^[0-9]+\:[0-9]+$/ )
+	{
+		my $minutes = $time;
+		$minutes =~ s/\:.*//;
+		$time    =~ s/.*\://;
+		$time = ( $minutes * 60 ) + $time;
+		return $time;
+	} elsif ( $time =~ /^[0-9]+\:[0-9]+\:[0-9]+\.[0-9]+$/
+		|| $time =~ /^[0-9]+\:[0-9]+\:[0-9]+$/ )
+	{
+		my ( $hours, $minutes, $seconds ) = split( /:/, $time );
+		$time = ( $hours * 3600 ) + ( $minutes * 60 ) + $seconds;
+		return $time;
+	} elsif ( $time =~ /^[0-9]+D\:[0-9]+\:[0-9]+\.[0-9]+$/
+		|| $time =~ /^[0-9]+D\:[0-9]+\:[0-9]+$/ )
+	{
+		my $days = $time;
+		$days =~ s/D\:.*$//;
+		my $minutes = $time;
+		$minutes =~ s/^.*D\://;
+		$minutes =~ s/\:.*//;
+		$time = ( $days * 86400 ) + ( $minutes * 60 ) + $time;
+		return $time;
+	} ## end elsif ( $time =~ /^[0-9]+D\:[0-9]+\:[0-9]+\.[0-9]+$/...)
+
+	# return 0 for anything unknown
+	return 0;
+} ## end sub time_to_seconds
+
+#the version of returned data
+my $VERSION = 1;
+
+# ensure sbin is in the path
+$ENV{PATH} = $ENV{PATH} . ':/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin';
+
+my $pretty;
+my $cache_base = '/var/cache/poudriere.json';
+my $write;
+my $compress;
+my $version;
+my $help;
+my $history;
+my $zero_non_build;
+my $if_write_be_quiet;
+my $debug;
+GetOptions(
+	a       => \$history,
+	b       => \$compress,
+	d       => \$debug,
+	h       => \$help,
+	help    => \$help,
+	'o=s'   => \$cache_base,
+	q       => \$if_write_be_quiet,
+	v       => \$version,
+	w       => \$write,
+	version => \$version,
+	z       => \$zero_non_build,
+);
+
+# include for dumping variables at parts
+if ($debug) {
+	eval "use Data::Dumper; \$Data::Dumper::Sortkeys = 1;";
+}
+
+if ($version) {
+	pod2usage( -exitval => 255, -verbose => 99, -sections => qw(VERSION), -output => \*STDOUT, );
+	exit 255;
+}
+
+if ($help) {
+	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
+	exit 255;
+}
+
+#the data to return
+my $to_return = {
+	'version'     => $VERSION,
+	'error'       => '0',
+	'errorString' => '',
+};
+my $data = {
+	status     => '',
+	build_info => '',
+	not_done   => 0,
+	stats      => {
+		'copy-on-write-faults'         => 0,
+		'cpu-time'                     => 0,
+		'data-size'                    => 0,
+		'elapsed-times'                => 0,
+		'involuntary-context-switches' => 0,
+		'job-control-count'            => 0,
+		'major-faults'                 => 0,
+		'minor-faults'                 => 0,
+		'percent-cpu'                  => 0,
+		'percent-memory'               => 0,
+		'read-blocks'                  => 0,
+		'received-messages'            => 0,
+		'rss'                          => 0,
+		'sent-messages'                => 0,
+		'stack-size'                   => 0,
+		'swaps'                        => 0,
+		'system-time'                  => 0,
+		'text-size'                    => 0,
+		'threads'                      => 0,
+		'user-time'                    => 0,
+		'voluntary-context-switches'   => 0,
+		'written-blocks'               => 0,
+		'QUEUE'                        => 0,
+		'BUILT'                        => 0,
+		'FAIL'                         => 0,
+		'SKIP'                         => 0,
+		'IGNORE'                       => 0,
+		'FETCH'                        => 0,
+		'REMAIN'                       => 0,
+		'TIME'                         => 0,
+		'check-sanity'                 => 0,
+		'pkg-depends'                  => 0,
+		'fetch-depends'                => 0,
+		'fetch'                        => 0,
+		'checksum'                     => 0,
+		'extract-depends'              => 0,
+		'extract'                      => 0,
+		'patch-depends'                => 0,
+		'patch'                        => 0,
+		'build-depends'                => 0,
+		'lib-depends'                  => 0,
+		'configure'                    => 0,
+		'build'                        => 0,
+		'run-depends'                  => 0,
+		'stage'                        => 0,
+		'package'                      => 0,
+		'package_size_all'             => 0,
+		'package_size_latest'          => 0,
+		'package_size_building'        => 0,
+		'log_size_latest'              => 0,
+		'log_size_done'                => 0,
+		'log_size_per_package'         => 0,
+	},
+	jailANDportsANDset => {}
+};
+
+my @ps_stats = (
+	'copy-on-write-faults',         'cpu-time',          'data-size',    'elapsed-times',
+	'involuntary-context-switches', 'job-control-count', 'major-faults', 'minor-faults',
+	'percent-cpu',                  'percent-memory',    'read-blocks',  'received-messages',
+	'rss',                          'sent-messages',     'stack-size',   'swaps',
+	'system-time',                  'text-size',         'threads',      'user-time',
+	'voluntary-context-switches',
+);
+
+my @poudriere_stats = ( 'QUEUE', 'BUILT', 'FAIL', 'SKIP', 'IGNORE', 'FETCH', 'REMAIN', 'TIME' );
+
+###
+###
+### get basic info via calling poudriere status
+###
+###
+
+my $status_raw = `poudriere -N status -f -l 2> /dev/null`;
+if ( $? == 0 ) {
+	if ($debug) {
+		print "###\n###\n### poudriere -N status -f -l 2> /dev/null \n###\n###\n" . $status_raw . "\n\n\n";
+	}
+
+	$data->{status}     = $status_raw;
+	$data->{build_info} = `poudriere -N status -f -b -l 2>\&1`;
+
+	if ($debug) {
+		print "###\n###\n### poudriere -N status -f -b -l 2>\&1 \n###\n###\n"
+			. $data->{build_info}
+			. "\n\n\n###\n###\n###\n### jls --libxo json \n###\n###\n###\n";
+	}
+
+	my $jls;
+	eval { $jls = decode_json(`jls --libxo json`); };
+	if ($@) {
+		$jls = { 'jail-information' => { jail => [] } };
+		if ($debug) {
+			print "# failed to parse JSON... using empty hash... \n \$@ = "
+				. $@
+				. "\n\$jls = "
+				. Dumper($jls)
+				. "\n\n\n";
+		}
+	} else {
+		if ($debug) {
+			print "\$jls = " . Dumper($jls) . "\n\n\n";
+		}
+	}
+
+	if ($debug) {
+		print "###\n###\n###\n### starting line processing for status \n###\n###\n###\n";
+	}
+
+	my @status_split     = split( /\n/, $status_raw );
+	my $status_split_int = 1;
+	while ( defined( $status_split[$status_split_int] ) ) {
+		if ($debug) {
+			print '#\n#\n# processing line ' . $status_split_int . ': ' . $status_split[$status_split_int] . "\n#\n#\n";
+		}
+
+		my $found = {
+			'copy-on-write-faults'         => 0,
+			'cpu-time'                     => 0,
+			'data-size'                    => 0,
+			'elapsed-times'                => 0,
+			'involuntary-context-switches' => 0,
+			'job-control-count'            => 0,
+			'major-faults'                 => 0,
+			'minor-faults'                 => 0,
+			'percent-cpu'                  => 0,
+			'percent-memory'               => 0,
+			'read-blocks'                  => 0,
+			'received-messages'            => 0,
+			'rss'                          => 0,
+			'sent-messages'                => 0,
+			'stack-size'                   => 0,
+			'swaps'                        => 0,
+			'system-time'                  => 0,
+			'text-size'                    => 0,
+			'threads'                      => 0,
+			'user-time'                    => 0,
+			'voluntary-context-switches'   => 0,
+			'check-sanity'                 => 0,
+			'pkg-depends'                  => 0,
+			'fetch-depends'                => 0,
+			'fetch'                        => 0,
+			'checksum'                     => 0,
+			'extract-depends'              => 0,
+			'extract'                      => 0,
+			'patch-depends'                => 0,
+			'patch'                        => 0,
+			'build-depends'                => 0,
+			'lib-depends'                  => 0,
+			'configure'                    => 0,
+			'build'                        => 0,
+			'run-depends'                  => 0,
+			'stage'                        => 0,
+			'package'                      => 0,
+			'package_size_all'             => 0,
+			'package_size_latest'          => 0,
+			'package_size_building'        => 0,
+			'log_size_latest'              => 0,
+			'log_size_done'                => 0,
+			'log_size_per_package'         => 0,
+		};
+		(
+			$found->{SET},   $found->{PORTS},  $found->{JAIL}, $found->{BUILD}, $found->{STATUS},
+			$found->{QUEUE}, $found->{BUILT},  $found->{FAIL}, $found->{SKIP},  $found->{IGNORE},
+			$found->{FETCH}, $found->{REMAIN}, $found->{TIME}, $found->{LOGS}
+		) = split( / +/, $status_split[$status_split_int], 14 );
+
+		if ( $zero_non_build && $found->{STATUS} !~ /build/ ) {
+			$found->{QUEUE}  = 0;
+			$found->{BUILT}  = 0;
+			$found->{FAIL}   = 0;
+			$found->{SKIP}   = 0;
+			$found->{IGNORE} = 0;
+			$found->{FETCH}  = 0;
+			$found->{REMAIN} = 0;
+			$found->{TIME}   = 0;
+
+			if ($debug) {
+				print '# zeroing... $zero_non_build = true && status = ' . $found->{STATUS} . " !~ /build/\n";
+			}
+		} elsif ($debug) {
+			print '# not zeroing ... $zero_non_build = false || status = ' . $found->{STATUS} . " =~ /build/\n";
+		}
+
+		if ( $found->{STATUS} ne 'done' ) {
+			$data->{not_done} = 1;
+		}
+
+		my $jailANDportsANDset;
+		if ( $found->{SET} eq '-' ) {
+			$jailANDportsANDset = $found->{JAIL} . '-' . $found->{PORTS};
+		} else {
+			$jailANDportsANDset = $found->{JAIL} . '-' . $found->{PORTS} . '-' . $found->{SET};
+		}
+		if ($debug) {
+			print '# $jailANDportsANDset = ' . $jailANDportsANDset . "\n";
+		}
+
+		$found->{packages_dir_all}    = $found->{LOGS} . '/../../../../packages/' . $jailANDportsANDset . '/All';
+		$found->{packages_dir_latest} = $found->{LOGS} . '/../../../../packages/' . $jailANDportsANDset . '/Latest';
+		$found->{packages_dir_building}
+			= $found->{LOGS} . '/../../../../packages/' . $jailANDportsANDset . '/.building';
+		$found->{logs_dir_latest}      = $found->{LOGS} . '/logs';
+		$found->{logs_dir_done}        = $found->{LOGS} . '/../latest-done/logs';
+		$found->{logs_dir_per_package} = $found->{LOGS} . '/../latest-per-pkg/';
+		my %dir_size_stats = (
+			'logs_dir_per_package'  => 'log_size_per_package',
+			'logs_dir_done'         => 'log_size_done',
+			'logs_dir_latest'       => 'log_size_latest',
+			'packages_dir_building' => 'package_size_building',
+			'packages_dir_latest'   => 'package_size_latest',
+			'packages_dir_all'      => 'package_size_all',
+		);
+
+		foreach my $item ( keys(%dir_size_stats) ) {
+			eval {
+				if ( defined( $found->{$item} ) ) {
+					$found->{$item} = abs_path( $found->{$item} );
+					if ( defined( $found->{$item} ) ) {
+						if ( -d $found->{$item} ) {
+							my @files = read_dir( $found->{$item} );
+							foreach my $to_stat (@files) {
+								if ( -f $found->{$item} . '/' . $to_stat ) {
+									my (
+										$dev,  $ino,   $mode,  $nlink, $uid,     $gid, $rdev,
+										$size, $atime, $mtime, $ctime, $blksize, $blocks
+									) = stat( $found->{$item} . '/' . $to_stat );
+									$found->{ $dir_size_stats{$item} } += $size;
+								}
+							}
+							$data->{stats}{ $dir_size_stats{$item} } = $found->{ $dir_size_stats{$item} };
+						} ## end if ( -d $found->{$item} )
+					} ## end if ( defined( $found->{$item} ) )
+				} ## end if ( defined( $found->{$item} ) )
+			};
+		} ## end foreach my $item ( keys(%dir_size_stats) )
+
+		foreach my $item (@poudriere_stats) {
+			if ( $item eq 'TIME' ) {
+				$found->{$item} = time_to_seconds( $found->{$item} );
+			}
+			if ( $found->{$item} =~ /^\d+$/ ) {
+				$data->{stats}{$item} += $found->{$item};
+			}
+		}
+
+		##
+		## find the jails
+		##
+		my @jails;
+		my $jail_regex = '^' . $jailANDportsANDset . '-job-[0-9]+';
+		my $jls_int    = 0;
+		if ($debug) {
+			print '# looking for jails matching... /' . $jail_regex . '/ or \'' . $jailANDportsANDset . "'\n";
+		}
+		while ( defined( $jls->{'jail-information'}{jail}[$jls_int] ) ) {
+			if (   $jls->{'jail-information'}{jail}[$jls_int]{hostname} eq $jailANDportsANDset
+				|| $jls->{'jail-information'}{jail}[$jls_int]{hostname} =~ /$jail_regex/ )
+			{
+				push( @jails, $jls->{'jail-information'}{jail}[$jls_int]{jid} );
+				if ($debug) {
+					print 'match $jls->{"jail-information"}{"jail"}['
+						. $jls_int
+						. ']{hostname} = '
+						. $jls->{'jail-information'}{jail}[$jls_int]{hostname} . "\n";
+				}
+			} else {
+				if ($debug) {
+					print '!match $jls->{"jail-information"}{"jail"}['
+						. $jls_int
+						. ']{hostname} = '
+						. $jls->{'jail-information'}{jail}[$jls_int]{hostname} . "\n";
+				}
+			}
+			$jls_int++;
+		} ## end while ( defined( $jls->{'jail-information'}{jail...}))
+
+		##
+		## if we have found jails, grab the information via ps
+		##
+		if ( defined( $jails[0] ) ) {
+			my $jails_string = join( ',', @jails );
+
+			if ($debug) {
+				print "# \$jails[0] defined \n# \$jails_string = " . $jails_string . "\n";
+			}
+
+			my $ps;
+			eval {
+				if ($debug) {
+					print
+						"##\n##\n## ps -o 'jid \%cpu \%mem rss cow dsiz etimes inblk jobc majflt minflt msgrcv msgsnd nivcsw nlwp nsigs nswap nvcsw oublk ssiz systime time tsiz usertime' --libxo json -J $jails_string 2> /dev/null\n##\n##\n";
+				}
+				$ps
+					= decode_json(
+					`ps -o 'jid %cpu %mem rss cow dsiz etimes inblk jobc majflt minflt msgrcv msgsnd nivcsw nlwp nsigs nswap nvcsw oublk ssiz systime time tsiz usertime' --libxo json -J $jails_string 2> /dev/null`
+					);
+			};
+			if ($@) {
+				$ps = { 'process-information' => { process => [] } };
+				if ($debug) {
+					print '# JSON parsing errored... using default... ' . $@ . "\n";
+				}
+			}
+			if ($debug) {
+				print '$ps = ' . Dumper($ps) . "\n";
+			}
+			my $ps_int = 0;
+			while ( defined( $ps->{'process-information'}{process}[$ps_int] ) ) {
+				foreach my $item (@ps_stats) {
+					if ( $item eq 'user-time' || $item eq 'cpu-time' || $item eq 'system-time' ) {
+						$ps->{'process-information'}{process}[$ps_int]{$item}
+							= time_to_seconds( $ps->{'process-information'}{process}[$ps_int]{$item} );
+					}
+					$data->{stats}{$item} += $ps->{'process-information'}{process}[$ps_int]{$item};
+					$found->{$item} += $ps->{'process-information'}{process}[$ps_int]{$item};
+				}
+				$ps_int++;
+			} ## end while ( defined( $ps->{'process-information'}...))
+		} else {
+			if ($debug) {
+				print "# \$jails[0] is undef\n";
+			}
+		}
+
+		$data->{jailANDportsANDset}{$jailANDportsANDset} = $found;
+		$status_split_int++;
+
+		if ($debug) {
+			print "\$data->{jailANDportsANDset}{$jailANDportsANDset} = "
+				. Dumper( $data->{jailANDportsANDset}{$jailANDportsANDset} ) . " \n\n";
+		}
+	} ## end while ( defined( $status_split[$status_split_int...]))
+
+	if ($debug) {
+		print "#\n#\n# processing \$data->{build_info}\n#\n#\n";
+	}
+
+	my @build_info_split = split( /\n/, $data->{build_info} );
+	my $current_section;
+	foreach my $line (@build_info_split) {
+		if ($debug) {
+			print "# processing line:  " . $line . "\n";
+		}
+		if ( $line =~ /^\[.*\]\ \[.*\] .*Queued.*Built/ ) {
+			$current_section = $line;
+			$current_section =~ s/^\[//;
+			$current_section =~ s/\].*$//;
+			if ($debug) {
+				print '# found section line... \$current_section = ' . $current_section . "\n";
+			}
+		} elsif ( $line =~ /^\[.*\].*\:.*\|.*\:/ ) {
+			my $type;
+			if ( $line =~ /[\ \t]check\-sanity[\ \t]/ ) {
+				$type = 'check-sanity';
+			} elsif ( $line =~ /[\ \t]pkg-depends[\ \t]/ ) {
+				$type = 'pkg-depends';
+			} elsif ( $line =~ /[\ \t]fetch-depends[\ \t]/ ) {
+				$type = 'fetch-depends';
+			} elsif ( $line =~ /[\ \t]fetch[\ \t]/ ) {
+				$type = 'fetch';
+			} elsif ( $line =~ /[\ \t]checksum[\ \t]/ ) {
+				$type = 'checksum';
+			} elsif ( $line =~ /[\ \t]extract\-depends[\ \t]/ ) {
+				$type = 'extract-depends';
+			} elsif ( $line =~ /[\ \t]extract[\ \t]/ ) {
+				$type = 'extract';
+			} elsif ( $line =~ /[\ \t]patch-depends[\ \t]/ ) {
+				$type = 'patch-depends';
+			} elsif ( $line =~ /[\ \t]lib\-depends[\ \t]/ ) {
+				$type = 'lib-depends';
+			} elsif ( $line =~ /[\ \t]configure[\ \t]/ ) {
+				$type = 'configure';
+			} elsif ( $line =~ /[\ \t]build[\ \t]/ ) {
+				$type = 'build';
+			} elsif ( $line =~ /[\ \t]build\-depends[\ \t]/ ) {
+				$type = 'build-depends';
+			} elsif ( $line =~ /[\ \t]lib\-depends[\ \t]/ ) {
+				$type = 'lib-depends';
+			} elsif ( $line =~ /[\ \t]configure[\ \t]/ ) {
+				$type = 'configure';
+			} elsif ( $line =~ /[\ \t]build[\ \t]/ ) {
+				$type = 'build';
+			} elsif ( $line =~ /[\ \t]run\-depends[\ \t]/ ) {
+				$type = 'run-depends';
+			} elsif ( $line =~ /[\ \t]stage[\ \t]/ ) {
+				$type = 'stage';
+			} elsif ( $line =~ /[\ \t]package[\ \t]/ ) {
+				$type = 'package';
+			}
+			if ( defined($type) ) {
+				$data->{stats}{$type}++;
+				if ( defined( $data->{jailANDportsANDset}{$current_section} ) ) {
+					$data->{jailANDportsANDset}{$current_section}{$type}++;
+				}
+				if ($debug) {
+					print '# type line found... $type = ' . $type . "\n";
+				}
+			} elsif ($debug) {
+				print "# line not matched";
+			}
+		} ## end elsif ( $line =~ /^\[.*\].*\:.*\|.*\:/ )
+	} ## end foreach my $line (@build_info_split)
+
+	#
+	# include this history if asked to
+	#
+	if ($history) {
+		$data->{history} = `poudriere -N status -a 2> /dev/null`;
+		if ($debug) {
+			print "#\n#\n# including as .data.history ... poudriere -N status -a 2> /dev/null\n#\n";
+		}
+	} else {
+		if ($debug) {
+			print "#\n#\n# not including as .data.history ... poudriere -N status -a 2> /dev/null";
+		}
+	}
+} else {
+	$to_return->{error}       = 1;
+	$to_return->{errorString} = 'non-zero exit for "poudriere -N status -f -l"';
+}
+
+###
+###
+### finalize it
+###
+###
+
+#add the data has to the return hash
+$to_return->{data} = $data;
+
+#finally render the JSON
+my $raw_json = encode_json($to_return);
+if ($write) {
+	write_file( $cache_base, $raw_json );
+	# compress and write to the cache file for it
+	my $compressed_string;
+	gzip \$raw_json => \$compressed_string;
+	my $compressed = encode_base64($compressed_string);
+	$compressed =~ s/\n//g;
+	$compressed = $compressed . "\n";
+	my $print_compressed = 0;
+	write_file( $cache_base . '.snmp', $compressed );
+
+	if ( !$if_write_be_quiet ) {
+		print $raw_json;
+	}
+} else {
+	if ( !$compress ) {
+		print $raw_json. "\n";
+		exit;
+	}
+
+	# compress and write to the cache file for it
+	my $compressed_string;
+	gzip \$raw_json => \$compressed_string;
+	my $compressed = encode_base64($compressed_string);
+	$compressed =~ s/\n//g;
+	$compressed = $compressed . "\n";
+	print $compressed;
+} ## end else [ if ($write) ]
