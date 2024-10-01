@@ -294,6 +294,7 @@ def getHPASMData():
 
     return hdata
 
+
 def getIPMIdata():
     global error, errorString
     error = 2
@@ -318,18 +319,16 @@ def getIPMIdata():
     rawdata = str(output.stdout).replace("\t", " ").replace("\n ", "\n").split("\n")
 
     hdata = {}
-    hdata["psu"] = {} # Init PSU data structure
-    hdata["psu"][0] = {} # Only one value is returned.
+    hdata["psu"] = {}  # Init PSU data structure
+    hdata["psu"][0] = {}  # Only one value is returned.
 
     for line in rawdata:
         if re.match(psu_reading, line):
             verboseMsg("found power meter reading: " + line)
             junk, meter_reading = line.split(":", 1)
             hdata["psu"][0]["reading"] = psu_reading.replace("Watts", "").strip()
-    
+
     return hdata
-
-
 
 
 # Argument Parsing
