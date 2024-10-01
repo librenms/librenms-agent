@@ -6,7 +6,7 @@ import subprocess
 pdnscontrol = "/usr/bin/pdns_control"
 
 process = subprocess.Popen(
-    [pdnscontrol, "show", "*"], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    [pdnscontrol, "list"], stdout=subprocess.PIPE, stderr=subprocess.PIPE
 )
 input = process.communicate()
 stdout = input[0].decode()
