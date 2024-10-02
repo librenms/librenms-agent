@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 
-#Copyright (c) 2023, Zane C. Bowers-Hadley
+#Copyright (c) 2024, Zane C. Bowers-Hadley
 #All rights reserved.
 #
 #Redistribution and use in source and binary forms, with or without modification,
@@ -23,63 +23,126 @@
 #OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 #THE POSSIBILITY OF SUCH DAMAGE.
 
-=for comment
+use warnings;
+use strict;
 
-Add this to snmpd.conf as below and restart snmpd.
+=pod
 
-    extend opensearch /etc/snmp/extends/opensearch
+=head1 NAME
 
-Supported command line options are as below.
+opensearch - LibreNMS JSON SNMP extend for gathering backups for borg
 
-    -a <path>   Auth token path.
-    -c <path>   CA file path.
-                Default: empty
-    -h <host>   The host to connect to.
-                Default: 127.0.0.1
-    -p <port>   The port to use.
-                Default: 9200
-    -S          Use https instead of http.
-    -I          Do not verify hostname (when used with -S).
-    -P          Pretty print.
-    -S          Use HTTPS.
+=head1 VERSION
 
-The last is only really relevant to the usage with SNMP.
+0.1.0
 
 =cut
 
-use warnings;
-use strict;
+our $VERSION = '0.1.0';
+
+=head1 SYNOPSIS
+
+opensearch [B<-a> <auth tocken file>] [B<-c> <CA file>] [B<-h> <host>] [B<-p> <port>] [B<-S>]
+[B<-I>] [B<-P>] [B<-S>] [B<-w>] [B<-o> <output file base>]
+
+opensearch [B<--help>]
+
+opensearch [B<--version>]
+
+=head1 DESCRIPTION
+
+Using it like below may result in occasional timeouts.
+
+    extend opensearch /etc/snmp/extends/opensearch
+
+=head1 FLAGS
+
+=head2 -a <path>
+
+Auth token path.
+
+=head2 -c <path>
+
+CA file path.
+
+Default: empty
+
+=head2 -h <host>
+
+The host to connect to.
+
+Default: 127.0.0.1
+
+=head2 -I
+
+Do not verify hostname (when used with -S).
+
+=head2 -o <output base path>
+
+The base name for the output.
+
+Default: /var/cache/opensearch_extend.json
+
+=head2 -p <port>
+
+The port to use.
+
+Default: 9200
+
+=head2 -P
+
+Pretty print.
+
+=head2 -q
+
+Do not print the output.
+
+Useful for with -w.
+
+=head2 -S
+
+Use HTTPS.
+
+The last is only really relevant to the usage with SNMP.
+
+=head2 -w
+
+Write the results out to two files based on what is specified
+via -o .
+
+Default Raw JSON: /var/cache/opensearch_extend.json
+
+Default SNMP Return: /var/cache/opensearch_extend.json.snmp
+
+=cut
+
 use Getopt::Std;
 use JSON;
 use LWP::UserAgent ();
+use File::Slurp;
+use Pod::Usage;
+use MIME::Base64;
+use IO::Compress::Gzip qw(gzip $GzipError);
 
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 
 sub main::VERSION_MESSAGE {
-	print "Elastic/Opensearch SNMP extend 0.0.0\n";
+	print 'opensearch LibreNMS extend version '.$VERSION."\n";
 }
 
 sub main::HELP_MESSAGE {
-	print "\n"
-		. "-a <path>   Auth token path.\n"
-		. "-c <path>   CA file path.\n"
-		. "-h <host>   The host to connect to.\n"
-		. "            Default: 127.0.0.1\n"
-		. "-p <port>   The port to use.\n"
-		. "            Default: 9200\n"
-		. "-S          Use https instead of http.\n"
-		. "-I          Do not verify hostname (when used with -S).\n"
-		. "-P          Pretty print.\n";
+	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
 }
 
-my $protocol = 'http';
-my $host = '127.0.0.1';
-my $port = 9200;
-my $schema = 'http';
+my $protocol    = 'http';
+my $host        = '127.0.0.1';
+my $port        = 9200;
+my $schema      = 'http';
+my $output_base = '/var/cache/opensearch_extend.json';
 
 #gets the options
 my %opts;
-getopts( 'a:c:h:p:PIS', \%opts );
+getopts( 'a:c:h:p:PISqo:w', \%opts );
 if ( defined( $opts{h} ) ) {
 	$host = $opts{h};
 }
@@ -88,6 +151,9 @@ if ( defined( $opts{p} ) ) {
 }
 if ( $opts{S} ) {
 	$schema = 'https';
+}
+if ( defined( $opts{o} ) ) {
+	$output_base = $opts{o};
 }
 
 my $auth_token;
@@ -124,12 +190,11 @@ my $stats_response = $ua->get($stats_url);
 
 if ( defined( $opts{c} ) ) {
 	# set ca file
-	$ua->ssl_opts( SSL_ca_file => $opts{c});
+	$ua->ssl_opts( SSL_ca_file => $opts{c} );
 }
 
-my $stats_response;
 if ( defined( $opts{a} ) ) {
-	$stats_response = $ua->get($stats_url, "Authorization" => $auth_token,);
+	$stats_response = $ua->get( $stats_url, "Authorization" => $auth_token, );
 } else {
 	$stats_response = $ua->get($stats_url);
 }
@@ -146,8 +211,7 @@ if ( $stats_response->is_success ) {
 		}
 		exit;
 	}
-}
-else {
+} else {
 	$to_return->{errorString} = 'Failed to get "' . $stats_url . '"... ' . $stats_response->status_line;
 	$to_return->{error}       = 1;
 	print $json->encode($to_return);
@@ -159,7 +223,7 @@ else {
 
 my $health_response;
 if ( defined( $opts{a} ) ) {
-	$health_response = $ua->get($health_url, "Authorization" => $auth_token,);
+	$health_response = $ua->get( $health_url, "Authorization" => $auth_token, );
 } else {
 	$health_response = $ua->get($health_url);
 }
@@ -176,8 +240,7 @@ if ( $health_response->is_success ) {
 		}
 		exit;
 	}
-}
-else {
+} else {
 	$to_return->{errorString} = 'Failed to get "' . $health_url . '"... ' . $health_response->status_line;
 	$to_return->{error}       = 1;
 	print $json->encode($to_return);
@@ -212,14 +275,11 @@ $to_return->{data}{c_act_shards_perc}  = $health_json->{active_shards_percent_as
 # unknown = 3
 if ( $health_json->{status} =~ /[Gg][Rr][Ee][Ee][Nn]/ ) {
 	$to_return->{data}{status} = 0;
-}
-elsif ( $health_json->{status} =~ /[Yy][Ee][Ll][Ll][Oo][Ww]/ ) {
+} elsif ( $health_json->{status} =~ /[Yy][Ee][Ll][Ll][Oo][Ww]/ ) {
 	$to_return->{data}{status} = 1;
-}
-elsif ( $health_json->{status} =~ /[Rr][Ee][Dd]/ ) {
+} elsif ( $health_json->{status} =~ /[Rr][Ee][Dd]/ ) {
 	$to_return->{data}{status} = 2;
-}
-else {
+} else {
 	$to_return->{data}{status} = 3;
 }
 
@@ -244,8 +304,7 @@ if ( defined( $stats_json->{_all}{total}{indexing}{is_throttled} )
 	&& $stats_json->{_all}{total}{indexing}{is_throttled} eq 'true' )
 {
 	$to_return->{data}{ti_throttled} = 1;
-}
-else {
+} else {
 	$to_return->{data}{ti_throttled} = 0;
 }
 
@@ -316,8 +375,27 @@ $to_return->{data}{trc_misses}    = $stats_json->{_all}{total}{request_cache}{mi
 $to_return->{data}{tst_size}     = $stats_json->{_all}{total}{store}{size_in_bytes};
 $to_return->{data}{tst_res_size} = $stats_json->{_all}{total}{store}{reserved_in_bytes};
 
-print $json->encode($to_return);
+my $raw_json = $json->encode($to_return);
 if ( !$opts{P} ) {
-	print "\n";
+	$raw_json = $raw_json . "\n";
 }
+
+if ( !$opts{q} ) {
+	print $raw_json;
+}
+
+if ( !$opts{w} ) {
+	exit 0;
+}
+
+write_file( $output_base, { atomic => 1 }, $raw_json );
+
+my $compressed_string;
+gzip \$raw_json => \$compressed_string;
+my $compressed = encode_base64($compressed_string);
+$compressed =~ s/\n//g;
+$compressed = $compressed . "\n";
+
+write_file( $output_base . '.snmp', { atomic => 1 }, $raw_json );
+
 exit 0;
