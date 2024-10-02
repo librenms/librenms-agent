@@ -396,6 +396,6 @@ my $compressed = encode_base64($compressed_string);
 $compressed =~ s/\n//g;
 $compressed = $compressed . "\n";
 
-write_file( $output_base . '.snmp', { atomic => 1 }, $compressed_string );
+write_file( $output_base . '.snmp', { atomic => 1 }, $compressed );
 
 exit 0;
