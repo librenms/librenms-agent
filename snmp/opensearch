@@ -51,9 +51,26 @@ opensearch [B<--version>]
 
 =head1 DESCRIPTION
 
-Using it like below may result in occasional timeouts.
+Needs enabled in snmpd.conf like below.
 
     extend opensearch /etc/snmp/extends/opensearch
+
+If you have issues with it timing taking to long to poll and
+occasionally timing out, you can set it up in cron like this.
+
+    */5 * * * * /etc/snmp/extends/opensearch -q -w
+
+And then in snmpd.conf like below.
+
+    extend opensearch /bin/cat /var/cache/opensearch_extend.json.snmp
+
+Installing the depends can be done like below.
+
+    # FreeBSD
+    pkg install p5-JSON p5-File-Slurp p5-MIME-Base64 p5-libwww p5-LWP-Protocol-https
+
+    # Debian
+    apt-get install libjson-perl libfile-slurp-perl liblwp-protocol-https-perl
 
 =head1 FLAGS
 
