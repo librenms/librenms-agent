@@ -1,5 +1,5 @@
 #!/usr/bin/env perl
-#Copyright (c) 2023, Zane C. Bowers-Hadley
+#Copyright (c) 2024, Zane C. Bowers-Hadley
 #All rights reserved.
 #
 #Redistribution and use in source and binary forms, with or without modification,
@@ -113,7 +113,7 @@ my $useSN = 1;
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 
 sub main::VERSION_MESSAGE {
-	print "SMART SNMP extend 0.3.1\n";
+	print "SMART SNMP extend 0.3.2\n";
 }
 
 sub main::HELP_MESSAGE {
