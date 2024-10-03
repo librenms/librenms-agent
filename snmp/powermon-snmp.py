@@ -62,8 +62,9 @@
 # 20210204 - v1.2 - added top-level reading, librenms option
 # 20210205 - v1.3 - added cents per kWh
 # 20210205 - v1.4 - improvement to UI
+# 20220513 - v1.5 - Add inital IPMItool method
 
-version = 1.4
+version = 1.5
 
 ### Libraries
 
@@ -97,7 +98,7 @@ usage = (
     + " [-m|--method <method>] [-N|--no-librenms] [-p|--pretty]"
     + " [-v|--verbose] [-w|--warnings] | -l|--list-methods | -h|--help"
 )
-methods = ["sensors", "hpasmcli"]
+methods = ["sensors", "hpasmcli", "ipmitool"]
 # costPerkWh = 0.15  # <<<< CHANGE
 
 ### General functions
@@ -138,6 +139,10 @@ def getData(method):
 
     elif method == "hpasmcli":
         data = getHPASMData()
+
+    elif method == "ipmitool":
+        data = getIPMIdata()
+
     else:
         usageError("You must specify a method.")
 
@@ -286,6 +291,42 @@ def getHPASMData():
             verboseMsg("found power supply reading: " + line)
             junk, psu_reading = line.split(":", 1)
             hdata["psu"][psu_id]["reading"] = psu_reading.replace("Watts", "").strip()
+
+    return hdata
+
+
+def getIPMIdata():
+    global error, errorString
+    error = 2
+    errorString = "No power sensor found"
+
+    exe = shutil.which("ipmitool")
+    # if not os.access(candidate, os.W_OK):
+    cmd = [exe, "dcmi", "power", "reading"]
+    warningMsg("ipmitool only runs as root")
+
+    try:
+        output = subprocess.run(
+            cmd, capture_output=True, check=True, text=True, timeout=2
+        )
+
+    except subprocess.CalledProcessError as e:
+        errorMsg(str(e) + ": " + str(e.stdout).strip("\n"))
+        sys.exit(1)
+
+    psu_reading = "^\s+Instantaneous power reading:\s+"
+
+    rawdata = str(output.stdout).replace("\t", " ").replace("\n ", "\n").split("\n")
+
+    hdata = {}
+    hdata["psu"] = {}  # Init PSU data structure
+    hdata["psu"][0] = {}  # Only one value is returned.
+
+    for line in rawdata:
+        if re.match(psu_reading, line):
+            verboseMsg("found power meter reading: " + line)
+            junk, meter_reading = line.split(":", 1)
+            hdata["psu"][0]["reading"] = psu_reading.replace("Watts", "").strip()
 
     return hdata
 
