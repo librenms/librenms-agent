@@ -784,6 +784,8 @@ foreach my $line (@disks) {
 		$IDs{'interrupted'} = scalar @interrupted;
 		my @read_failure = grep( /read failure/, @outputA );
 		$IDs{'read_failure'} = scalar @read_failure;
+		my @read_failure2 = grep( /Failed in segment/, @outputA );
+		$IDs{'read_failure'} = $IDs{'read_failure'} + scalar @read_failure2;
 		my @unknown_failure = grep( /unknown failure/, @outputA );
 		$IDs{'unknown_failure'} = scalar @unknown_failure;
 		my @extended = grep( /\d.*\ ([Ee]xtended|[Ll]ong).*(?![Dd]uration)/, @outputA );
