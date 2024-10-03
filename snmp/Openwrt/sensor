@@ -1,0 +1,252 @@
+#!/bin/sh
+#+##############################################################################
+#                                                                              #
+# File: sensor                                                                 #
+#                                                                              #
+# analyes sensor data and give them back to a snmpd running on openwrt         #
+#                                                                              #
+# /etc/config/snmpd related config                                             #
+#                                                                              #
+# config pass                                                                  #
+#        option name     sensor                                                #
+#        option persist  true                                                  #
+#        option prog     /etc/librenms/sensor                                  #
+#        option miboid   .1.3.6.1.4.1.2021.13.16                               #
+#                                                                              #
+#-##############################################################################
+#
+# original source
+# https://github.com/HolgerHees/smartserver/blob/master/roles/openwrt/templates/config_ap_static/etc/librenms/sensor
+#
+# Author 2023 - Holger Hees - holger.hees@gmail.com
+#
+
+FUNCTION_temp="sensor_1_3_6_1_4_1_2021_13_16_2"
+FUNCTION_fan="sensor_1_3_6_1_4_1_2021_13_16_3"
+
+OID_order=".1.3.6.1.4.1.2021.13.16.2"
+#OID_order=".1.3.6.1.4.1.2021.13.16.2 .1.3.6.1.4.1.2021.13.16.3"
+
+ACTIVE_FUNCTION=""
+
+sensor_1_3_6_1_4_1_2021_13_16_2(){
+  COUNTER=0
+  INDEX=0
+
+  IFS=$'\n'
+
+  temperatures=$(ls /sys/class/thermal/thermal_zone*/temp 2&>/dev/null)
+  for item in $temperatures
+  do
+    let COUNTER++
+    let INDEX++
+
+    value=$(cat $item 2> /dev/null)
+    #value=$(echo $value | awk '{printf("%.3f", $1 / 1000.0)}')
+    name=$(echo $item | sed 's/.*thermal_zone\([0-9]\+\).*/\1/')
+
+    eval COUNT_1_3_6_1_4_1_2021_13_16_2_1_${INDEX}="$COUNTER"
+
+    eval NAMES_${COUNTER}="zone\$name"
+    eval VALUES_${COUNTER}="\$value"
+    fmt_value=$(echo $value | awk '{printf("%.2f\n", $1 / 1000.0)}')
+    eval FMT_VALUES_${COUNTER}="\$fmt_value"
+    eval TYPE_${COUNTER}=".1.3.6.1.4.1.2021.13.16.2.1"
+    eval UNIT_${COUNTER}="°C"
+    eval INDEX_${COUNTER}="$INDEX"
+  done
+
+  temperatures=$(ls /sys/class/hwmon/hwmon*/temp1_input 2&>/dev/null)
+  for item in $temperatures
+  do
+    let COUNTER++
+    let INDEX++
+
+    value=$(cat $item 2> /dev/null)
+    #value=$(echo $value | awk '{printf("%.3f", $1 / 1000.0)}')
+    path=$(echo $item | sed 's/\(.*\)temp1_input/\1/')
+    name=$(cat $path/name)
+
+    eval COUNT_1_3_6_1_4_1_2021_13_16_2_1_${INDEX}="$COUNTER"
+
+    eval NAMES_${COUNTER}="\$name"
+    fmt_value=$(echo $value | awk '{printf("%.2f\n", $1 / 1000.0)}')
+    eval FMT_VALUES_${COUNTER}="\$fmt_value"
+    eval VALUES_${COUNTER}="\$value"
+    eval TYPE_${COUNTER}=".1.3.6.1.4.1.2021.13.16.2.1"
+    eval UNIT_${COUNTER}="°C"
+    eval INDEX_${COUNTER}="$INDEX"
+  done
+}
+
+sensor_1_3_6_1_4_1_2021_13_16_3(){
+  COUNTER=0
+  INDEX=0
+
+  IFS=$'\n'
+
+  fan=$(ls /sys/class/hwmon/hwmon*/pwm1 2&>/dev/null)
+  for item in $fan
+  do
+    let COUNTER++
+    let INDEX++
+
+    value=$(cat $item 2> /dev/null)
+    #value=$(echo $value | awk '{printf("%.3f", $1 / 1000.0)}')
+    path=$(echo $item | sed 's/\(.*\)pwm1/\1/')
+    name=$(cat $path/name)
+
+    eval NAMES_${COUNTER}="\$name"
+    fmt_value=$(echo $value | awk '{printf("%d\n", $1 * 100 / 255)}')
+    eval FMT_VALUES_${COUNTER}="\$fmt_value"
+    eval VALUES_${COUNTER}="\$value"
+    eval TYPE_${COUNTER}=".1.3.6.1.4.1.2021.13.16.3.1"
+    eval UNIT_${COUNTER}="%"
+    eval INDEX_${COUNTER}="$INDEX"
+    eval COUNT_1_3_6_1_4_1_2021_13_16_3_1_${INDEX}="$COUNTER"
+  done
+}
+
+eval_function(){
+  check=$(type -t $@)
+  if [ "$check" == "" ]
+  then
+    exit 0
+  fi
+  eval "$@"
+}
+
+if [ $# -gt 0 ]
+then
+  eval sensor_function="\$FUNCTION_${1}"
+  eval_function $sensor_function
+
+  for i in `seq 1 $COUNTER`;
+  do
+    eval name="\$NAMES_${i}"
+    eval value="\$FMT_VALUES_${i}"
+    eval unit="\$UNIT_${i}"
+    echo $name $value $unit
+  done
+  exit 0
+fi
+
+sensor_index=1
+snmp_index=1
+
+while read line
+do
+  if [ "$line" == "PING" ]
+  then
+    echo "PONG"
+  elif [ "$line" == "get" ] || [ "$line" == "getnext" ]
+  then
+    read oid
+
+    while true
+    do
+      # detect first sensor type if we got only a range oid
+      snmp_group=$(echo $oid | cut -f11 -d.)
+      if [ "$snmp_group" == "" ]
+      then
+        oid=$(echo $OID_order | cut -f1 -d ' ')
+      fi
+
+      # prepare group oid like temp or fan sensor
+      snmp_group_prefix=$(echo $oid | cut -f1-11 -d.)
+      snmp_group_prefix_var_name=${snmp_group_prefix//./$'_'}
+
+      # initialize group values by calling related sensor function
+      sensor_function="sensor$snmp_group_prefix_var_name"
+      if [ "$ACTIVE_FUNCTION" != $sensor_function ]
+      then
+        eval_function $sensor_function
+        ACTIVE_FUNCTION="$sensor_function"
+      fi
+
+      #.1.3.6.1.4.1.2021.13.16.2.1.{x13}.{x14}
+      field_index=$(echo $oid | cut -f13 -d.)
+      if [ "$field_index" == "" ]
+      then
+        field_index=1
+      fi
+
+      value_index=$(echo $oid | cut -f14 -d.)
+      if [ "$value_index" == "" ]
+      then
+        sensor_index=1
+      else
+        eval sensor_index="\$COUNT${snmp_group_prefix_var_name}_1_${value_index}"
+
+        #echo $snmp_group_prefix_var_name
+        #echo $value_index
+        #echo $sensor_index
+        #echo $COUNTER
+
+        if [ "$line" == "getnext" ]
+        then
+          let sensor_index++
+
+          if [ $sensor_index -gt $COUNTER ]
+          then
+            sensor_index=1
+            let field_index++
+          fi
+        fi
+      fi
+
+      if [ $field_index -gt 3 ] || [ $sensor_index -gt $COUNTER ]
+      then
+        if [ "$line" == "getnext" ]
+        then
+          # detect next oid position
+          IFS=$' '
+          oid_position=0
+          for _oid in $OID_order
+          do
+            let oid_position++
+            if [ "$_oid" == "$snmp_group_prefix" ]
+            then
+              break
+            fi
+          done
+          let oid_position++
+
+          # check if the new oid position is a valid oid group
+          oid=$(echo $OID_order | cut -f"$oid_position" -d ' ')
+          if [ "$oid" != "" ] && [ "$oid" != "$OID_order" ]
+          then
+            continue
+          fi
+        fi
+
+        exit 0
+      fi
+
+      eval name="\$NAMES_${sensor_index}"
+      eval value="\$VALUES_${sensor_index}"
+      eval type="\$TYPE_${sensor_index}"
+      eval value_index="\$INDEX_${sensor_index}"
+
+      if [ $field_index -eq 1 ]
+      then
+        printf "%s.1.%s\n" $type $value_index
+        echo "integer"
+        echo $(expr $value_index - 1)
+      elif [ $field_index -eq 2 ]
+      then
+        printf "%s.2.%s\n" $type $value_index
+        echo "string"
+        echo $name
+      elif [ $field_index -eq 3 ]
+      then
+        printf "%s.3.%s\n" $type $value_index
+        echo "gauge32"
+        echo $value
+      fi
+      break
+    done
+  else
+    echo "NONE"
+  fi
+done
