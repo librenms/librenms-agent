@@ -1,5 +1,5 @@
 #!/usr/bin/env perl
-#Copyright (c) 2023, Zane C. Bowers-Hadley
+#Copyright (c) 2024, Zane C. Bowers-Hadley
 #All rights reserved.
 #
 #Redistribution and use in source and binary forms, with or without modification,
@@ -113,7 +113,7 @@ my $useSN = 1;
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 
 sub main::VERSION_MESSAGE {
-	print "SMART SNMP extend 0.3.1\n";
+	print "SMART SNMP extend 0.3.2\n";
 }
 
 sub main::HELP_MESSAGE {
@@ -784,6 +784,8 @@ foreach my $line (@disks) {
 		$IDs{'interrupted'} = scalar @interrupted;
 		my @read_failure = grep( /read failure/, @outputA );
 		$IDs{'read_failure'} = scalar @read_failure;
+		my @read_failure2 = grep( /Failed in segment/, @outputA );
+		$IDs{'read_failure'} = $IDs{'read_failure'} + scalar @read_failure2;
 		my @unknown_failure = grep( /unknown failure/, @outputA );
 		$IDs{'unknown_failure'} = scalar @unknown_failure;
 		my @extended = grep( /\d.*\ ([Ee]xtended|[Ll]ong).*(?![Dd]uration)/, @outputA );
