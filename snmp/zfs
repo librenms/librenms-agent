@@ -6,7 +6,7 @@ zfs - LibreNMS JSON SNMP extend for gathering backups for ZFS
 
 =head1 VERSION
 
-0.1.1
+0.2.0
 
 =head1 DESCRIPTION
 
@@ -79,6 +79,7 @@ use File::Slurp;
 use MIME::Base64;
 use IO::Compress::Gzip qw(gzip $GzipError);
 use Pod::Usage;
+use Scalar::Util qw(looks_like_number);
 
 sub main::VERSION_MESSAGE {
 	pod2usage( -exitval => 255, -verbose => 99, -sections => qw(VERSION), -output => \*STDOUT, );
@@ -124,14 +125,18 @@ if ($help) {
 my $zpool_output = `/sbin/zpool list -pH`;
 my @pools        = split( /\n/, $zpool_output );
 my $pools_int    = 0;
-$tojson{online}   = 0;
-$tojson{degraded} = 0;
-$tojson{offline}  = 0;
-$tojson{faulted}  = 0;
-$tojson{health}   = 1;
-$tojson{unavail}  = 0;
-$tojson{removed}  = 0;
-$tojson{unknown}  = 0;
+$tojson{online}          = 0;
+$tojson{degraded}        = 0;
+$tojson{offline}         = 0;
+$tojson{faulted}         = 0;
+$tojson{health}          = 1;
+$tojson{unavail}         = 0;
+$tojson{removed}         = 0;
+$tojson{unknown}         = 0;
+$tojson{read_errors}     = 0;
+$tojson{write_errors}    = 0;
+$tojson{checksum_errors} = 0;
+$tojson{total_errors}    = 0;
 my @toShoveIntoJSON;
 
 while ( defined( $pools[$pools_int] ) ) {
@@ -210,6 +215,40 @@ while ( defined( $pools[$pools_int] ) ) {
 			$newPool{$item} = 0;
 		}
 	}
+
+	# get read/write/checksum info for spools
+	$newPool{read_errors}     = 0;
+	$newPool{write_errors}    = 0;
+	$newPool{checksum_errors} = 0;
+	my $pool_status = `zpool status $newPool{name}`;
+	my @pool_status_split = split(/\n/, $pool_status);
+	my $pool_config_start;
+	foreach my $line (@pool_status_split) {
+		if ($pool_config_start && $line =~ /^[\ \t]*$/) {
+			$pool_config_start = 0;
+		} elsif ($line =~ /NAME[\ \t]+STATE[\ \t]+READ[\ \t]+WRITE[\ \t]+CKSUM/) {
+			$pool_config_start = 1;
+		} elsif ($pool_config_start) {
+			my @pool_line_split = split(/[\ \t]+/, $line);
+			if (
+				defined($pool_line_split[3]) &&
+				looks_like_number($pool_line_split[3]) &&
+				defined($pool_line_split[4]) &&
+				looks_like_number($pool_line_split[4]) &&
+				defined($pool_line_split[5]) &&
+				looks_like_number($pool_line_split[5])
+				) {
+				$newPool{read_errors} = $newPool{read_errors} + $pool_line_split[3];
+				$newPool{write_errors} = $newPool{write_errors} + $pool_line_split[4];
+				$newPool{checksum_errors} = $newPool{checksum_errors} + $pool_line_split[5];
+			}
+		}
+	}
+	$newPool{total_errors} = $newPool{read_errors} + $newPool{write_errors} + $newPool{checksum_errors};
+	$tojson{read_errors} = $tojson{read_errors} + $newPool{read_errors};
+	$tojson{write_errors} = $tojson{write_errors} + $newPool{write_errors};
+	$tojson{checksum_errors} = $tojson{checksum_errors} + $newPool{checksum_errors};
+	$tojson{total_errors} = $tojson{total_errors} + $newPool{total_errors};
 
 	push( @toShoveIntoJSON, \%newPool );
 
