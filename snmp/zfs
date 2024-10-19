@@ -200,14 +200,19 @@ while ( defined( $pools[$pools_int] ) ) {
 	chomp($iostat);
 	my $parsed;
 	(
-		$parsed,                 $parsed,                 $parsed,                  $newPool{operations_r},
-		$newPool{operations_w},  $newPool{bandwidth_r},   $newPool{bandwidth_w},    $newPool{total_wait_r},
-		$newPool{total_wait_w},  $newPool{disk_wait_r},   $newPool{disk_wait_w},    $newPool{syncq_wait_r},
-		$newPool{syncq_wait_w},  $newPool{asyncq_wait_w}, $newPool{scrub_wait},     $newPool{trim_wait},
-		$newPool{syncq_read_p},  $newPool{syncq_read_a},  $newPool{syncq_write_p},  $newPool{syncq_write_a},
-		$newPool{asyncq_read_p}, $newPool{asyncq_read_a}, $newPool{asyncq_write_p}, $newPool{asyncq_write_a},
-		$newPool{scrubq_read_p}, $newPool{scrubq_read_a}, $newPool{trimq_write_p},  $newPool{trimq_write_a},
+		$parsed,                  $parsed,                 $parsed,                 $newPool{operations_r},
+		$newPool{operations_w},   $newPool{bandwidth_r},   $newPool{bandwidth_w},   $newPool{total_wait_r},
+		$newPool{total_wait_w},   $newPool{disk_wait_r},   $newPool{disk_wait_w},   $newPool{syncq_wait_r},
+		$newPool{syncq_wait_w},   $newPool{asyncq_wait_r}, $newPool{asyncq_wait_w}, $newPool{scrub_wait},
+		$newPool{trim_wait},      $newPool{syncq_read_p},  $newPool{syncq_read_a},  $newPool{syncq_write_p},
+		$newPool{syncq_write_a},  $newPool{asyncq_read_p}, $newPool{asyncq_read_a}, $newPool{asyncq_write_p},
+		$newPool{asyncq_write_a}, $newPool{scrubq_read_p}, $newPool{scrubq_read_a}, $newPool{trimq_write_p},
+		$newPool{trimq_write_a},
 	) = split( /\,/, $iostat );
+
+	if ( $newPool{trim_wait} eq '-' ) {
+		$newPool{trim_wait} = 0;
+	}
 
 	my @pool_keys = keys(%newPool);
 	foreach my $item (@pool_keys) {
