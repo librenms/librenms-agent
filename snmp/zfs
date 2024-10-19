@@ -6,7 +6,7 @@ zfs - LibreNMS JSON SNMP extend for gathering backups for ZFS
 
 =head1 VERSION
 
-0.2.0
+0.3.0
 
 =head1 DESCRIPTION
 
@@ -193,21 +193,26 @@ while ( defined( $pools[$pools_int] ) ) {
 
 	my $iostat = `zpool iostat -l -q -p -H $newPool{name}`;
 	chomp($iostat);
-	$iostat =~ s/\t/,/g;
+	$iostat =~ s/\t+/,/g;
 	$iostat =~ s/\,\-\,\-\,/\,0\,0\,/g;
 	$iostat =~ s/\%//g;
 	$iostat =~ s/\,([0-1\.]*)x\,/,$1,/;
 	chomp($iostat);
 	my $parsed;
 	(
-		$parsed,                 $parsed,                  $newPool{operations_r},   $newPool{operations_w},
-		$newPool{bandwidth_r},   $newPool{bandwidth_w},    $newPool{total_wait_r},   $newPool{total_wait_w},
-		$newPool{disk_wait_r},   $newPool{disk_wait_w},    $newPool{syncq_wait_r},   $newPool{syncq_wait_w},
-		$newPool{asyncq_wait_w}, $newPool{scrub_wait},     $newPool{trim_wait},      $newPool{syncq_read_p},
-		$newPool{syncq_read_a},  $newPool{syncq_write_p},  $newPool{syncq_write_a},  $newPool{asyncq_read_p},
-		$newPool{asyncq_read_a}, $newPool{asyncq_write_p}, $newPool{asyncq_write_a}, $newPool{scrubq_read_p},
-		$newPool{scrubq_read_a}, $newPool{trimq_write_p},  $newPool{trimq_write_a},
+		$parsed,                  $parsed,                 $parsed,                 $newPool{operations_r},
+		$newPool{operations_w},   $newPool{bandwidth_r},   $newPool{bandwidth_w},   $newPool{total_wait_r},
+		$newPool{total_wait_w},   $newPool{disk_wait_r},   $newPool{disk_wait_w},   $newPool{syncq_wait_r},
+		$newPool{syncq_wait_w},   $newPool{asyncq_wait_r}, $newPool{asyncq_wait_w}, $newPool{scrub_wait},
+		$newPool{trim_wait},      $newPool{syncq_read_p},  $newPool{syncq_read_a},  $newPool{syncq_write_p},
+		$newPool{syncq_write_a},  $newPool{asyncq_read_p}, $newPool{asyncq_read_a}, $newPool{asyncq_write_p},
+		$newPool{asyncq_write_a}, $newPool{scrubq_read_p}, $newPool{scrubq_read_a}, $newPool{trimq_write_p},
+		$newPool{trimq_write_a},
 	) = split( /\,/, $iostat );
+
+	if ( $newPool{trim_wait} eq '-' ) {
+		$newPool{trim_wait} = 0;
+	}
 
 	my @pool_keys = keys(%newPool);
 	foreach my $item (@pool_keys) {
@@ -220,35 +225,34 @@ while ( defined( $pools[$pools_int] ) ) {
 	$newPool{read_errors}     = 0;
 	$newPool{write_errors}    = 0;
 	$newPool{checksum_errors} = 0;
-	my $pool_status = `zpool status $newPool{name}`;
-	my @pool_status_split = split(/\n/, $pool_status);
+	my $pool_status       = `zpool status $newPool{name}`;
+	my @pool_status_split = split( /\n/, $pool_status );
 	my $pool_config_start;
 	foreach my $line (@pool_status_split) {
-		if ($pool_config_start && $line =~ /^[\ \t]*$/) {
+		if ( $pool_config_start && $line =~ /^[\ \t]*$/ ) {
 			$pool_config_start = 0;
-		} elsif ($line =~ /NAME[\ \t]+STATE[\ \t]+READ[\ \t]+WRITE[\ \t]+CKSUM/) {
+		} elsif ( $line =~ /NAME[\ \t]+STATE[\ \t]+READ[\ \t]+WRITE[\ \t]+CKSUM/ ) {
 			$pool_config_start = 1;
 		} elsif ($pool_config_start) {
-			my @pool_line_split = split(/[\ \t]+/, $line);
-			if (
-				defined($pool_line_split[3]) &&
-				looks_like_number($pool_line_split[3]) &&
-				defined($pool_line_split[4]) &&
-				looks_like_number($pool_line_split[4]) &&
-				defined($pool_line_split[5]) &&
-				looks_like_number($pool_line_split[5])
-				) {
-				$newPool{read_errors} = $newPool{read_errors} + $pool_line_split[3];
-				$newPool{write_errors} = $newPool{write_errors} + $pool_line_split[4];
+			my @pool_line_split = split( /[\ \t]+/, $line );
+			if (   defined( $pool_line_split[3] )
+				&& looks_like_number( $pool_line_split[3] )
+				&& defined( $pool_line_split[4] )
+				&& looks_like_number( $pool_line_split[4] )
+				&& defined( $pool_line_split[5] )
+				&& looks_like_number( $pool_line_split[5] ) )
+			{
+				$newPool{read_errors}     = $newPool{read_errors} + $pool_line_split[3];
+				$newPool{write_errors}    = $newPool{write_errors} + $pool_line_split[4];
 				$newPool{checksum_errors} = $newPool{checksum_errors} + $pool_line_split[5];
-			}
-		}
-	}
-	$newPool{total_errors} = $newPool{read_errors} + $newPool{write_errors} + $newPool{checksum_errors};
-	$tojson{read_errors} = $tojson{read_errors} + $newPool{read_errors};
-	$tojson{write_errors} = $tojson{write_errors} + $newPool{write_errors};
+			} ## end if ( defined( $pool_line_split[3] ) && looks_like_number...)
+		} ## end elsif ($pool_config_start)
+	} ## end foreach my $line (@pool_status_split)
+	$newPool{total_errors}   = $newPool{read_errors} + $newPool{write_errors} + $newPool{checksum_errors};
+	$tojson{read_errors}     = $tojson{read_errors} + $newPool{read_errors};
+	$tojson{write_errors}    = $tojson{write_errors} + $newPool{write_errors};
 	$tojson{checksum_errors} = $tojson{checksum_errors} + $newPool{checksum_errors};
-	$tojson{total_errors} = $tojson{total_errors} + $newPool{total_errors};
+	$tojson{total_errors}    = $tojson{total_errors} + $newPool{total_errors};
 
 	push( @toShoveIntoJSON, \%newPool );
 
@@ -474,7 +478,7 @@ $tojson{l2_access_total} = $tojson{l2_hits} + $tojson{l2_misses};
 
 my %head_hash;
 $head_hash{data}        = \%tojson;
-$head_hash{version}     = 3;
+$head_hash{version}     = 4;
 $head_hash{error}       = 0;
 $head_hash{errorString} = '';
 
