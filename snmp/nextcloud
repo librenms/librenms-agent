@@ -1,0 +1,127 @@
+#!/usr/bin/env perl
+
+=head1 NAME
+
+zfs - LibreNMS JSON SNMP extend for gathering backups for ZFS
+
+=head1 VERSION
+
+0.3.0
+
+=head1 DESCRIPTION
+
+For more information, see L<https://docs.librenms.org/Extensions/Applications/#zfs>.
+
+=head1 SWITCHES
+
+=head2 -p
+
+Pretty print the JSON. If used with -b, this switch will be ignored.
+
+=head2 -b
+
+Gzip the output and convert to Base64.
+
+=head2 -s
+
+Include the full information for `zpool status $pool` for each pool
+in the return.
+
+=head1 SNMPD SETUP EXAMPLES
+
+    extend zfs /etc/snmp/zfs
+
+=head1 REQUIREMENTS
+
+The requirements may be installed via CPAN like below for Linux.
+
+    apt-get install cpanminus File::Slurp MIME::Base64 JSON
+
+Or on FreeBSD via pkg...
+
+    pkg install p5-JSON p5-File-Slurp p5-MIME-Base64
+
+=cut
+
+#Copyright (c) 2023, Zane C. Bowers-Hadley
+#All rights reserved.
+#
+#Redistribution and use in source and binary forms, with or without modification,
+#are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+#THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+#WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+#IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+#DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+#LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+#THE POSSIBILITY OF SUCH DAMAGE.
+
+# Many thanks to Ben Rockwood, Jason J. Hellenthal, and Martin Matuska
+# for zfs-stats and figuring out the math for all the stats
+#
+# Thanks to dlangille for pointing out the issues on 14 and Bobzikwick figuring out the fix in issues/501
+
+use strict;
+use warnings;
+use JSON;
+use Getopt::Long;
+use File::Slurp;
+use MIME::Base64;
+use IO::Compress::Gzip qw(gzip $GzipError);
+use Pod::Usage;
+use Scalar::Util qw(looks_like_number);
+use YAML::XS;
+
+sub main::VERSION_MESSAGE {
+	pod2usage( -exitval => 255, -verbose => 99, -sections => qw(VERSION), -output => \*STDOUT, );
+}
+
+sub main::HELP_MESSAGE {
+	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
+}
+
+#this will be dumped to json at the end
+my %tojson;
+$tojson{users}={};
+
+#gets the options
+my %opts;
+my $opts_p;
+my $opts_b;
+my $opts_s;
+my $version;
+my $help;
+#getopts( 'pbs', \%opts );
+GetOptions(
+	p       => \$opts_p,
+	b       => \$opts_b,
+	s       => \$opts_s,
+	v       => \$version,
+	version => \$version,
+	h       => \$help,
+	help    => \$help,
+);
+
+if ($version) {
+	pod2usage( -exitval => 255, -verbose => 99, -sections => qw(VERSION), -output => \*STDOUT, );
+}
+
+if ($help) {
+	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
+}
+
+my %head_hash;
+$head_hash{data}        = \%tojson;
+$head_hash{version}     = 1;
+$head_hash{error}       = 0;
+$head_hash{errorString} = '';
