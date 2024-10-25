@@ -1,10 +1,15 @@
 #!/usr/bin/env perl
 
+use strict;
+use warnings;
+
 =head1 DESCRIPTION
 
 This is a SNMP extend for monitoring /proc/net/softnet_stat on Linux for use with LibreNMS.
 
-For more information, see L<https://docs.librenms.org/#Extensions/Applications/#linux_softnet_stat>.
+This just needs added to snmpd.conf like below.
+
+    extend linux_softnet_stat /etc/snmp/linux_softnet_stat -b
 
 =head1 SWITCHES
 
@@ -16,24 +21,29 @@ Pretty print the JSON. If used with -b, this switch will be ignored.
 
 Gzip the output and convert to Base64.
 
+=head1 VERSION
+
+0.1.0
+
 =cut
 
-use strict;
-use warnings;
+our $VERSION = '0.1.0';
+
 use JSON;
 use Getopt::Std;
 use File::Slurp;
 use MIME::Base64;
-use Gzip::Faster;
+use IO::Compress::Gzip qw(gzip $GzipError);
+use Pod::Usage;
 
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 
 sub main::VERSION_MESSAGE {
-	print "Linux softnet stats extend 0.0.1\n";
+	print 'Linux softnet stats extend ' . $VERSION . "\n";
 }
 
 sub main::HELP_MESSAGE {
-
+	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
 }
 
 #this will be dumped to json at the end
@@ -132,13 +142,11 @@ if ( !$opts{p} && !$opts{b} ) {
 	exit 0;
 }
 
-my $compressed = encode_base64( gzip($return_string) );
+my $toReturnCompressed;
+gzip \$return_string => \$toReturnCompressed;
+my $compressed = encode_base64($toReturnCompressed);
 $compressed =~ s/\n//g;
 $compressed = $compressed . "\n";
-if ( length($compressed) > length($return_string) ) {
-	print $return_string. "\n";
-} else {
-	print $compressed;
-}
+print $compressed;
 
 exit 0;
