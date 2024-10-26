@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 
-#Copyright (c) 2023, Zane C. Bowers-Hadley
+#Copyright (c) 2024, Zane C. Bowers-Hadley
 #All rights reserved.
 #
 #Redistribution and use in source and binary forms, with or without modification,
@@ -23,32 +23,91 @@
 #OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 #THE POSSIBILITY OF SUCH DAMAGE.
 
-=for comment
+use warnings;
+use strict;
+
+=head1 NAME
+
+privoxy - LibreNMS JSON style SNMP extend for monitoring Privoxy
+
+=head1 VERSION
+
+0.2.0
+
+=cut
+
+our $VERSION = '0.2.0';
+
+=head1 SYNOPSIS
+
+privoxy B<-w> [B<-o> <cache base>] [B<-f> <logfile>] [B<-p>]
+
+privoxy [B<-o> <cache base>] [B<-f> <logfile>] [B<-p>]
+
+=head1 SNMPD CONFIG
 
 Add this to snmpd.conf as below and restart snmpd.
 
     extend privoxy /etc/snmp/extends/privoxy
 
-Supported command line options are as below.
+Or if using cron...
 
-    -f          Logfile.
-                Default: /var/log/privoxy/logfile
-    -c          gzip+base64 compression
-    -p          Pretty print.
+    # cron
+    */5 * * * * root /etc/snmp/privoxy -w > /dev/null
 
-The last is only really relevant to the usage with SNMP.
+    # snmpd.conf
+    extend privoxy /bin/cat /var/cache/privoxy_extend.json.snmp
+
+=head1 FLAGS
+
+=head2 -f
+
+The Privoxy logfile.
+
+Default: /var/log/privoxy/logfile
+
+=head2 -c
+
+Use gzip+base64 LibreNMS style compression.
+
+=head2 -p
+
+Pretty print.
+
+=head2 -o <out>
+
+Where to write it out to.
+
+Default: /var/cache/privoxy_extend.json
+
+=head2 -w
+
+Write out. Implies -c
+
+=head1 INSTALL
+
+FreeBSD...
+
+    pkg install p5-JSON p5-MIME-Base64 p5-File-Slurp p5-File-ReadBackwards p5-IPC-Run3 p5-Time-Piece
+
+Debian...
+
+    apt-get install libjson-perl libmime-base64-perl libfile-slurp-perl libfile-readbackwards-perl libipc-run3-perl cpanminus
+    cpanm Time::Piece
 
 =cut
 
-use strict;
-use warnings;
 use Getopt::Std;
 use File::ReadBackwards;
 use JSON;
 use Time::Piece;
 use IPC::Run3;
 use MIME::Base64;
-use Gzip::Faster;
+use IO::Compress::Gzip qw(gzip $GzipError);
+use File::Slurp;
+use Pod::Usage;
+
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
 
 # get the current time
 my $t    = localtime;
@@ -71,12 +130,28 @@ my $compress;
 
 #gets the options
 my %opts;
-getopts( 'f:cp', \%opts );
+getopts( 'f:cpwo', \%opts );
 if ( defined( $opts{f} ) ) {
 	$logfile = $opts{f};
 }
 if ( defined( $opts{c} ) ) {
 	$compress = 1;
+}
+
+if ($opts{w}) {
+	$opts{c} = 1;
+}
+
+sub main::VERSION_MESSAGE {
+	print 'privoxy LibreNMS extend v. ' . $VERSION . "\n";
+}
+
+sub main::HELP_MESSAGE {
+	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
+}
+
+if ( !defined( $opts{o} ) ) {
+	$opts{o} = '/var/cache/privoxy_extend.json';
 }
 
 my $json = JSON->new->allow_nonref->canonical(1);
@@ -426,8 +501,29 @@ if ($compress) {
 	exit 0;
 } ## end if ($compress)
 
-print $json->encode($to_return);
+my $raw_json_return = $json->encode($to_return);
 if ( !$opts{p} ) {
-	print "\n";
+	$raw_json_return = $raw_json_return . "\n";
 }
+
+if ( $opts{w} ) {
+	write_file( $opts{o}, $raw_json_return );
+}
+
+if ( $opts{c} ) {
+	# compress and write to the cache file for it
+	my $compressed_string;
+	gzip \$raw_json_return => \$compressed_string;
+	my $compressed = encode_base64($compressed_string);
+	$compressed =~ s/\n//g;
+	$compressed = $compressed . "\n";
+	print $compressed;
+
+	if ( $opts{w} ) {
+		write_file( $opts{o} . '.snmp', $compressed );
+	}
+} else {
+	print $raw_json_return;
+}
+
 exit 0;
