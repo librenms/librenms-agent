@@ -2,48 +2,50 @@
 
 =head1 NAME
 
-zfs - LibreNMS JSON SNMP extend for gathering backups for ZFS
+nextcloud - LibreNMS JSON SNMP extend for gathering backups for Nextcloud
 
 =head1 VERSION
 
-0.3.0
+0.0.1
 
 =head1 DESCRIPTION
 
-For more information, see L<https://docs.librenms.org/Extensions/Applications/#zfs>.
+derp
 
 =head1 SWITCHES
 
-=head2 -p
+=head2 -i <dir>
 
-Pretty print the JSON. If used with -b, this switch will be ignored.
+Dir location for the Nextcloud install.
 
-=head2 -b
+The defaults are as below.
 
-Gzip the output and convert to Base64.
+FreeBSD: /usr/local/www/nextcloud
+Linux: /var/www/nextcloud
 
-=head2 -s
-
-Include the full information for `zpool status $pool` for each pool
-in the return.
+=head2 -o
 
 =head1 SNMPD SETUP EXAMPLES
 
-    extend zfs /etc/snmp/zfs
+    extend nextcloud /etc/snmp/nextcloud
 
 =head1 REQUIREMENTS
 
-The requirements may be installed via CPAN like below for Linux.
+Debian...
 
-    apt-get install cpanminus File::Slurp MIME::Base64 JSON
+    apt-get install libjson-perl libfile-slurp-perl libmime-base64-perl
 
-Or on FreeBSD via pkg...
+FreeBSD...
 
     pkg install p5-JSON p5-File-Slurp p5-MIME-Base64
 
+Generic cpanm...
+
+    cpanm JSON File::Slurp Mime::Base64
+
 =cut
 
-#Copyright (c) 2023, Zane C. Bowers-Hadley
+#Copyright (c) 2024, Zane C. Bowers-Hadley
 #All rights reserved.
 #
 #Redistribution and use in source and binary forms, with or without modification,
@@ -79,8 +81,7 @@ use File::Slurp;
 use MIME::Base64;
 use IO::Compress::Gzip qw(gzip $GzipError);
 use Pod::Usage;
-use Scalar::Util qw(looks_like_number);
-use YAML::XS;
+use String::ShellQuote;
 
 sub main::VERSION_MESSAGE {
 	pod2usage( -exitval => 255, -verbose => 99, -sections => qw(VERSION), -output => \*STDOUT, );
@@ -92,20 +93,31 @@ sub main::HELP_MESSAGE {
 
 #this will be dumped to json at the end
 my %tojson;
-$tojson{users}={};
+$tojson{total}         = 0;
+$tojson{user_count}    = 0;
+$tojson{free}          = 0;
+$tojson{used}          = 0;
+$tojson{enabled_apps}  = 0;
+$tojson{disabled_apps} = 0;
+$tojson{calendars}     = 0;
+$tojson{users}         = {};
+
+# current user
+my $current_user = $ENV{LOGNAME} || $ENV{USER} || getpwuid($<);
 
 #gets the options
 my %opts;
 my $opts_p;
 my $opts_b;
-my $opts_s;
+my $output_dir = '/var/cache/nextcloud_extend';
+my $install_dir;
 my $version;
 my $help;
-#getopts( 'pbs', \%opts );
 GetOptions(
 	p       => \$opts_p,
 	b       => \$opts_b,
-	s       => \$opts_s,
+	'o=s'   => \$output_dir,
+	'i=s'   => \$install_dir,
 	v       => \$version,
 	version => \$version,
 	h       => \$help,
@@ -119,6 +131,119 @@ if ($version) {
 if ($help) {
 	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
 }
+
+# get what to use for the install dir if not specified
+if ( !defined($install_dir) ) {
+	if ( $^O eq 'freebsd' ) {
+		$install_dir = '/usr/local/www/nextcloud';
+	} elsif ( $^O eq 'linux' ) {
+		$install_dir = '/var/www/nextcloud';
+	} else {
+		die('-i <dir> not specified for the install dir for Nextcloud');
+	}
+}
+
+# ensure the install dir exists
+if ( !-d $install_dir ) {
+	die( 'the Nextcloud install directory, "' . $install_dir . '", is not a directory or does not exist' );
+}
+
+# change to the install dir
+chdir($install_dir) || die( 'failed to chdir to the Nextcloud install dir, "' . $install_dir . '",' );
+
+# ensure the config exists
+if ( !-f './config/config.php' ) {
+	die( '"./config/config.php" does not exist under the Nextcloud install dir ,"' . $install_dir . '",' );
+}
+
+# ensure ./occ happens
+if ( !-f './occ' ) {
+	die( '"./occ" does not exist under the Nextcloud install dir ,"' . $install_dir . '",' );
+}
+
+# ensure the install dir exists and try to create it if it does not
+if ( -d $output_dir ) {
+	mkdir($output_dir) || die( '"' . $output_dir . '" does not exist and could not be created' );
+}
+
+###
+###
+### get user info
+###
+###
+my $user_list_raw = `php occ user:list --output=json`;
+if ( $? != 0 ) {
+	die( '"php occ user:list" existed non-zero with.... ' . "\n" . $user_list_raw . "\n..." );
+}
+my @users;
+eval {
+	my $decodes_users = decode_json($user_list_raw);
+	@users = keys( %{$decodes_users} );
+};
+
+foreach my $user (@users) {
+	my $quoted_user   = shell_quote($user);
+	my $user_info_raw = `php occ user:info --output=json $quoted_user`;
+	eval {
+		my $user_info = decode_json($user_info_raw);
+		if (   defined( $user_info->{user_id} )
+			&& defined( $user_info->{storage} )
+			&& ref( $user_info->{storage} ) eq 'HASH'
+			&& defined( $user_info->{last_seen} ) )
+		{
+			$tojson{users}{$user} = {
+				'free'      => $user_info->{storage}{free},
+				'quota'     => $user_info->{storage}{quota},
+				'relative'  => $user_info->{storage}{relative},
+				'total'     => $user_info->{storage}{total},
+				'used'      => $user_info->{storage}{used},
+				'last_seen' => $user_info->{last_seen},
+				'calendars' => 0,
+			};
+			$tojson{free} = $user_info->{storage}{free};
+			$tojson{used} = $tojson{used} + $user_info->{storage}{used};
+			if ( $user_info->{storage}{quota} > 0 ) {
+				$tojson{quota} = $tojson{quota} + $user_info->{storage}{quota};
+			}
+			$tojson{user_count}++;
+			# does not currently support output options
+			my $calendar_info_raw = `php occ dav:list-calendars $quoted_user 2> /dev/null`;
+			if ( $? == 0 ) {
+				# if the table has more than 4 lines the other lines contain calender info
+				# so given it is zero index the number of calendars can be fournd via subtracting 3
+				my @calendar_info_split = split( /\n/, $calendar_info_raw );
+				if ( $#calendar_info_split > 3 ) {
+					$tojson{users}{$user}{'calendars'} = $#calendar_info_split - 3;
+					$tojson{calendars} = $tojson{'calendars'} + $tojson{users}{$user}{'calendars'};
+				}
+			}
+		} ## end if ( defined( $user_info->{user_id} ) && defined...)
+	};
+} ## end foreach my $user (@users)
+
+###
+###
+### get app info
+###
+###
+my $app_info_raw = `php occ app:list --output=json`;
+if ( $? == 0 ) {
+	eval {
+		my $app_info = decode_json($app_info_raw);
+		if ( defined( $app_info->{disabled} )
+			&& ref( $app_info->{disabled} ) eq 'HASH' )
+		{
+			my @disabled_apps = keys( %{ $app_info->{disabled} } );
+			$tojson{disabled_apps} = $#disabled_apps + 1;
+		}
+		if ( defined( $app_info->{enabled} )
+			&& ref( $app_info->{enabled} ) eq 'HASH' )
+		{
+			my @disabled_apps = keys( %{ $app_info->{enabled} } );
+			$tojson{enabled_apps} = $#disabled_apps + 1;
+		}
+	};
+} ## end if ( $? == 0 )
 
 my %head_hash;
 $head_hash{data}        = \%tojson;
