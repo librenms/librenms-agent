@@ -10,7 +10,7 @@ nextcloud - LibreNMS JSON SNMP extend for gathering backups for Nextcloud
 
 =head1 DESCRIPTION
 
-derp
+For more information, see L<https://docs.librenms.org/Extensions/Applications/#nextcloud>.
 
 =head1 SWITCHES
 
@@ -23,21 +23,45 @@ The defaults are as below.
 FreeBSD: /usr/local/www/nextcloud
 Linux: /var/www/nextcloud
 
-=head2 -o
+=head2 -m
 
-=head1 SNMPD SETUP EXAMPLES
+If set, does consider the user directories to not all be under the same mountpoint.
 
-    extend nextcloud /etc/snmp/nextcloud
+=head2 -o <output dir>
+
+Where to write the output to.
+
+Default: /var/cache/nextcloud_extend
+
+=head2 -q
+
+Don't print the JSON results when done.
+
+=head1 SETUP
+
+Create the required directory to write to.
+
+    mkdir /var/cache/nextcloud_extend
+    chown -R $nextcloud_user /var/cache/nextcloud_extend
+
+snmpd.conf
+
+    extend nextcloud /bin/cat /var/cache/nextcloud_extend/snmp
+
+cron, specify -o or -i if needed/desired
+
+      */5 * * * * /etc/snmpd/nextcloud -q 2> /dev/null
 
 =head1 REQUIREMENTS
 
 Debian...
 
-    apt-get install libjson-perl libfile-slurp-perl libmime-base64-perl
+    apt-get install libjson-perl libfile-slurp-perl libmime-base64-perl cpanminus
+    cpanm Time::Piece
 
 FreeBSD...
 
-    pkg install p5-JSON p5-File-Slurp p5-MIME-Base64
+    pkg install p5-JSON p5-File-Slurp p5-MIME-Base64 p5-Time-Piece
 
 Generic cpanm...
 
@@ -82,6 +106,7 @@ use MIME::Base64;
 use IO::Compress::Gzip qw(gzip $GzipError);
 use Pod::Usage;
 use String::ShellQuote;
+use Time::Piece;
 
 sub main::VERSION_MESSAGE {
 	pod2usage( -exitval => 255, -verbose => 99, -sections => qw(VERSION), -output => \*STDOUT, );
@@ -93,35 +118,37 @@ sub main::HELP_MESSAGE {
 
 #this will be dumped to json at the end
 my %tojson;
-$tojson{total}         = 0;
-$tojson{user_count}    = 0;
-$tojson{free}          = 0;
-$tojson{used}          = 0;
-$tojson{enabled_apps}  = 0;
-$tojson{disabled_apps} = 0;
-$tojson{calendars}     = 0;
-$tojson{users}         = {};
+$tojson{total}              = 0;
+$tojson{user_count}         = 0;
+$tojson{free}               = 0;
+$tojson{used}               = 0;
+$tojson{enabled_apps}       = 0;
+$tojson{disabled_apps}      = 0;
+$tojson{encryption_enabled} = 0;
+$tojson{calendars}          = 0;
+$tojson{multimount}         = 0;
+$tojson{users}              = {};
 
 # current user
 my $current_user = $ENV{LOGNAME} || $ENV{USER} || getpwuid($<);
 
 #gets the options
 my %opts;
-my $opts_p;
-my $opts_b;
+my $be_quiet;
 my $output_dir = '/var/cache/nextcloud_extend';
 my $install_dir;
 my $version;
 my $help;
+my $multimount;
 GetOptions(
-	p       => \$opts_p,
-	b       => \$opts_b,
+	q       => \$be_quiet,
 	'o=s'   => \$output_dir,
 	'i=s'   => \$install_dir,
 	v       => \$version,
 	version => \$version,
 	h       => \$help,
 	help    => \$help,
+	m       => \$multimount,
 );
 
 if ($version) {
@@ -130,6 +157,10 @@ if ($version) {
 
 if ($help) {
 	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
+}
+
+if ($multimount) {
+	$tojson{multimount} = 1;
 }
 
 # get what to use for the install dir if not specified
@@ -162,7 +193,7 @@ if ( !-f './occ' ) {
 }
 
 # ensure the install dir exists and try to create it if it does not
-if ( -d $output_dir ) {
+if ( !-d $output_dir ) {
 	mkdir($output_dir) || die( '"' . $output_dir . '" does not exist and could not be created' );
 }
 
@@ -191,13 +222,27 @@ foreach my $user (@users) {
 			&& ref( $user_info->{storage} ) eq 'HASH'
 			&& defined( $user_info->{last_seen} ) )
 		{
+			my $last_seen = $user_info->{last_seen};
+			if ( $last_seen eq '1970-01-01T00:00:00+00:00' ) {
+				$last_seen = -1;
+			} else {
+				eval {
+					$last_seen =~ s/(\d+)\:(\d+)$/$1$2/;
+					my $t1 = gmtime;
+					my $t2 = Time::Piece->strptime( $last_seen, "%Y-%m-%dT%H:%M:%S%z" );
+					$last_seen = $t1->epoch - $t2->epoch;
+				};
+				if ($@) {
+					$last_seen = undef;
+				}
+			} ## end else [ if ( $last_seen eq '1970-01-01T00:00:00+00:00')]
 			$tojson{users}{$user} = {
 				'free'      => $user_info->{storage}{free},
 				'quota'     => $user_info->{storage}{quota},
 				'relative'  => $user_info->{storage}{relative},
 				'total'     => $user_info->{storage}{total},
 				'used'      => $user_info->{storage}{used},
-				'last_seen' => $user_info->{last_seen},
+				'last_seen' => $last_seen,
 				'calendars' => 0,
 			};
 			$tojson{free} = $user_info->{storage}{free};
@@ -245,8 +290,48 @@ if ( $? == 0 ) {
 	};
 } ## end if ( $? == 0 )
 
+###
+###
+### get encryption status
+###
+###
+my $encrption_info_raw = `php occ encryption:status --output=json`;
+if ( $? == 0 ) {
+	eval {
+		my $encrption_info = decode_json($encrption_info_raw);
+		if (   defined($encrption_info)
+			&& ref( $encrption_info->{enabled} ) eq ''
+			&& $encrption_info->{enabled} =~ /^(1|[Tt][Rr][Uu][Ee])$/ )
+		{
+			$tojson{encryption_enabled} = 1;
+		}
+	};
+} ## end if ( $? == 0 )
+
 my %head_hash;
 $head_hash{data}        = \%tojson;
 $head_hash{version}     = 1;
 $head_hash{error}       = 0;
 $head_hash{errorString} = '';
+
+my $json_output = encode_json( \%head_hash );
+
+if ( !$be_quiet ) {
+	print $json_output. "\n";
+}
+
+eval { write_file( $output_dir . '/json', $json_output ); };
+if ($@) {
+	warn( 'failed to write out "' . $output_dir . '/json" ... ' . $@ );
+}
+
+my $toReturnCompressed;
+gzip \$json_output => \$toReturnCompressed;
+my $compressed = encode_base64($toReturnCompressed);
+$compressed =~ s/\n//g;
+$compressed = $compressed . "\n";
+
+eval { write_file( $output_dir . '/snmp', $compressed ); };
+if ($@) {
+	warn( 'failed to write out "' . $output_dir . '/snmp" ... ' . $@ );
+}
