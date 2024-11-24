@@ -237,13 +237,14 @@ foreach my $user (@users) {
 				}
 			} ## end else [ if ( $last_seen eq '1970-01-01T00:00:00+00:00')]
 			$tojson{users}{$user} = {
-				'free'      => $user_info->{storage}{free},
-				'quota'     => $user_info->{storage}{quota},
-				'relative'  => $user_info->{storage}{relative},
-				'total'     => $user_info->{storage}{total},
-				'used'      => $user_info->{storage}{used},
-				'last_seen' => $last_seen,
-				'calendars' => 0,
+				'free'             => $user_info->{storage}{free},
+				'quota'            => $user_info->{storage}{quota},
+				'relative'         => $user_info->{storage}{relative},
+				'total'            => $user_info->{storage}{total},
+				'used'             => $user_info->{storage}{used},
+				'last_seen'        => $last_seen,
+				'last_seen_string' => $user_info->{last_seen},
+				'calendars'        => 0,
 			};
 			$tojson{free} = $user_info->{storage}{free};
 			$tojson{used} = $tojson{used} + $user_info->{storage}{used};
