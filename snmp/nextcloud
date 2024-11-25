@@ -247,6 +247,7 @@ foreach my $user (@users) {
 				'calendars'        => 0,
 			};
 			$tojson{free} = $user_info->{storage}{free};
+			$tojson{total} = $user_info->{storage}{total};
 			$tojson{used} = $tojson{used} + $user_info->{storage}{used};
 			if ( $user_info->{storage}{quota} > 0 ) {
 				$tojson{quota} = $tojson{quota} + $user_info->{storage}{quota};
