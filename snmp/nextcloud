@@ -128,6 +128,7 @@ $tojson{encryption_enabled} = 0;
 $tojson{calendars}          = 0;
 $tojson{multimount}         = 0;
 $tojson{users}              = {};
+$tojson{quota}              = 0;
 
 # current user
 my $current_user = $ENV{LOGNAME} || $ENV{USER} || getpwuid($<);
@@ -246,9 +247,9 @@ foreach my $user (@users) {
 				'last_seen_string' => $user_info->{last_seen},
 				'calendars'        => 0,
 			};
-			$tojson{free} = $user_info->{storage}{free};
+			$tojson{free}  = $user_info->{storage}{free};
 			$tojson{total} = $user_info->{storage}{total};
-			$tojson{used} = $tojson{used} + $user_info->{storage}{used};
+			$tojson{used}  = $tojson{used} + $user_info->{storage}{used};
 			if ( $user_info->{storage}{quota} > 0 ) {
 				$tojson{quota} = $tojson{quota} + $user_info->{storage}{quota};
 			}
