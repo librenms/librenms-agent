@@ -212,10 +212,12 @@ eval {
 	my $decodes_users = decode_json($user_list_raw);
 	@users = keys( %{$decodes_users} );
 };
+$tojson{user_count} = $#users;
+$tojson{user_count}++;
 
 foreach my $user (@users) {
 	my $quoted_user   = shell_quote($user);
-	my $user_info_raw = `php occ user:info --output=json $quoted_user`;
+	my $user_info_raw = `php occ user:info --output=json $quoted_user 2> /dev/null`;
 	eval {
 		my $user_info = decode_json($user_info_raw);
 		if (   defined( $user_info->{user_id} )
@@ -253,7 +255,6 @@ foreach my $user (@users) {
 			if ( $user_info->{storage}{quota} > 0 ) {
 				$tojson{quota} = $tojson{quota} + $user_info->{storage}{quota};
 			}
-			$tojson{user_count}++;
 			# does not currently support output options
 			my $calendar_info_raw = `php occ dav:list-calendars $quoted_user 2> /dev/null`;
 			if ( $? == 0 ) {
@@ -274,7 +275,7 @@ foreach my $user (@users) {
 ### get app info
 ###
 ###
-my $app_info_raw = `php occ app:list --output=json`;
+my $app_info_raw = `php occ app:list --output=json  2> /dev/null`;
 if ( $? == 0 ) {
 	eval {
 		my $app_info = decode_json($app_info_raw);
@@ -298,7 +299,7 @@ if ( $? == 0 ) {
 ### get encryption status
 ###
 ###
-my $encrption_info_raw = `php occ encryption:status --output=json`;
+my $encrption_info_raw = `php occ encryption:status --output=json  2> /dev/null`;
 if ( $? == 0 ) {
 	eval {
 		my $encrption_info = decode_json($encrption_info_raw);
@@ -323,7 +324,7 @@ if ( !$be_quiet ) {
 	print $json_output. "\n";
 }
 
-eval { write_file( $output_dir . '/json', $json_output ); };
+eval { write_file( $output_dir . '/json', { atomic => 1 }, $json_output ); };
 if ($@) {
 	warn( 'failed to write out "' . $output_dir . '/json" ... ' . $@ );
 }
@@ -334,7 +335,7 @@ my $compressed = encode_base64($toReturnCompressed);
 $compressed =~ s/\n//g;
 $compressed = $compressed . "\n";
 
-eval { write_file( $output_dir . '/snmp', $compressed ); };
+eval { write_file( $output_dir . '/snmp', { atomic => 1 }, $compressed ); };
 if ($@) {
 	warn( 'failed to write out "' . $output_dir . '/snmp" ... ' . $@ );
 }
