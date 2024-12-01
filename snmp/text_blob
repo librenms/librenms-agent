@@ -1,0 +1,370 @@
+#!/usr/bin/env perl
+
+use warnings;
+use strict;
+
+=head1 NAME
+
+text_blob - LinbreNMS JSON extend for text blob stuff.
+
+=head1 VERSION
+
+0.0.1
+
+=cut
+
+our $VERSION = '0.0.1';
+
+=head1 SYNOPSIS
+
+wireguard [B<-c> <config file>] [B<-q>]
+
+wireguard [B<-v>|B<--version>]
+
+wireguard [B<-h>|B<--help>]
+
+=head1 SWITCHES
+
+=head2 -c <config>
+
+Config file to use.
+
+Default: /usr/local/etc/text_blob_extend.json
+
+=head2 -h|--help
+
+Print help info.
+
+=head2 -q
+
+Be quiet when running it.
+
+=head2 -v|--version
+
+Print version info.
+
+=head1 INSTALL
+
+Install the depends.
+
+    # FreeBSD
+    pkg install p5-JSON p5-File-Slurp p5-MIME-Base64
+
+    # Debian
+    apt-get install libjson-perl libmime-base64-perl libfile-slurp-perl
+
+Then set it up in SNMPD.
+
+=head1 CONFIG
+
+The default config is /usr/local/etc/text_blob_extend.json .
+
+    - .blobs :: A hash of commands to run. The key values are the name of the blob.
+
+    - .global_envs :: A hash of enviromental values set.
+
+    - .blob_envs :: A hash of per blob env values. The key name of the blob and each value is
+        a sub hash of enviromental values to set.
+
+    - .output_dir :: Output directory to use.
+        - Default :: /var/cache/text_blob_extend
+
+Example
+
+    {
+        "blobs":{
+            "jls": "jls",
+            "dmesg": "dmesg",
+            "top_io": "top -b -m io -j",
+            "top_cpu": "top -b -m cpu -w -j",
+            "ps": "ps axuw",
+            "netstat": "netstat -rn"
+        }
+    }
+
+=cut
+
+use JSON;
+use Getopt::Std;
+use MIME::Base64;
+use IO::Compress::Gzip qw(gzip $GzipError);
+use File::Slurp;
+use Pod::Usage;
+
+sub main::VERSION_MESSAGE {
+	print 'text_blob LibreNMS extend v. ' . $VERSION . "\n";
+}
+
+sub main::HELP_MESSAGE {
+	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
+}
+
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
+
+#gets the options
+my %opts = ();
+getopts( 'c:qvh', \%opts );
+
+if ( $opts{v} ) {
+	&main::VERSION_MESSAGE;
+	exit 255;
+}
+
+if ( $opts{h} ) {
+	&main::HELP_MESSAGE;
+	exit 255;
+}
+
+if ( !defined( $opts{c} ) ) {
+	$opts{c} = '/usr/local/etc/text_blob_extend.json';
+}
+
+my $return_json = {
+	error       => 0,
+	errorString => '',
+	version     => 2,
+	data        => {
+		non_zero_exits    => 0,
+		warns             => [],
+		blobs             => {},
+		blob_exit_val     => {},
+		blob_exit_signal  => {},
+		blob_has_coredump => {},
+	},
+};
+
+##
+##
+## get original env stuff
+##
+##
+my @original_envs = keys(%ENV);
+my %original_envs_vals;
+foreach my $item (@original_envs) {
+	$original_envs_vals{$item} = $ENV{$item};
+}
+
+##
+##
+## real in the config
+##
+##
+our $config = {
+	global_envs => {},
+	blob_envs   => {},
+	blobs       => {},
+	output_dir  => '/var/cache/text_blob_extend',
+};
+my @global_envs;
+my @blobs;
+if ( -f $opts{c} ) {
+	eval {
+		my $raw_config    = read_file( $opts{c} );
+		my $parsed_config = decode_json($raw_config);
+		# process .global_envs if it exists
+		if ( defined( $parsed_config->{global_envs} )
+			&& ref( $parsed_config->{global_envs} ) eq 'HASH' )
+		{
+			@global_envs = keys( %{ $parsed_config->{global_envs} } );
+			foreach my $item (@global_envs) {
+				if ( ref( $parsed_config->{global_envs}{$item} ) ne '' ) {
+					my $warning
+						= '".global_envs.'
+						. $item
+						. '" has a ref value of '
+						. ref( $parsed_config->{global_envs}{$item} )
+						. ' and not ""';
+					warn($warning);
+					push( @{ $return_json->{data}{warns} }, $warning );
+				} else {
+					push( @global_envs, $item );
+					$config->{global_envs}{$item} = $parsed_config->{global_envs}{$item};
+				}
+			} ## end foreach my $item (@global_envs)
+		} elsif ( defined( $parsed_config->{global_envs} )
+			&& ref( $parsed_config->{global_envs} ) ne 'HASH' )
+		{
+			my $warning = '.global_envs is not a hash but "' . ref( $parsed_config->{global_envs} ) . '"';
+			warn($warning);
+			push( @{ $return_json->{data}{warns} }, $warning );
+		}
+		# process .blob_envs
+		if ( defined( $parsed_config->{blob_envs} )
+			&& ref( $parsed_config->{blob_envs} ) eq 'HASH' )
+		{
+			# ensure all .blob_envs are hashes
+			my @blob_envs = keys( %{ $parsed_config->{blob_envs} } );
+			foreach my $item (@blob_envs) {
+				if ( ref( $parsed_config->{blob_envs}{$item} ) ne 'HASH' ) {
+					my $warning
+						= '".blob_envs.'
+						. $item
+						. '" has a ref value of '
+						. ref( $parsed_config->{blob_envs}{$item} )
+						. ' and not "HASH"';
+					warn($warning);
+					push( @{ $return_json->{data}{warns} }, $warning );
+				} else {
+					my @envs_for_blobs = keys( %{ $parsed_config->{blob_envs}{$item} } );
+					# only create the hash if we have actual keys
+					if ( defined( $envs_for_blobs[0] ) ) {
+						$config->{blob_envs}{$item} = {};
+						# we have keys, so only add scalars
+						foreach my $item2 (@envs_for_blobs) {
+							if ( ref( $parsed_config->{blob_envs}{$item}{$item2} ) ne '' ) {
+								my $warning
+									= '".blob_envs.'
+									. $item . '.'
+									. $item2
+									. '" has a ref value of '
+									. ref( $parsed_config->{blob_envs}{$item}{$item2} )
+									. ' and not ""';
+								warn($warning);
+								push( @{ $return_json->{data}{warns} }, $warning );
+							} else {
+								$config->{blob_envs}{$item}{$item2} = $parsed_config->{blob_envs}{$item}{$item2};
+							}
+						} ## end foreach my $item2 (@envs_for_blobs)
+					} ## end if ( defined( $envs_for_blobs[0] ) )
+				} ## end else [ if ( ref( $parsed_config->{blob_envs}{$item...}))]
+			} ## end foreach my $item (@blob_envs)
+		} elsif ( defined( $parsed_config->{blob_envs} )
+			&& ref( $parsed_config->{blob_envs} ) ne 'HASH' )
+		{
+			my $warning = '.blob_envs is not a hash but "' . ref( $parsed_config->{blob_envs} ) . '"';
+			warn($warning);
+			push( @{ $return_json->{data}{warns} }, $warning );
+		}
+		# process .blobs
+		if ( defined( $parsed_config->{blobs} )
+			&& ref( $parsed_config->{blobs} ) eq 'HASH' )
+		{
+			# if here, it is a hash, now to check to make sure it is all sane
+			my @blobs_check = keys( %{ $parsed_config->{blobs} } );
+			if ( !defined( $blobs_check[0] ) ) {
+				my $warning = '.blobs has no keys defined under it';
+				warn($warning);
+				push( @{ $return_json->{data}{warns} }, $warning );
+			} else {
+				# process
+				foreach my $item (@blobs_check) {
+					if ( ref( $parsed_config->{blobs}{$item} ) ne '' ) {
+						my $warning
+							= '".blobs.'
+							. $item
+							. '" has a ref value of '
+							. ref( $parsed_config->{senvs}{$item} )
+							. ' and not ""';
+						warn($warning);
+						push( @{ $return_json->{data}{warns} }, $warning );
+					} else {
+						push( @blobs, $item );
+						$config->{blobs}{$item} = $parsed_config->{blobs}{$item};
+					}
+				} ## end foreach my $item (@blobs_check)
+			} ## end else [ if ( !defined( $blobs_check[0] ) ) ]
+		} elsif ( defined( $parsed_config->{blobs} )
+			&& ref( $parsed_config->{blobs} ) ne 'HASH' )
+		{
+			# .blobs must always be a hash
+			die( '.blobs is not a hash but "' . ref( $parsed_config->{blob_envs} ) . '"' );
+		} else {
+			# .blobs must always be defined and a hash
+			die('.blobs not defined and not a hash');
+		}
+		# process .output_dir
+		if ( defined( $parsed_config->{output_dir} )
+			&& ref( $parsed_config->{output_dir} ) eq '' )
+		{
+			# defined and is a scalar, so save it
+			$config->{output_dir} = $parsed_config->{output_dir};
+		} elsif ( defined( $parsed_config->{output_dir} )
+			&& ref( $parsed_config->{output_dir} ) ne '' )
+		{
+			# hash or array, so die
+			die( '.output_dir is not a string but a ref type of "' . ref( $parsed_config->{output_dir} ) . '"' );
+		}
+	};
+	if ($@) {
+		$return_json->{error}       = 1;
+		$return_json->{errorString} = $@;
+		return_the_data( $return_json, $opts{B} );
+		exit 0;
+	}
+} else {
+	my $warning = 'Config file, "' . $opts{c} . '", does not exist or is not a file';
+	warn($warning);
+	push( @{ $return_json->{data}{warns} }, $warning );
+}
+
+if ( -e $config->{output_dir} && !-d $config->{output_dir} ) {
+	die( 'Output dir, "' . $config->{output_dir} . '", is not a directory but it exists' );
+} elsif ( !-e $config->{output_dir} ) {
+	mkdir( $config->{output_dir} ) || die( 'Output dir, "' . $config->{output_dir} . '", could not be created' );
+}
+
+##
+##
+## process each specified text blob
+##
+##
+foreach my $blob (@blobs) {
+	#
+	# reset default envs from run time
+	#
+	foreach my $item ( keys(%ENV) ) {
+		if ( !defined( $original_envs_vals{$item} ) ) {
+			delete( $ENV{$item} );
+		} else {
+			$ENV{$item} = $original_envs_vals{$item};
+		}
+	}
+	#
+	# set the global vars
+	#
+	foreach my $item (@global_envs) {
+		$ENV{$item} = $config->{global_envs}{$item};
+	}
+	#
+	# set the blob envs
+	#
+	if ( defined( $config->{ blob_envs} { $blob } ) ) {
+		foreach my $item ( keys( %{ $config->{blob_envs}{$blob} } ) ) {
+			$ENV{$item} = $config->{blob_envs}{$blob}{$item};
+		}
+	}
+	#
+	# run the command and get the stdout
+	#
+	my $command = $config->{blobs}{$blob};
+	my $output  = `$command`;
+	if ($? != 0) {
+		$return_json->{data}{non_zero_exits}++;
+	}
+	$return_json->{data}{blobs}{$blob}             = $output;
+	$return_json->{data}{blob_exit_val}{$blob}     = $? >> 8;
+	$return_json->{data}{blob_exit_signal}{$blob}  = $? & 127;
+	$return_json->{data}{blob_has_coredump}{$blob} = $? & 128;
+} ## end foreach my $blob (@blobs)
+
+##
+##
+## write the output
+##
+##
+
+my $raw_json = encode_json($return_json);
+
+if ( !$opts{q} ) {
+	print $raw_json. "\n";
+}
+
+write_file( $config->{output_dir} . '/json', { atomic => 1 }, $raw_json . "\n" );
+
+my $compressed_string;
+gzip \$raw_json => \$compressed_string;
+my $compressed = encode_base64($compressed_string);
+$compressed =~ s/\n//g;
+$compressed = $compressed . "\n";
+my $print_compressed = 0;
+write_file( $config->{output_dir} . '/snmp', { atomic => 1 }, $compressed );
