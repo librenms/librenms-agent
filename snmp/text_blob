@@ -9,19 +9,19 @@ text_blob - LinbreNMS JSON extend for text blob stuff.
 
 =head1 VERSION
 
-0.0.1
+0.0.2
 
 =cut
 
-our $VERSION = '0.0.1';
+our $VERSION = '0.0.2';
 
 =head1 SYNOPSIS
 
-wireguard [B<-c> <config file>] [B<-q>]
+text_blob [B<-c> <config file>] [B<-q>]
 
-wireguard [B<-v>|B<--version>]
+text_blob [B<-v>|B<--version>]
 
-wireguard [B<-h>|B<--help>]
+text_blob [B<-h>|B<--help>]
 
 =head1 SWITCHES
 
@@ -55,6 +55,14 @@ Install the depends.
 
 Then set it up in SNMPD.
 
+    extend text_blob /bin/cat /var/cache/text_blob_extend/snmp
+
+Setup cron...
+
+    */5 * * * * /etc/snmp/text_blob -q
+
+Create a config file at /usr/local/etc/text_blob_extend.json .
+
 =head1 CONFIG
 
 The default config is /usr/local/etc/text_blob_extend.json .
@@ -72,13 +80,17 @@ The default config is /usr/local/etc/text_blob_extend.json .
 Example
 
     {
+        "global_envs":{
+            "NO_COLOR": 1
+        },
         "blobs":{
             "jls": "jls",
             "dmesg": "dmesg",
             "top_io": "top -b -m io -j",
             "top_cpu": "top -b -m cpu -w -j",
             "ps": "ps axuw",
-            "netstat": "netstat -rn"
+            "routes": "netstat -rn",
+            "netstat": "ncnetstat -n --pct 2> /dev/null"
         }
     }
 
@@ -177,7 +189,6 @@ if ( -f $opts{c} ) {
 					warn($warning);
 					push( @{ $return_json->{data}{warns} }, $warning );
 				} else {
-					push( @global_envs, $item );
 					$config->{global_envs}{$item} = $parsed_config->{global_envs}{$item};
 				}
 			} ## end foreach my $item (@global_envs)
@@ -286,10 +297,7 @@ if ( -f $opts{c} ) {
 		}
 	};
 	if ($@) {
-		$return_json->{error}       = 1;
-		$return_json->{errorString} = $@;
-		return_the_data( $return_json, $opts{B} );
-		exit 0;
+		die($@);
 	}
 } else {
 	my $warning = 'Config file, "' . $opts{c} . '", does not exist or is not a file';
@@ -328,7 +336,7 @@ foreach my $blob (@blobs) {
 	#
 	# set the blob envs
 	#
-	if ( defined( $config->{ blob_envs} { $blob } ) ) {
+	if ( defined( $config->{blob_envs}{$blob} ) ) {
 		foreach my $item ( keys( %{ $config->{blob_envs}{$blob} } ) ) {
 			$ENV{$item} = $config->{blob_envs}{$blob}{$item};
 		}
@@ -338,7 +346,7 @@ foreach my $blob (@blobs) {
 	#
 	my $command = $config->{blobs}{$blob};
 	my $output  = `$command`;
-	if ($? != 0) {
+	if ( $? != 0 ) {
 		$return_json->{data}{non_zero_exits}++;
 	}
 	$return_json->{data}{blobs}{$blob}             = $output;
