@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+
+# Name: hddtemp2
+# Author: Jason Cheng (www.jason.tools)
+# Date: 2025-02-17
+# Purpose: This script replaces the obsolete hddtemp tool for librenms agent to monitor disk temperatures
+# License: Free Software
+
+if type lsblk >/dev/null 2>&1; then
+    # Use lsblk to list physical disks, parameters:
+    # -d: show only disk devices, not partitions
+    # -n: no header line
+    # -p: show full device path
+    # -o NAME,TYPE: output only name and type fields
+    disks=$(lsblk -dnp -o NAME,TYPE | grep 'disk' | cut -d' ' -f1 | tr '\n' ' ')
+else
+    # Fallback: use find to locate SATA/SAS disks (like sda, hda)
+    disks=$(find /dev -name '[sh]d[a-z]' -or -name '[sh]d[a-z][a-z]' | tr '\n' ' ')
+fi
+
+smartctl=$(which smartctl 2>/dev/null)
+if [ "${smartctl}" != "" ]; then
+    if [ -x "${smartctl}" ]; then
+        output=""
+        for disk in $disks; do
+            # Exclude non-physical disks like RBD (RADOS Block Device)
+            if [[ ! "$disk" =~ rbd ]]; then
+                # Get disk airflow temperature
+                temp_info=$(${smartctl} -A $disk | grep 'Airflow_Temperature_Cel' | awk '{print $10}')
+                # Get disk model
+                model=$(${smartctl} -i $disk | grep 'Device Model' | cut -d':' -f2 | sed 's/^\s*//g')
+                # Format output as: |device_path|model|temperature|unit(C)|
+                output="${output}|${disk}|${model}|${temp_info}|C|"
+            fi
+        done
+        # Clean output, keep only printable characters
+        content_smartctl=$(echo "$output" | tr -cd '\12\40-\176')
+    else
+        echo "smartctl not executable" >&2
+    fi
+else
+    echo "smartctl not installed" >&2
+fi
+
+nvme_disks=$(find /dev -name 'nvme[0-9]n[0-9]' | tr '\n' ' ')
+nvme=$(which nvme 2>/dev/null)
+if [ "${nvme}" != "" ]; then
+    if [ -x "${nvme}" ]; then
+        output_nvme=""
+        for disk in $nvme_disks; do
+            # Also exclude non-physical disks
+            if [[ ! "$disk" =~ rbd ]]; then
+                # Get NVMe disk temperature
+                temp=$(${nvme} smart-log $disk | grep temperature | awk '{print $3}' | tr -d '[:space:]')
+                # Get NVMe disk model
+                model=$(${nvme} id-ctrl $disk | grep 'mn' | awk '{print $3}' | tr -d '[:space:]')
+                # Use the same output format
+                output_nvme="${output_nvme}|${disk}|${model}|${temp}|C|"
+            fi
+        done
+        # Clean output
+        content_nvme=$(echo "$output_nvme" | tr -cd '\12\40-\176')
+    else
+        echo "nvme not executable" >&2
+    fi
+else
+    echo "nvme not installed" >&2
+fi
+
+if [ "${content_smartctl}" != "" ] || [ "${content_nvme}" != "" ] ; then
+    echo '<<<hddtemp>>>'
+    echo "${content_smartctl}${content_nvme}"
+else
+    echo "no compatible disks found" >&2
+fi
