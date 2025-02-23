@@ -5,9 +5,8 @@ IFS=$'\n\t'
 CONFIGFILE='/etc/snmp/pi-hole.conf'
 
 API_AUTH_KEY=""
-API_URL="localhost/admin/api.php"
-URL_READ_ONLY="?summaryRaw&auth="
-URL_QUERY_TYPE="?getQueryTypes&auth="
+API_URL="localhost/api"
+URL_READ_ONLY="/stats/summary"
 PICONFIGFILE='/etc/pihole/setupVars.conf'
 DHCPLEASEFILE='/etc/pihole/dhcp.leases'
 
@@ -69,11 +68,6 @@ debug() {
 		echo '[ok] URL_READ_ONLY is set'
 	fi
 
-	if [ -z "${URL_QUERY_TYPE}" ]; then
-		echo '[error] URL_QUERY_TYPE is not set'
-	else
-		echo '[ok] URL_QUERY_TYPE not set'
-	fi
 	if [ -f $PICONFIGFILE ]; then
 		echo '[ok] Pi-Hole config file exists, DHCP stats will be captured if scope active'
 	else
@@ -88,12 +82,9 @@ debug() {
 
 exportdata() {
 	# domains_being_blocked / dns_query_total / ads_blocked_today / ads_percentage_today
-	# unique_domains / queries_forwarded / queries_cached
-	GET_STATS=$(curl -s "${API_URL}${URL_READ_ONLY}${API_AUTH_KEY}" | jq '.domains_being_blocked, .dns_queries_today, .ads_blocked_today, .ads_percentage_today, .unique_domains, .queries_forwarded, .queries_cached')
+	# unique_domains / queries_forwarded / queries_cached / A / AAAA / PTR / SRV
+	GET_STATS=$(curl -s "${API_URL}${URL_READ_ONLY}${API_AUTH_KEY}" | jq '.gravity.domains_being_blocked, .queries.total, .queries.blocked, .queries.percent_blocked, .queries.unique_domains, .queries.forwarded, .queries.cached, .queries.types.A, .queries.types.AAAA, .queries.types.PTR, .queries.types.SRV')
 	echo "$GET_STATS" | tr " " "\n"
-	# A / AAAA / PTR / SRV
-	GET_QUERY_TYPE=$(curl -s "${API_URL}${URL_QUERY_TYPE}${API_AUTH_KEY}" | jq '.[]["A (IPv4)", "AAAA (IPv6)", "PTR", "SRV"]')
-	echo "$GET_QUERY_TYPE" | tr " " "\n"
 
 	# Find number of DHCP address in scope and current lease count
 	# case-insensitive compare, just in case :)
