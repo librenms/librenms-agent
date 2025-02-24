@@ -81,9 +81,15 @@ debug() {
 }
 
 exportdata() {
+	SESSION_SID=""
+
+	if ! [ -z "$API_AUTH_KEY" ]; then
+		SESSION_SID=$(curl -X POST --data "{\"password\":\"${API_AUTH_KEY}\"}" -s "${API_URL}/auth" | jq -r '.session.sid')
+	fi
+
 	# domains_being_blocked / dns_query_total / ads_blocked_today / ads_percentage_today
 	# unique_domains / queries_forwarded / queries_cached / A / AAAA / PTR / SRV
-	GET_STATS=$(curl -s "${API_URL}${URL_READ_ONLY}${API_AUTH_KEY}" | jq '.gravity.domains_being_blocked, .queries.total, .queries.blocked, .queries.percent_blocked, .queries.unique_domains, .queries.forwarded, .queries.cached, .queries.types.A, .queries.types.AAAA, .queries.types.PTR, .queries.types.SRV')
+	GET_STATS=$(curl -H "X-FTL-SID: ${SESSION_SID}" -s "${API_URL}${URL_READ_ONLY}" | jq '.gravity.domains_being_blocked, .queries.total, .queries.blocked, .queries.percent_blocked, .queries.unique_domains, .queries.forwarded, .queries.cached, .queries.types.A, .queries.types.AAAA, .queries.types.PTR, .queries.types.SRV')
 	echo "$GET_STATS" | tr " " "\n"
 
 	# Find number of DHCP address in scope and current lease count
