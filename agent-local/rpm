@@ -3,6 +3,11 @@
 # If you want to override this, put the command in cron.
 # We cache because it is a 1sec delay, which is painful for the poller
 if [ -x /bin/rpm ]; then
+
+  CACHE_DIR="/var/cache/librenms"
+  FILE="$CACHE_DIR/agent-local-rpm"
+  mkdir -p $CACHE_DIR
+
   DATE=$(date +%s)
   FILE=/var/cache/librenms/agent-local-rpm
   if [ ! -e $FILE ]; then
