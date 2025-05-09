@@ -1,0 +1,11 @@
+# librenms-systemd-generate.timer
+
+[Unit]
+Description=generates systemd information hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target

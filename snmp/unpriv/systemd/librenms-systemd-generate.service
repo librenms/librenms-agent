@@ -1,0 +1,7 @@
+# librenms-systemd-generate.service
+
+[Unit]
+Description=generate systemd information
+
+[Service]
+ExecStart=/usr/bin/python /usr/bin/systemd.py > /var/lib/net-snmp/systemd.txt
