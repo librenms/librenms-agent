@@ -29,7 +29,7 @@ BIN_PKG='/usr/sbin/pkg'
 CMD_PKG=' audit -q -F'
 BIN_APK='/sbin/apk'
 CMD_APK=' version'
-SNMP_PERSISTENT_DIR="$(net-snmp-config --persistent-directory)"
+SNMP_PERSISTENT_DIR="/var/lib/net-snmp"
 UNPRIV_SHARED_FILE="$SNMP_PERSISTENT_DIR/osupdates/stats.txt"
 
 mkdir -p "$(dirname "$UNPRIV_SHARED_FILE" )"
