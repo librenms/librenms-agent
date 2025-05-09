@@ -4,4 +4,6 @@
 Description=generate systemd information
 
 [Service]
-ExecStart=/usr/bin/python /usr/bin/systemd.py > /var/lib/net-snmp/systemd.txt
+ExecStart=/usr/bin/python /usr/bin/systemd.py
+StandardOutput=file:/var/lib/net-snmp/systemd.txt
+StandardError=file:/var/lib/net-snmp/systemd.txt
