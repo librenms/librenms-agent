@@ -226,7 +226,8 @@ my $config;
 if ( -f $config_file && !-r $config_file ) {
 	die( $config_file . ' is not readable' );
 } elsif ( -f $config_file ) {
-	$config = decode_json( read_file($config_file) );
+	my $raw_config = read_file($config_file);
+	$config = decode_json($raw_config);
 	if ( ref($config) ne 'HASH' ) {
 		die( '"' . ref($config) . '" is the base ref type for the config instead of HASH' );
 	}
