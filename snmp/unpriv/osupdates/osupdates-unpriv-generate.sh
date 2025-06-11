@@ -60,7 +60,7 @@ elif command -v pacman &>/dev/null ; then
     # Arch
     # calling pacman -Sup does not refresh the package list from the mirrors,
     # thus it is not useful to find out if there are updates. Keep the pacman call
-    # to accomodate users that do not have it. checkupdates is in pacman-contrib.
+    # to accommodate users that do not have it. checkupdates is in pacman-contrib.
     # also enables snmpd to collect this information if it's not run as root
     if command -v checkupdates &>/dev/null ; then
         # shellcheck disable=SC2086
