@@ -43,29 +43,34 @@ foreach my $child (@{$conn->get("/api2/json/cluster/status")}) {
 }
 
 if (!defined($clustername)) {
-        $clustername = $hostname;
+    $clustername = $hostname;
 }
 
 print "<<<app-proxmox>>>\n";
-
 print "$clustername\n";
 
 foreach my $vm (@{$conn->get("/api2/json/nodes/$hostname/netstat")}) {
-	my $vmid = $vm->{'vmid'};
+    my $vmid = $vm->{'vmid'};
+    my $vmname;
+
+    # Try QEMU (VM)
     eval {
-        my $vmname = $conn->get("/api2/json/nodes/$hostname/qemu/$vmid/config")->{'name'};
-        my $tmpl = $conn->get("/api2/json/nodes/$hostname/qemu/$vmid/config")->{'template'};
-        if (defined($tmpl) && $tmpl == 1) {
-            die;
-        }
-        print "$vmid/$vm->{'dev'}/$vm->{'in'}/$vm->{'out'}/$vmname\n";
+        my $config = $conn->get("/api2/json/nodes/$hostname/qemu/$vmid/config");
+        die if defined($config->{'template'}) && $config->{'template'} == 1;
+        $vmname = $config->{'name'};
     };
-    eval {
-        my $vmname = $conn->get("/api2/json/nodes/$hostname/lxc/$vmid/config")->{'hostname'};
-        my $tmpl = $conn->get("/api2/json/nodes/$hostname/lxc/$vmid/config")->{'template'};
-        if (defined($tmpl) && $tmpl == 1) {
-            die;
-        }
-        print "$vmid/$vm->{'dev'}/$vm->{'in'}/$vm->{'out'}/$vmname\n";
-    };
-};
+
+    # Try LXC
+    if (!defined $vmname) {
+        eval {
+            my $config = $conn->get("/api2/json/nodes/$hostname/lxc/$vmid/config");
+            die if defined($config->{'template'}) && $config->{'template'} == 1;
+            $vmname = $config->{'hostname'};
+        };
+    }
+
+    # Default setting
+    $vmname //= "VMID-$vmid";
+
+    print "$vmid/$vm->{'dev'}/$vm->{'in'}/$vm->{'out'}/$vmname\n";
+}
