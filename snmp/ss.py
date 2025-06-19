@@ -41,20 +41,19 @@
 #                                 Specifying "all" includes all of the families.
 #                                 For example: to include only inet and inet6
 #                                 families, you would specify "inet,inet6": ["all"]
-#         ```
-#         {
-#             "ss_cmd": "/sbin/ss",
-#             "socket_types": "all",
-#             "addr_families": "all"
-#         }
-#         ```
-#     4. Restart snmpd and activate the app for desired host.
+#           d.) Example file format
+#           {
+#                  "ss_cmd": "/usr/bin/ss",
+#                  "socket_types": "dccp,icmp6,mptcp,p_dgr,p_raw,raw,sctp,tcp,ti_dg,ti_rd,ti_sq,ti_st,u_dgr,u_seq,u_str,udp,unknown,v_dgr,v_str,xdp",
+#                  "addr_families": "inet,inet6,link,netlink,tipc,unix,vsock"
+#           }
+#
+##     4. Restart snmpd and activate the app for desired host.
 
 import argparse
 import json
 import subprocess
 import sys
-
 
 DEFAULT_CONFIG_FILE = "/etc/snmp/ss.json"
 
@@ -181,9 +180,15 @@ def error_handler(error_name, err):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Socket Statistics Script for LibreNMS")
-    parser.add_argument('-r', '--config', default=DEFAULT_CONFIG_FILE,
-                        help="Path to configuration JSON file (default: /etc/snmp/ss.json)")
+    parser = argparse.ArgumentParser(
+        description="Socket Statistics Script for LibreNMS"
+    )
+    parser.add_argument(
+        "-r",
+        "--config",
+        default=DEFAULT_CONFIG_FILE,
+        help="Path to configuration JSON file (default: /etc/snmp/ss.json)",
+    )
     return parser.parse_args()
 
 
@@ -343,7 +348,7 @@ def main():
     # Parse configuration file.
     args = parse_args()
     ss_cmd, socket_allow_list, addr_family_allow_list = config_file_parser(args.config)
-    
+
     # Execute ss command for socket types.
     for gentype in list(SOCKET_MAPPINGS.keys()):
         # Skip socket types and address families disabled by the user.
