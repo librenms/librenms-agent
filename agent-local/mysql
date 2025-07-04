@@ -1304,7 +1304,17 @@ function to_int ( $str ) {
 function run_query($sql, $conn) {
    global $debug;
    debug($sql);
-   $result = @mysqli_query($conn, $sql);
+   try {
+      $result = @mysqli_query($conn, $sql);
+   }
+   catch ( Exception $e )
+   {
+      if ( $debug )
+      {
+         debug( $e->getMessages() );
+      }
+   }
+
    if ( $debug && strpos($sql, 'SHOW SLAVE STATUS ') === false ) {
       $error = @mysqli_error($conn);
       if ( $error ) {
