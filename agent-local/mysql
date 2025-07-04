@@ -1311,7 +1311,7 @@ function run_query($sql, $conn) {
    {
       if ( $debug )
       {
-         debug( $e->getMessages() );
+         debug('Caught mysqli exception: ' . $e->getMessages());
       }
    }
 
