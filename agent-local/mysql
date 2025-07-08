@@ -1322,6 +1322,12 @@ function run_query($sql, $conn) {
          die("SQLERR $error in $sql");
       }
    }
+
+   if ( is_null( $result ) ) {
+      debug('No result for query: ' . $sql);
+      return;
+   }
+
    $array = array();
    $count = @mysqli_num_rows($result);
    if ( $count > 10000 ) {
