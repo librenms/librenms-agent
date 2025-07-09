@@ -138,6 +138,11 @@ if (!isset($called_by_script_server)) {
    array_shift($_SERVER["argv"]); # Strip off this script's filename
    $options = parse_cmdline($_SERVER["argv"]);
    validate_options($options);
+   if( isset($options["debug-log"]) ){
+      $debug = TRUE;
+      $debug_log = $options["debug-log"];
+      debug("Debug flag set on commandline. This will omit some early debug statements.");
+   }
    $result = ss_get_mysql_stats($options);
 
    debug($result);
@@ -189,7 +194,7 @@ if (!function_exists('array_change_key_case') ) {
 # ============================================================================
 function validate_options($options) {
    debug($options);
-   $opts = array('items', 'user', 'pass', 'heartbeat', 'nocache', 'port', 'server-id');
+   $opts = array('items', 'user', 'pass', 'heartbeat', 'nocache', 'port', 'server-id', 'debug-log');
    # Required command-line options
    foreach ( array() as $option ) {
       if (!isset($options[$option]) || !$options[$option] ) {
@@ -209,9 +214,10 @@ function validate_options($options) {
 function usage($message) {
    global $mysql_host, $mysql_user, $mysql_pass, $mysql_port;
 
+   $fn = basename($_SERVER['SCRIPT_FILENAME']);
    $usage = <<<EOF
 $message
-Usage: php ss_get_mysql_stats.php --host <host> --items <item,...> [OPTION]
+Usage: php $fn [--host <host> --items <item,...> [OPTION]]
 
    --host               MySQL host
    --items              Comma-separated list of the items whose data you want
@@ -223,7 +229,17 @@ Usage: php ss_get_mysql_stats.php --host <host> --items <item,...> [OPTION]
    --connection-timeout MySQL connection timeout
    --server-id          Server id to associate with a heartbeat if heartbeat usage is enabled
    --nocache            Do not cache results in a file
+   --debug-log          File to log debug messages to
    --help               Show usage
+
+MySQL params can also be defined in a file '$fn.cfg' in the same directory as this script
+containing e.g.
+    <?php
+    \$mysql_user = 'a_user';
+    \$mysql_pass = 'a_password';
+    \$mysql_host = 'localhost';
+    \$mysql_port = 3306;
+
 
 EOF;
    die($usage);
