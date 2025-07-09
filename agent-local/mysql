@@ -28,13 +28,13 @@ if (!array_key_exists('SCRIPT_FILENAME', $_SERVER)
 # CONFIGURATION
 # ============================================================================
 # Define MySQL connection constants. Instead of defining parameters here,
-# you can also define them in another file named the same as this
-# file with a .cnf extension.
+# you can define them in another file named the same as this
+# file, with a .cnf extension.
 # ============================================================================
 
 $mysql_user = '';
 $mysql_pass = '';
-$mysql_host = 'localhost';
+$mysql_host = 'localhost'; # NB the snmp version of this script uses '127.0.0.1'
 $mysql_port = 3306;
 $mysql_ssl  = FALSE;   # Whether to use SSL to connect to MySQL.
 $mysql_ssl_key  = '/etc/pki/tls/certs/mysql/client-key.pem';
@@ -42,11 +42,12 @@ $mysql_ssl_cert = '/etc/pki/tls/certs/mysql/client-cert.pem';
 $mysql_ssl_ca   = '/etc/pki/tls/certs/mysql/ca-cert.pem';
 $mysql_connection_timeout = 5;
 
+$check_mk  = TRUE;        # FALSE for SNMP extend, TRUE for check_mk agent
+
 $heartbeat = FALSE;        # Whether to use pt-heartbeat table for repl. delay calculation.
 $heartbeat_utc = FALSE;    # Whether pt-heartbeat is run with --utc option.
 $heartbeat_server_id = 0;  # Server id to associate with a heartbeat. Leave 0 if no preference.
 $heartbeat_table = 'percona.heartbeat'; # db.tbl.
-
 
 $cache_dir  = '/var/cache/librenms';   # If set, this uses caching to avoid multiple calls.
 $timezone   = null;    # If not set, uses the system default.  Example: "UTC"
@@ -67,16 +68,21 @@ $debug_log = FALSE; # If $debug_log is a filename, it'll be used.
 # ============================================================================
 # You should not need to change anything below this line.
 # ============================================================================
-$version = "1.1.7";
+$version = "1.1.8";
 
 # ============================================================================
 # Include settings from an external config file (issue 39).
 # ============================================================================
-echo("<<<mysql>>>\n");
+if ($check_mk) {
+  echo("<<<mysql>>>\n");
+}
 
 if (file_exists(__FILE__ . '.cnf' ) ) {
    require(__FILE__ . '.cnf');
    debug('Found configuration file ' . __FILE__ . '.cnf');
+} else {
+  echo("No ".__FILE__ . ".cnf found!\n");
+  exit();
 }
 
 # Make this a happy little script even when there are errors.
@@ -152,6 +158,8 @@ if (!isset($called_by_script_server)) {
          $output[] = $item;
       }
       list($short, $val) = explode(":", $item);
+      # ensure returned values do not exceed max limits in RRD
+      $val = $val % ( 124999999999 + 1 );
       echo(strtolower($short).":".strtolower($val)."\n");
    }
    debug(array("Final result", $output));
@@ -527,8 +535,8 @@ function ss_get_mysql_stats( $options ) {
    # those to the array too.
    if ($chk_options['innodb']
          && array_key_exists('InnoDB', $engines)
-         && $engines['InnoDB'] == 'YES'
-         || $engines['InnoDB'] == 'DEFAULT'
+         && ( $engines['InnoDB'] == 'YES'
+         ||   $engines['InnoDB'] == 'DEFAULT' )
    ) {
       $result        = run_query("SHOW /*!50000 ENGINE*/ INNODB STATUS", $conn);
       $istatus_text = $result[0]['Status'];
@@ -1304,6 +1312,7 @@ function to_int ( $str ) {
 function run_query($sql, $conn) {
    global $debug;
    debug($sql);
+   mysqli_report(MYSQLI_REPORT_OFF);
    $result = @mysqli_query($conn, $sql);
    if ( $debug && strpos($sql, 'SHOW SLAVE STATUS ') === false ) {
       $error = @mysqli_error($conn);
@@ -1313,13 +1322,15 @@ function run_query($sql, $conn) {
       }
    }
    $array = array();
-   $count = @mysqli_num_rows($result);
-   if ( $count > 10000 ) {
-      debug('Abnormal number of rows returned: ' . $count);
-   }
-   else {
-      while ( $row = @mysqli_fetch_array($result) ) {
-         $array[] = $row;
+   if ( $result ) {
+      $count = @mysqli_num_rows($result);
+      if ( $count > 10000 ) {
+         debug('Abnormal number of rows returned: ' . $count);
+      }
+      else {
+         while ( $row = @mysqli_fetch_array($result) ) {
+	    $array[] = $row;
+         }
       }
    }
    debug(array($sql, $array));

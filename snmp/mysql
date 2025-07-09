@@ -27,14 +27,14 @@ if (!array_key_exists('SCRIPT_FILENAME', $_SERVER)
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-# Define MySQL connection constants in config.php. Instead of defining
-# parameters here, you can define them in another file named the same as this
+# Define MySQL connection constants. Instead of defining parameters here,
+# you can define them in another file named the same as this
 # file, with a .cnf extension.
 # ============================================================================
 
 $mysql_user = '';
 $mysql_pass = '';
-$mysql_host = '127.0.0.1';
+$mysql_host = '127.0.0.1'; # NB the agent-local version of this script uses 'localhost'
 $mysql_port = 3306;
 $mysql_ssl  = FALSE;   # Whether to use SSL to connect to MySQL.
 $mysql_ssl_key  = '/etc/pki/tls/certs/mysql/client-key.pem';
@@ -68,7 +68,7 @@ $debug_log = FALSE; # If $debug_log is a filename, it'll be used.
 # ============================================================================
 # You should not need to change anything below this line.
 # ============================================================================
-$version = "1.1.7";
+$version = "1.1.8";
 
 # ============================================================================
 # Include settings from an external config file (issue 39).
