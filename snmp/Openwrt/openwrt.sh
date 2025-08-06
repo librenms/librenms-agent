@@ -6,6 +6,7 @@ BASE_OID=".1.3.6.1.4.1.2021.255"
 WLAP_OID="$BASE_OID.87.76.1"
 WLCLIENT_OID="$BASE_OID.87.76.2"
 WLFRQ_OID="$BASE_OID.87.76.3"
+WLNOISE_OID="$BASE_OID.87.76.4"
 WL_ENTRIES=""
 WL_LASTREFRESH=0
 
@@ -24,11 +25,13 @@ get_wlinfo() {
     channel=$(/usr/bin/iwinfo $interface info | /bin/grep Mode | /bin/grep Channel | /usr/bin/cut -s -d"(" -f 2 | /usr/bin/cut -s -d")" -f 1 | /bin/sed 's/ //g')
     clients=$(/usr/sbin/iw dev "$interface" station dump 2>/dev/null | /bin/grep Station | /usr/bin/cut -f 2 -s -d" " | /usr/bin/wc -l)
     frequency=$(/usr/sbin/iw dev "$interface" info 2>/dev/null | /bin/grep channel | /usr/bin/cut -f 2- -s -d" " | /usr/bin/cut -f 2- -s -d"(" | /usr/bin/cut -f 1 -s -d" ")
+    noise=$(/usr/bin/iwinfo "$interface" assoclist 2>/dev/null | grep -v "^$" | /usr/bin/cut -s -d "/" -f 2 | /usr/bin/cut -s -d "(" -f 1 | /usr/bin/cut -s -d " " -f 2 | /usr/bin/tail -1)
 
     WL_ENTRIES="$WL_ENTRIES
 $WLAP_OID.$id|string|$ssid($channel)
 $WLCLIENT_OID.$id|integer|$clients
-$WLFRQ_OID.$id|integer|$frequency"
+$WLFRQ_OID.$id|integer|$frequency
+$WLNOISE_OID.$id|integer|$noise"
 
     let id=$id+1
   done
