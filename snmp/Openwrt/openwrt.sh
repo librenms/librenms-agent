@@ -3,8 +3,9 @@
 BASE_OID=".1.3.6.1.4.1.2021.255"
 
 # WL => ascii => 87 76
-WLSSID_OID="$BASE_OID.87.76.1"
+WLAP_OID="$BASE_OID.87.76.1"
 WLCLIENT_OID="$BASE_OID.87.76.2"
+WLFRQ_OID="$BASE_OID.87.76.3"
 WL_ENTRIES=""
 WL_LASTREFRESH=0
 
@@ -20,12 +21,14 @@ get_wlinfo() {
   id=1
   for interface in $interfaces; do
     ssid=$(/usr/bin/iwinfo $interface info | /bin/grep ESSID | /usr/bin/cut -s -d ":" -f 2 | /bin/sed 's/ //g' | /bin/sed 's/"//g')
-    frequency=$(/usr/bin/iwinfo $interface info | /bin/grep Mode | /bin/grep Channel | /usr/bin/cut -s -d"(" -f 2 | /usr/bin/cut -s -d")" -f 1 | /bin/sed 's/ //g')
+    channel=$(/usr/bin/iwinfo $interface info | /bin/grep Mode | /bin/grep Channel | /usr/bin/cut -s -d"(" -f 2 | /usr/bin/cut -s -d")" -f 1 | /bin/sed 's/ //g')
     clients=$(/usr/sbin/iw dev "$interface" station dump 2>/dev/null | /bin/grep Station | /usr/bin/cut -f 2 -s -d" " | /usr/bin/wc -l)
+    frequency=$(/usr/sbin/iw dev "$interface" info 2>/dev/null | /bin/grep channel | /usr/bin/cut -f 2- -s -d" " | /usr/bin/cut -f 2- -s -d"(" | /usr/bin/cut -f 1 -s -d" ")
 
     WL_ENTRIES="$WL_ENTRIES
-$WLSSID_OID.$id|string|$ssid($frequency)
-$WLCLIENT_OID.$id|integer|$clients"
+$WLAP_OID.$id|string|$ssid($channel)
+$WLCLIENT_OID.$id|integer|$clients
+$WLFRQ_OID.$id|integer|$frequency"
 
     let id=$id+1
   done
