@@ -7,6 +7,15 @@ WLAP_OID="$BASE_OID.87.76.1"
 WLCLIENT_OID="$BASE_OID.87.76.2"
 WLFRQ_OID="$BASE_OID.87.76.3"
 WLNOISE_OID="$BASE_OID.87.76.4"
+WLRATE_OID="$BASE_OID.87.76.5"
+WLRATE_TX_SUM_OID="$WLRATE_OID.1.1"
+WLRATE_TX_AVG_OID="$WLRATE_OID.1.2"
+WLRATE_TX_MIN_OID="$WLRATE_OID.1.3"
+WLRATE_TX_MAX_OID="$WLRATE_OID.1.4"
+WLRATE_RX_SUM_OID="$WLRATE_OID.2.1"
+WLRATE_RX_AVG_OID="$WLRATE_OID.2.2"
+WLRATE_RX_MIN_OID="$WLRATE_OID.2.3"
+WLRATE_RX_MAX_OID="$WLRATE_OID.2.3"
 WL_ENTRIES=""
 WL_LASTREFRESH=0
 
@@ -27,11 +36,27 @@ get_wlinfo() {
     frequency=$(/usr/sbin/iw dev "$interface" info 2>/dev/null | /bin/grep channel | /usr/bin/cut -f 2- -s -d" " | /usr/bin/cut -f 2- -s -d"(" | /usr/bin/cut -f 1 -s -d" ")
     noise=$(/usr/bin/iwinfo "$interface" assoclist 2>/dev/null | grep -v "^$" | /usr/bin/cut -s -d "/" -f 2 | /usr/bin/cut -s -d "(" -f 1 | /usr/bin/cut -s -d " " -f 2 | /usr/bin/tail -1)
 
+    for dir in "tx" "rx"; do
+      ratelist=$(/usr/sbin/iw dev "$interface" station dump 2>/dev/null | /bin/grep "$dir bitrate" | /usr/bin/cut -f 2 -s -d" ")
+      eval rate_${dir}_sum=$(/bin/echo "$ratelist" | /usr/bin/awk -F ':' '{sum += $dir} END {printf "%d\n", 1000000*sum}')
+      eval rate_${dir}_avg=$(/bin/echo "$ratelist" | /usr/bin/awk -F ':' '{sum += $dir} END {printf "%d\n", 1000000*sum/NR}')
+      eval rate_${dir}_min=$(/bin/echo "$ratelist" | /usr/bin/awk -F ':' 'NR == 1 || $dir < min {min = $dir} END {printf "%d\n", 1000000*min}')
+      eval rate_${dir}_max=$(/bin/echo "$ratelist" | /usr/bin/awk -F ':' 'NR == 1 || $dir > max {max = $dir} END {printf "%d\n", 1000000*max}')
+    done
+
     WL_ENTRIES="$WL_ENTRIES
 $WLAP_OID.$id|string|$ssid($channel)
 $WLCLIENT_OID.$id|integer|$clients
 $WLFRQ_OID.$id|integer|$frequency
-$WLNOISE_OID.$id|integer|$noise"
+$WLNOISE_OID.$id|integer|$noise
+$WLRATE_TX_SUM_OID.$id|integer|$rate_tx_sum
+$WLRATE_RX_SUM_OID.$id|integer|$rate_rx_sum
+$WLRATE_TX_AVG_OID.$id|integer|$rate_tx_avg
+$WLRATE_RX_AVG_OID.$id|integer|$rate_rx_avg
+$WLRATE_TX_MIN_OID.$id|integer|$rate_tx_min
+$WLRATE_RX_MIN_OID.$id|integer|$rate_rx_min
+$WLRATE_TX_MAX_OID.$id|integer|$rate_tx_max
+$WLRATE_RX_MAX_OID.$id|integer|$rate_rx_max"
 
     let id=$id+1
   done
