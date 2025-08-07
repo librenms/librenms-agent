@@ -32,28 +32,28 @@ get_wlinfo() {
 
   WL_LASTREFRESH=$(date +%s)
 
-  interfaces=$(/usr/bin/iwinfo | /bin/grep ESSID | /usr/bin/cut -s -d " " -f 1)
+  interfaces=$(iwinfo | grep ESSID | cut -s -d " " -f 1)
   id=1
   for interface in $interfaces; do
-    ssid=$(/usr/bin/iwinfo $interface info | /bin/grep ESSID | /usr/bin/cut -s -d ":" -f 2 | /bin/sed 's/ //g' | /bin/sed 's/"//g')
-    channel=$(/usr/bin/iwinfo $interface info | /bin/grep Mode | /bin/grep Channel | /usr/bin/cut -s -d"(" -f 2 | /usr/bin/cut -s -d")" -f 1 | /bin/sed 's/ //g')
-    clients=$(/usr/sbin/iw dev $interface station dump 2>/dev/null | /bin/grep Station | /usr/bin/cut -f 2 -s -d" " | /usr/bin/wc -l)
-    frequency=$(/usr/sbin/iw dev $interface info 2>/dev/null | /bin/grep channel | /usr/bin/cut -f 2- -s -d" " | /usr/bin/cut -f 2- -s -d"(" | /usr/bin/cut -f 1 -s -d" ")
-    noise=$(/usr/bin/iwinfo $interface assoclist 2>/dev/null | grep -v "^$" | /usr/bin/cut -s -d "/" -f 2 | /usr/bin/cut -s -d "(" -f 1 | /usr/bin/cut -s -d " " -f 2 | /usr/bin/tail -1)
+    ssid=$(iwinfo $interface info | grep ESSID | cut -s -d ":" -f 2 | sed 's/ //g' | sed 's/"//g')
+    channel=$(iwinfo $interface info | grep Mode | grep Channel | cut -s -d"(" -f 2 | cut -s -d")" -f 1 | sed 's/ //g')
+    clients=$(/usr/sbin/iw dev $interface station dump 2>/dev/null | grep Station | cut -f 2 -s -d" " | wc -l)
+    frequency=$(/usr/sbin/iw dev $interface info 2>/dev/null | grep channel | cut -f 2- -s -d" " | cut -f 2- -s -d"(" | cut -f 1 -s -d" ")
+    noise=$(iwinfo $interface assoclist 2>/dev/null | grep -v "^$" | cut -s -d "/" -f 2 | cut -s -d "(" -f 1 | cut -s -d " " -f 2 | tail -1)
 
     for dir in "tx" "rx"; do
-      ratelist=$(/usr/sbin/iw dev $interface station dump 2>/dev/null | /bin/grep "$dir bitrate" | /usr/bin/cut -f 2 -s -d" ")
-      eval rate_${dir}_sum="$(/bin/echo "${ratelist}" | /usr/bin/awk -F ':' '{sum += $dir} END {printf "%d\n", 1000000*sum}')"
-      eval rate_${dir}_avg="$(/bin/echo "${ratelist}" | /usr/bin/awk -F ':' '{sum += $dir} END {printf "%d\n", 1000000*sum/NR}')"
-      eval rate_${dir}_min="$(/bin/echo "${ratelist}" | /usr/bin/awk -F ':' 'NR == 1 || $dir < min {min = $dir} END {printf "%d\n", 1000000*min}')"
-      eval rate_${dir}_max="$(/bin/echo "${ratelist}" | /usr/bin/awk -F ':' 'NR == 1 || $dir > max {max = $dir} END {printf "%d\n", 1000000*max}')"
+      ratelist=$(/usr/sbin/iw dev $interface station dump 2>/dev/null | grep "$dir bitrate" | cut -f 2 -s -d" ")
+      eval rate_${dir}_sum="$(echo "${ratelist}" | awk -F ':' '{sum += $dir} END {printf "%d\n", 1000000*sum}')"
+      eval rate_${dir}_avg="$(echo "${ratelist}" | awk -F ':' '{sum += $dir} END {printf "%d\n", 1000000*sum/NR}')"
+      eval rate_${dir}_min="$(echo "${ratelist}" | awk -F ':' 'NR == 1 || $dir < min {min = $dir} END {printf "%d\n", 1000000*min}')"
+      eval rate_${dir}_max="$(echo "${ratelist}" | awk -F ':' 'NR == 1 || $dir > max {max = $dir} END {printf "%d\n", 1000000*max}')"
     done
 
-    snrlist=$(/usr/bin/iwinfo $interface assoclist 2>/dev/null | /usr/bin/cut -s -d "/" -f 2 | /usr/bin/cut -s -d "(" -f 2 | /usr/bin/cut -s -d " " -f 2 | /usr/bin/cut -s -d ")" -f 1)
-    snr_sum=$(/bin/echo $snrlist | /usr/bin/awk -F ':' '{sum += $interface} END {printf "%d\n", sum}')
-    snr_avg=$(/bin/echo $snrlist | /usr/bin/awk -F ':' '{sum += $interface} END {printf "%d\n", sum/NR}')
-    snr_min=$(/bin/echo $snrlist | /usr/bin/awk -F ':' 'NR == 1 || $interface < min {min = $interface} END {printf "%d\n", min}')
-    snr_max=$(/bin/echo $snrlist | /usr/bin/awk -F ':' 'NR == 1 || $interface > max {max = $interface} END {printf "%d\n", max}')
+    snrlist=$(iwinfo $interface assoclist 2>/dev/null | cut -s -d "/" -f 2 | cut -s -d "(" -f 2 | cut -s -d " " -f 2 | cut -s -d ")" -f 1)
+    snr_sum=$(echo $snrlist | awk -F ':' '{sum += $interface} END {printf "%d\n", sum}')
+    snr_avg=$(echo $snrlist | awk -F ':' '{sum += $interface} END {printf "%d\n", sum/NR}')
+    snr_min=$(echo $snrlist | awk -F ':' 'NR == 1 || $interface < min {min = $interface} END {printf "%d\n", min}')
+    snr_max=$(echo $snrlist | awk -F ':' 'NR == 1 || $interface > max {max = $interface} END {printf "%d\n", max}')
 
     WL_ENTRIES="$WL_ENTRIES
 $WLAP_OID.$id|string|$ssid($channel)
