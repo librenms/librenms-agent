@@ -38,10 +38,10 @@ get_wlinfo() {
 
     for dir in "tx" "rx"; do
       ratelist=$(/usr/sbin/iw dev "$interface" station dump 2>/dev/null | /bin/grep "$dir bitrate" | /usr/bin/cut -f 2 -s -d" ")
-      eval rate_${dir}_sum=$(/bin/echo "${ratelist}" | /usr/bin/awk -F ':' '{sum += $dir} END {printf "%d\n", 1000000*sum}')
-      eval rate_${dir}_avg=$(/bin/echo "${ratelist}" | /usr/bin/awk -F ':' '{sum += $dir} END {printf "%d\n", 1000000*sum/NR}')
-      eval rate_${dir}_min=$(/bin/echo "${ratelist}" | /usr/bin/awk -F ':' 'NR == 1 || $dir < min {min = $dir} END {printf "%d\n", 1000000*min}')
-      eval rate_${dir}_max=$(/bin/echo "${ratelist}" | /usr/bin/awk -F ':' 'NR == 1 || $dir > max {max = $dir} END {printf "%d\n", 1000000*max}')
+      eval rate_${dir}_sum="$(/bin/echo "${ratelist}" | /usr/bin/awk -F ':' '{sum += $dir} END {printf "%d\n", 1000000*sum}')"
+      eval rate_${dir}_avg="$(/bin/echo "${ratelist}" | /usr/bin/awk -F ':' '{sum += $dir} END {printf "%d\n", 1000000*sum/NR}')"
+      eval rate_${dir}_min="$(/bin/echo "${ratelist}" | /usr/bin/awk -F ':' 'NR == 1 || $dir < min {min = $dir} END {printf "%d\n", 1000000*min}')"
+      eval rate_${dir}_max="$(/bin/echo "${ratelist}" | /usr/bin/awk -F ':' 'NR == 1 || $dir > max {max = $dir} END {printf "%d\n", 1000000*max}')"
     done
 
     WL_ENTRIES="$WL_ENTRIES
