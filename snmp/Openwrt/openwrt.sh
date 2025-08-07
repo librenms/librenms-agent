@@ -89,7 +89,7 @@ while read CMD; do
       oids=$(printf '%s\n', "$WL_ENTRIES" | cut -d'|' -f1 | sort)
       next_req=""
       for oid in $oids; do
-        if [ "$oid" \> "$REQ" ]; then
+        if expr "$oid" \> "$REQ" > /dev/null; then
           next_req=$oid
           break
         fi
