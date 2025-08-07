@@ -75,8 +75,8 @@ while read CMD; do
         entry_oid=$(echo "$entry" | cut -d'|' -f1)
         if [ "$REQ" = "$entry_oid" ]; then
           echo "$entry_oid"
-          echo $(echo "$entry" | cut -d'|' -f2)
-          echo $(echo "$entry" | cut -d'|' -f3-)
+          echo "$entry" | cut -d'|' -f2
+          echo "$entry" | cut -d'|' -f3-
           found=1
           break
         fi
@@ -99,8 +99,8 @@ while read CMD; do
           entry_oid=$(echo "$entry" | cut -d'|' -f1)
           if [ "$next_req" = "$entry_oid" ]; then
             echo "$entry_oid"
-            echo $(echo "$entry" | cut -d'|' -f2)
-            echo $(echo "$entry" | cut -d'|' -f3-)
+            echo "$entry" | cut -d'|' -f2
+            echo "$entry" | cut -d'|' -f3-
             break
           fi
         done
