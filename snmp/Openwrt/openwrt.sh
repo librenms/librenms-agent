@@ -32,16 +32,16 @@ get_wlinfo() {
   for interface in $interfaces; do
     ssid=$(/usr/bin/iwinfo $interface info | /bin/grep ESSID | /usr/bin/cut -s -d ":" -f 2 | /bin/sed 's/ //g' | /bin/sed 's/"//g')
     channel=$(/usr/bin/iwinfo $interface info | /bin/grep Mode | /bin/grep Channel | /usr/bin/cut -s -d"(" -f 2 | /usr/bin/cut -s -d")" -f 1 | /bin/sed 's/ //g')
-    clients=$(/usr/sbin/iw dev "$interface" station dump 2>/dev/null | /bin/grep Station | /usr/bin/cut -f 2 -s -d" " | /usr/bin/wc -l)
-    frequency=$(/usr/sbin/iw dev "$interface" info 2>/dev/null | /bin/grep channel | /usr/bin/cut -f 2- -s -d" " | /usr/bin/cut -f 2- -s -d"(" | /usr/bin/cut -f 1 -s -d" ")
-    noise=$(/usr/bin/iwinfo "$interface" assoclist 2>/dev/null | grep -v "^$" | /usr/bin/cut -s -d "/" -f 2 | /usr/bin/cut -s -d "(" -f 1 | /usr/bin/cut -s -d " " -f 2 | /usr/bin/tail -1)
+    clients=$(/usr/sbin/iw dev $interface station dump 2>/dev/null | /bin/grep Station | /usr/bin/cut -f 2 -s -d" " | /usr/bin/wc -l)
+    frequency=$(/usr/sbin/iw dev $interface info 2>/dev/null | /bin/grep channel | /usr/bin/cut -f 2- -s -d" " | /usr/bin/cut -f 2- -s -d"(" | /usr/bin/cut -f 1 -s -d" ")
+    noise=$(/usr/bin/iwinfo $interface assoclist 2>/dev/null | grep -v "^$" | /usr/bin/cut -s -d "/" -f 2 | /usr/bin/cut -s -d "(" -f 1 | /usr/bin/cut -s -d " " -f 2 | /usr/bin/tail -1)
 
     for dir in "tx" "rx"; do
       ratelist=$(/usr/sbin/iw dev "$interface" station dump 2>/dev/null | /bin/grep "$dir bitrate" | /usr/bin/cut -f 2 -s -d" ")
-      eval rate_${dir}_sum=$(/bin/echo "$ratelist" | /usr/bin/awk -F ':' '{sum += $dir} END {printf "%d\n", 1000000*sum}')
-      eval rate_${dir}_avg=$(/bin/echo "$ratelist" | /usr/bin/awk -F ':' '{sum += $dir} END {printf "%d\n", 1000000*sum/NR}')
-      eval rate_${dir}_min=$(/bin/echo "$ratelist" | /usr/bin/awk -F ':' 'NR == 1 || $dir < min {min = $dir} END {printf "%d\n", 1000000*min}')
-      eval rate_${dir}_max=$(/bin/echo "$ratelist" | /usr/bin/awk -F ':' 'NR == 1 || $dir > max {max = $dir} END {printf "%d\n", 1000000*max}')
+      eval rate_${dir}_sum=$(/bin/echo "${ratelist}" | /usr/bin/awk -F ':' '{sum += $dir} END {printf "%d\n", 1000000*sum}')
+      eval rate_${dir}_avg=$(/bin/echo "${ratelist}" | /usr/bin/awk -F ':' '{sum += $dir} END {printf "%d\n", 1000000*sum/NR}')
+      eval rate_${dir}_min=$(/bin/echo "${ratelist}" | /usr/bin/awk -F ':' 'NR == 1 || $dir < min {min = $dir} END {printf "%d\n", 1000000*min}')
+      eval rate_${dir}_max=$(/bin/echo "${ratelist}" | /usr/bin/awk -F ':' 'NR == 1 || $dir > max {max = $dir} END {printf "%d\n", 1000000*max}')
     done
 
     WL_ENTRIES="$WL_ENTRIES
@@ -49,14 +49,14 @@ $WLAP_OID.$id|string|$ssid($channel)
 $WLCLIENT_OID.$id|integer|$clients
 $WLFRQ_OID.$id|integer|$frequency
 $WLNOISE_OID.$id|integer|$noise
-$WLRATE_TX_SUM_OID.$id|integer|$rate_tx_sum
-$WLRATE_RX_SUM_OID.$id|integer|$rate_rx_sum
-$WLRATE_TX_AVG_OID.$id|integer|$rate_tx_avg
-$WLRATE_RX_AVG_OID.$id|integer|$rate_rx_avg
-$WLRATE_TX_MIN_OID.$id|integer|$rate_tx_min
-$WLRATE_RX_MIN_OID.$id|integer|$rate_rx_min
-$WLRATE_TX_MAX_OID.$id|integer|$rate_tx_max
-$WLRATE_RX_MAX_OID.$id|integer|$rate_rx_max"
+$WLRATE_TX_SUM_OID.$id|integer|${rate_tx_sum:-}
+$WLRATE_RX_SUM_OID.$id|integer|${rate_rx_sum:-}
+$WLRATE_TX_AVG_OID.$id|integer|${rate_tx_avg:-}
+$WLRATE_RX_AVG_OID.$id|integer|${rate_rx_avg:-}
+$WLRATE_TX_MIN_OID.$id|integer|${rate_tx_min:-}
+$WLRATE_RX_MIN_OID.$id|integer|${rate_rx_min:-}
+$WLRATE_TX_MAX_OID.$id|integer|${rate_tx_max:-}
+$WLRATE_RX_MAX_OID.$id|integer|${rate_rx_max:-}"
 
     id=$(($id+1))
   done
