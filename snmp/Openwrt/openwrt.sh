@@ -16,6 +16,11 @@ WLRATE_RX_SUM_OID="$WLRATE_OID.2.1"
 WLRATE_RX_AVG_OID="$WLRATE_OID.2.2"
 WLRATE_RX_MIN_OID="$WLRATE_OID.2.3"
 WLRATE_RX_MAX_OID="$WLRATE_OID.2.3"
+WLSNR_OID="$BASE_OID.87.76.6"
+WLSNR_OID_SUM="$WLSNR_OID.1"
+WLSNR_OID_AVG="$WLSNR_OID.2"
+WLSNR_OID_MIN="$WLSNR_OID.3"
+WLSNR_OID_MAX="$WLSNR_OID.4"
 WL_ENTRIES=""
 WL_LASTREFRESH=0
 
@@ -37,12 +42,18 @@ get_wlinfo() {
     noise=$(/usr/bin/iwinfo $interface assoclist 2>/dev/null | grep -v "^$" | /usr/bin/cut -s -d "/" -f 2 | /usr/bin/cut -s -d "(" -f 1 | /usr/bin/cut -s -d " " -f 2 | /usr/bin/tail -1)
 
     for dir in "tx" "rx"; do
-      ratelist=$(/usr/sbin/iw dev "$interface" station dump 2>/dev/null | /bin/grep "$dir bitrate" | /usr/bin/cut -f 2 -s -d" ")
+      ratelist=$(/usr/sbin/iw dev $interface station dump 2>/dev/null | /bin/grep "$dir bitrate" | /usr/bin/cut -f 2 -s -d" ")
       eval rate_${dir}_sum="$(/bin/echo "${ratelist}" | /usr/bin/awk -F ':' '{sum += $dir} END {printf "%d\n", 1000000*sum}')"
       eval rate_${dir}_avg="$(/bin/echo "${ratelist}" | /usr/bin/awk -F ':' '{sum += $dir} END {printf "%d\n", 1000000*sum/NR}')"
       eval rate_${dir}_min="$(/bin/echo "${ratelist}" | /usr/bin/awk -F ':' 'NR == 1 || $dir < min {min = $dir} END {printf "%d\n", 1000000*min}')"
       eval rate_${dir}_max="$(/bin/echo "${ratelist}" | /usr/bin/awk -F ':' 'NR == 1 || $dir > max {max = $dir} END {printf "%d\n", 1000000*max}')"
     done
+
+    snrlist=$(/usr/bin/iwinfo $interface assoclist 2>/dev/null | /usr/bin/cut -s -d "/" -f 2 | /usr/bin/cut -s -d "(" -f 2 | /usr/bin/cut -s -d " " -f 2 | /usr/bin/cut -s -d ")" -f 1)
+    snr_sum=$(/bin/echo $snrlist | /usr/bin/awk -F ':' '{sum += $interface} END {printf "%d\n", sum}')
+    snr_avg=$(/bin/echo $snrlist | /usr/bin/awk -F ':' '{sum += $interface} END {printf "%d\n", sum/NR}')
+    snr_min=$(/bin/echo $snrlist | /usr/bin/awk -F ':' 'NR == 1 || $interface < min {min = $interface} END {printf "%d\n", min}')
+    snr_max=$(/bin/echo $snrlist | /usr/bin/awk -F ':' 'NR == 1 || $interface > max {max = $interface} END {printf "%d\n", max}')
 
     WL_ENTRIES="$WL_ENTRIES
 $WLAP_OID.$id|string|$ssid($channel)
@@ -56,7 +67,11 @@ $WLRATE_RX_AVG_OID.$id|integer|${rate_rx_avg:-}
 $WLRATE_TX_MIN_OID.$id|integer|${rate_tx_min:-}
 $WLRATE_RX_MIN_OID.$id|integer|${rate_rx_min:-}
 $WLRATE_TX_MAX_OID.$id|integer|${rate_tx_max:-}
-$WLRATE_RX_MAX_OID.$id|integer|${rate_rx_max:-}"
+$WLRATE_RX_MAX_OID.$id|integer|${rate_rx_max:-}
+$WLSNR_OID_SUM.$id|integer|$snr_sum
+$WLSNR_OID_AVG.$id|integer|$snr_avg
+$WLSNR_OID_MIN.$id|integer|$snr_min
+$WLSNR_OID_MAX.$id|integer|$snr_max"
 
     id=$(($id+1))
   done
