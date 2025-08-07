@@ -20,7 +20,7 @@ WL_ENTRIES=""
 WL_LASTREFRESH=0
 
 get_wlinfo() {
-  let refresh=$(date +%s)-$WL_LASTREFRESH
+  refresh=$(($(date +%s)-$WL_LASTREFRESH))
   if [ $refresh -lt 30 ]; then
     return
   fi
@@ -58,7 +58,7 @@ $WLRATE_RX_MIN_OID.$id|integer|$rate_rx_min
 $WLRATE_TX_MAX_OID.$id|integer|$rate_tx_max
 $WLRATE_RX_MAX_OID.$id|integer|$rate_rx_max"
 
-    let id=$id+1
+    id=$(($id+1))
   done
 }
 
