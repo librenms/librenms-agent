@@ -29,7 +29,7 @@ if [ "${smartctl}" != "" ]; then
                 # Check if the disk is a valid device
                 if ${smartctl} -i "$disk" > /dev/null 2>&1; then
                     # Get disk model first
-                    model=$(${smartctl} -i $disk | grep 'Device Model' | cut -d':' -f2 | sed 's/^\s*//g')
+                    model=$(${smartctl} -i $disk | grep 'Device Model' | cut -d':' -f2 | tr -d '[:space:]$')
 
                     # Try different temperature attributes in order of preference
                     # First try Airflow_Temperature_Cel
