@@ -22,12 +22,12 @@ if [ -f "$CONFIG" ]; then
     . "$CONFIG"
 fi
 
-NTP_OFFSET=$($BIN_NTPQ -c rv | $BIN_GREP "offset" | $BIN_AWK -Foffset= '{print $2}' | $BIN_AWK -F, '{print $1}')
-NTP_FREQUENCY=$($BIN_NTPQ -c rv | $BIN_GREP "frequency" | $BIN_AWK -Ffrequency= '{print $2}' | $BIN_AWK -F, '{print $1}')
-NTP_SYS_JITTER=$($BIN_NTPQ -c rv | $BIN_GREP "sys_jitter" | $BIN_AWK -Fsys_jitter= '{print $2}' | $BIN_AWK -F, '{print $1}')
-NTP_CLK_JITTER=$($BIN_NTPQ -c rv | $BIN_GREP "clk_jitter" | $BIN_AWK -Fclk_jitter= '{print $2}' | $BIN_AWK -F, '{print $1}')
-NTP_WANDER=$($BIN_NTPQ -c rv | $BIN_GREP "clk_wander" | $BIN_AWK -Fclk_wander= '{print $2}' | $BIN_AWK -F, '{print $1}')
-NTP_VERSION=$($BIN_NTPQ -c rv | $BIN_GREP "version" | $BIN_AWK -F'ntpd ' '{print $2}' | $BIN_AWK -F. '{print $1}')
+NTP_OFFSET=$($BIN_NTPQ -c rv 127.0.0.1 | $BIN_GREP "offset" | $BIN_AWK -Foffset= '{print $2}' | $BIN_AWK -F, '{print $1}')
+NTP_FREQUENCY=$($BIN_NTPQ -c rv 127.0.0.1 | $BIN_GREP "frequency" | $BIN_AWK -Ffrequency= '{print $2}' | $BIN_AWK -F, '{print $1}')
+NTP_SYS_JITTER=$($BIN_NTPQ -c rv 127.0.0.1 | $BIN_GREP "sys_jitter" | $BIN_AWK -Fsys_jitter= '{print $2}' | $BIN_AWK -F, '{print $1}')
+NTP_CLK_JITTER=$($BIN_NTPQ -c rv 127.0.0.1 | $BIN_GREP "clk_jitter" | $BIN_AWK -Fclk_jitter= '{print $2}' | $BIN_AWK -F, '{print $1}')
+NTP_WANDER=$($BIN_NTPQ -c rv 127.0.0.1 | $BIN_GREP "clk_wander" | $BIN_AWK -Fclk_wander= '{print $2}' | $BIN_AWK -F, '{print $1}')
+NTP_VERSION=$($BIN_NTPQ -c rv 127.0.0.1 | $BIN_GREP "version" | $BIN_AWK -F'ntpd ' '{print $2}' | $BIN_AWK -F. '{print $1}')
 
 echo '{"data":{"offset":"'"$NTP_OFFSET"'","frequency":"'"$NTP_FREQUENCY"'","sys_jitter":"'"$NTP_SYS_JITTER"'","clk_jitter":"'"$NTP_CLK_JITTER"'","clk_wander":"'"$NTP_WANDER"'"},"version":"'"$NTP_VERSION"'","error":"0","errorString":""}'
 
