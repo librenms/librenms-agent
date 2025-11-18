@@ -18,12 +18,12 @@
 #
 #   author: Kossusukka <kossusukka@kossulab.net>
 
-import os
 import json
+import os
 import ssl
-import urllib.request
-import urllib.parse
 import urllib.error
+import urllib.parse
+import urllib.request
 
 ######### CONFIGURATION ##############
 I2PC_URL = "https://127.0.0.1:7650/"
