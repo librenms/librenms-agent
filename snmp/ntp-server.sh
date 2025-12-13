@@ -75,7 +75,7 @@ if [ "$VER" = "4.2.6p5" ]; then
 else
   USECMD=$(echo "$BIN_NTPQ" -c iostats 127.0.0.1)
 fi
-CMD2=$($USECMD | $BIN_TR -d ' ' | $BIN_CUT -d : -f 2 | $BIN_TR '\n' ' ')
+CMD2=$($USECMD 2>/dev/null | $BIN_TR -d ' ' | $BIN_CUT -d : -f 2 | $BIN_TR '\n' ' ')
 
 # shellcheck disable=SC2086
 TIMESINCERESET=$(echo $CMD2 | $BIN_AWK -F ' ' '{print $1}')
