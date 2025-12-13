@@ -34,7 +34,7 @@ try:
             error_string = "category not defined"
             break
 
-        if b',' in d:
+        if b"," in d:
             # ignore multiparameter lines
             # b'listener0:name=tcp,bind=127.0.0.1,bind=-::1,port=6379'
             # b'io_thread_0:clients=62,reads=30982,writes=30918'
