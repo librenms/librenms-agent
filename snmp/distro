@@ -20,6 +20,11 @@ elif [ "${OS}" = "Linux" ] ; then
     DIST=$(cat /etc/fedora-release | awk '{print $1}')
     REV=$(cat /etc/fedora-release | sed s/.*release\ // | sed s/\ .*//)
 
+  elif [ -f /etc/cloudlinux-release ] ; then
+    DIST="CloudLinux"
+    #PSEUDONAME=$(cat /etc/cloudlinux-release | sed s/.*\(// | sed s/\)//)
+    REV=$(cat /etc/almalinux-release | sed s/.*release\ // | sed s/\ .*//)
+
   elif [ -f /etc/redhat-release ] ; then
     DIST=$(cat /etc/redhat-release | awk '{print $1}')
     if [ "${DIST}" = "CentOS" ]; then
@@ -45,12 +50,12 @@ elif [ "${OS}" = "Linux" ] ; then
     REV=$(cat /etc/redhat-release | sed s/.*release\ // | sed s/\ .*//)
 
   elif [ -f /etc/almalinux-release ] ; then
-    DIST='AlmaLinux'
+    DIST="AlmaLinux"
     #PSEUDONAME=$(cat /etc/almalinux-release | sed s/.*\(// | sed s/\)//)
     REV=$(cat /etc/almalinux-release | sed s/.*release\ // | sed s/\ .*//)
 
   elif [ -f /etc/mandrake-release ] ; then
-    DIST='Mandrake'
+    DIST="Mandrake"
     #PSEUDONAME=$(cat /etc/mandrake-release | sed s/.*\(// | sed s/\)//)
     REV=$(cat /etc/mandrake-release | sed s/.*release\ // | sed s/\ .*//)
 
