@@ -5,11 +5,15 @@
 
 :global vlanst [:toarray ""]
 :global vlansu [:toarray ""]
+:global vlansn [:toarray ""]
 
 :foreach i in [/interface bridge vlan find] do={
     :local intf [/interface bridge vlan get $i bridge]
     :local vlid [/interface bridge vlan get $i vlan-ids]
+    :local vcomment [/interface bridge vlan get $i comment]
     :local vname
+
+    :set $vlansn ($vlansn, "$vlid,$vcomment")
 
     :foreach i in [/interface vlan find where vlan-id=$vlid] do={
         :local intname [/interface vlan get $i name]
@@ -54,6 +58,10 @@
     :if ( $fl != 1 ) do={
         :set $vlanst ($vlanst, "$vlid,$intf,$vname")
     }
+}
+
+:foreach tmp in $vlansn do={
+    :put "N,$tmp"
 }
 
 :foreach tmp in $vlanst do={
