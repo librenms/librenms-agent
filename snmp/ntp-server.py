@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 
-import subprocess
 import json
+import subprocess
 
 
 def run_command(command_list):
 
     result = subprocess.run(
-            command_list, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
-            )
+        command_list, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+    )
 
     return result.stdout.decode("utf-8")
 
@@ -64,7 +64,7 @@ for part in parts:
 
     k, v = part.split("=")
 
-    data_dict[k.strip()] = v.replace('"', '')
+    data_dict[k.strip()] = v.replace('"', "")
 
 # -------- second command ---------------------------
 
@@ -91,11 +91,6 @@ for part in parts:
 
 # ----------------------------------------------------
 
-result_dict = {
-        "error": 0,
-        "errorString": "",
-        "version": 1,
-        "data": data_dict
-        }
+result_dict = {"error": 0, "errorString": "", "version": 1, "data": data_dict}
 
 print(json.dumps(result_dict, indent=4, sort_keys=True))
