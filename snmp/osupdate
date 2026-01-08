@@ -92,7 +92,7 @@ elif command -v yum &>/dev/null ; then
     else
         echo "0";
     fi
-elif command -v apt-get &>/dev/null ; then
+elif command -v apt &>/dev/null ; then
     # Debian / Devuan / Ubuntu
     # shellcheck disable=SC2086
     UPDATES=$($BIN_APT $CMD_APT 2>&1 | $BIN_GREP $CMD_GREP '/')
