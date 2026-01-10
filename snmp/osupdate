@@ -22,8 +22,8 @@ BIN_DNF='/usr/bin/env dnf'
 CMD_DNF='-q check-update'
 BIN_TDNF='/usr/bin/env tdnf'
 CMD_TDNF='-q check-update'
-BIN_APT='/usr/bin/env apt-get'
-CMD_APT='-qq -s upgrade'
+BIN_APT='/usr/bin/env apt'
+CMD_APT='list --upgradable'
 BIN_PACMAN='/usr/bin/env pacman'
 CMD_PACMAN='-Sup'
 BIN_CHECKUPDATES='/usr/bin/env checkupdates'
@@ -92,10 +92,10 @@ elif command -v yum &>/dev/null ; then
     else
         echo "0";
     fi
-elif command -v apt-get &>/dev/null ; then
+elif command -v apt &>/dev/null ; then
     # Debian / Devuan / Ubuntu
     # shellcheck disable=SC2086
-    UPDATES=$($BIN_APT $CMD_APT | $BIN_GREP $CMD_GREP 'Inst')
+    UPDATES=$($BIN_APT $CMD_APT 2>&1 | $BIN_GREP $CMD_GREP '/')
     if [ "$UPDATES" -ge 1 ]; then
         echo "$UPDATES";
     else
