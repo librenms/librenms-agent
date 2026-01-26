@@ -24,7 +24,6 @@ exec 200>&-
 cat <<EOD
 {
     "data": {
-        "localhost:11211": {
 EOD
 
 for var in "${!stats[@]}" ; do
@@ -40,7 +39,6 @@ done
 echo '"dummy":"value"'
 
 cat <<EOD
-        }
     },
     "error": 0,
     "errorString": "SUCCESS",
