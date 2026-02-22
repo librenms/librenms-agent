@@ -41,6 +41,8 @@ done
 # Generate wlInterfaces.txt
 echo ""
 echo "Generating wlInterfaces.txt..."
+# Force regeneration by removing old file
+rm -f "$SCRIPT_DIR/wlInterfaces.txt"
 "$SCRIPT_DIR/wlClients.sh" > /dev/null 2>&1
 if [ -f "$SCRIPT_DIR/wlInterfaces.txt" ]; then
 	echo "  ✓ Generated $SCRIPT_DIR/wlInterfaces.txt"

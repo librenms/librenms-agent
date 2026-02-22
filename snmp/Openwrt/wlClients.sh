@@ -19,32 +19,39 @@ generate_interfaces_file() {
 		
 		# Skip known non-client interfaces
 		case "$iface" in
-			mld*|wifi*|phy*|wlan-*|mon.*) 
+			mld*|mon.*)  #|wifi*|phy*|wlan-*
 				continue 
 				;;
 		esac
 		
 		# Check if it's a wireless interface
 		if [ -d "$dev/wireless" ] || [ -d "$dev/phy80211" ]; then
-			# Try to get SSID using iw first
-			ssid=$(/usr/sbin/iw dev "$iface" info 2>/dev/null | /bin/grep ssid | /usr/bin/cut -f 2 -s -d" " | /usr/bin/tr -d '\n')
+			# Get interface type and SSID using iw first
+			iw_info=$(/usr/sbin/iw dev "$iface" info 2>/dev/null)
+			iface_type=$(echo "$iw_info" | /usr/bin/awk '/^[[:space:]]*type / {print $2; exit}')
+			ssid=$(echo "$iw_info" | /bin/grep ssid | /usr/bin/cut -f 2 -s -d" " | /usr/bin/tr -d '\n')
+
+			# Skip AP/VLAN interfaces which can report "ESSID: unknown"
+			[ "$iface_type" = "AP/VLAN" ] && continue
 			
 			# If no SSID from iw, try iwinfo
 			if [ -z "$ssid" ]; then
-				ssid=$(/usr/bin/iwinfo "$iface" info 2>/dev/null | /bin/grep "ESSID" | /usr/bin/cut -d'"' -f2)
+				ssid=$(/usr/bin/iwinfo "$iface" info 2>/dev/null | /bin/sed -n \
+					-e 's/.*ESSID: "\(.*\)".*/\1/p' \
+					-e 's/.*ESSID: \(.*\)$/\1/p' | /usr/bin/head -n 1)
 			fi
 			
 			# Skip interfaces without SSID (not active AP/client interfaces)
 			[ -z "$ssid" ] && continue
 			
-			# Skip interfaces with "unknown" SSID
-			[ "$ssid" = "unknown" ] && continue
+			# Skip malformed or unknown SSIDs
+			case "$ssid" in
+				unknown|*ESSID:*)
+					continue
+					;;
+			esac
 			
-			# Check if interface is UP
-			if ! /sbin/ip link show "$iface" 2>/dev/null | /bin/grep -q "UP"; then
-				continue
-			fi
-			
+			# Add to list (include even if DOWN, since SSID means it's configured)
 			echo "$iface,$ssid" >> "$tmpfile"
 		fi
 	done
