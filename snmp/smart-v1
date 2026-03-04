@@ -1,5 +1,5 @@
 #!/usr/bin/env perl
-#Copyright (c) 2024, Zane C. Bowers-Hadley
+#Copyright (c) 2026, Zane C. Bowers-Hadley
 #All rights reserved.
 #
 #Redistribution and use in source and binary forms, with or without modification,
@@ -26,7 +26,7 @@
 
 Add this to snmpd.conf like below.
 
-    extend smart /etc/snmp/smart
+    extend smart /bin/cat /var/cache/smart.snmp
 
 Then add to root's cron tab, if you have more than a few disks.
 
@@ -100,10 +100,11 @@ Guess Modes:
 ##
 use warnings;
 use strict;
-use Getopt::Std;
-use JSON;
-use MIME::Base64;
-use IO::Compress::Gzip qw(gzip $GzipError);
+use Getopt::Std        qw( getopts );
+use JSON               qw( decode_json );
+use MIME::Base64       qw( encode_base64 );
+use IO::Compress::Gzip qw(gzip);
+use Scalar::Util       qw( looks_like_number );
 
 my $cache    = '/var/cache/smart';
 my $smartctl = '/usr/bin/env smartctl';
@@ -547,10 +548,15 @@ my $noWrite = 0;
 #
 #
 if ( !defined( $opts{u} ) ) {
+	my $cache_extra = '';
+
+	if ( $opts{'Z'} ) {
+		$cache_extra = '.snmp';
+	}
 	# if the cache file exists, print it, otherwise assume one is not being used
-	if ( -f $cache ) {
+	if ( -f $cache . $cache_extra ) {
 		my $old = '';
-		open( my $readfh, "<", $cache ) or die "Can't open '" . $cache . "'";
+		open( my $readfh, "<", $cache . $cache_extra ) or die "Can't open '" . $cache . $cache_extra . "'";
 		read( $readfh, $old, 1000000 );
 		close($readfh);
 		print $old;
@@ -585,88 +591,102 @@ foreach my $line (@disks) {
 		$disk = '/dev/' . $disk;
 	}
 
-	my $output = `$smartctl -A $disk`;
+	my $output = `$smartctl --json -a $disk`;
 	my %IDs    = (
-		'5'            => 'null',
-		'10'           => 'null',
-		'173'          => 'null',
-		'177'          => 'null',
-		'183'          => 'null',
-		'184'          => 'null',
-		'187'          => 'null',
-		'188'          => 'null',
-		'190'          => 'null',
-		'194'          => 'null',
-		'196'          => 'null',
-		'197'          => 'null',
-		'198'          => 'null',
-		'199'          => 'null',
-		'231'          => 'null',
-		'232'          => 'null',
-		'233'          => 'null',
-		'9'            => 'null',
+		'5'            => undef,
+		'10'           => undef,
+		'12'           => undef,
+		'173'          => undef,
+		'177'          => undef,
+		'183'          => undef,
+		'184'          => undef,
+		'187'          => undef,
+		'188'          => undef,
+		'190'          => undef,
+		'194'          => undef,
+		'196'          => undef,
+		'197'          => undef,
+		'198'          => undef,
+		'199'          => undef,
+		'231'          => undef,
+		'232'          => undef,
+		'233'          => undef,
+		'9'            => undef,
 		'disk'         => $disk,
 		'serial'       => undef,
 		'selftest_log' => undef,
 		'health_pass'  => 0,
-		max_temp       => 'null',
-		exit           => $?,
+		'max_temp'     => undef,
+		'exit'         => $?,
+		'json_err'     => 0,
+		'json_err_str' => '',
+		'temp_limit'   => undef,
+		'from_factor'  => undef,
+		'over_temp'    => 0,
+		'rpm'          => undef,
 	);
 	$IDs{'disk'} =~ s/^\/dev\///;
 
+	my $a_output;
+	eval {
+		$a_output = decode_json($output);
+		if ( ref($a_output) ne 'HASH' ) {
+			die(      'decoded output from "'
+					. $smartctl
+					. ' --json -a '
+					. $disk
+					. '" has a ref of "'
+					. ref($a_output)
+					. '" and not "HASH"' );
+		}
+	};
+	if ($@) {
+		$IDs{'json_err_str'} = $@;
+		$IDs{'json_err'}     = 1;
+	}
+
 	# if polling exited non-zero above, no reason running the rest of the checks
 	my $disk_id = $name;
-	if ( $IDs{exit} != 0 ) {
-		$to_return->{data}{exit_nonzero}++;
-	} else {
-		my @outputA;
+	if ( $IDs{'json_err'} == 0 ) {
+		if ( $IDs{'exit'} != 0 ) {
+			$to_return->{data}{exit_nonzero}++;
+		}
 
-		if ( $output =~ /NVMe Log/ ) {
-			# we have an NVMe drive with annoyingly different output
-			my %mappings = (
-				'Temperature'     => 194,
-				'Power Cycles'    => 12,
-				'Power On Hours'  => 9,
-				'Percentage Used' => 231,
-			);
-			foreach ( split( /\n/, $output ) ) {
-				if (/:/) {
-					my ( $key, $val ) = split(/:/);
-					$val =~ s/^\s+|\s+$|\D+//g;
-					if ( exists( $mappings{$key} ) ) {
-						if ( $mappings{$key} == 231 ) {
-							$IDs{ $mappings{$key} } = 100 - $val;
-						} else {
-							$IDs{ $mappings{$key} } = $val;
-						}
-					}
-				} ## end if (/:/)
-			} ## end foreach ( split( /\n/, $output ) )
+		if (   defined( $a_output->{'ata_smart_attributes'} )
+			&& ( ref( $a_output->{'ata_smart_attributes'} ) eq 'HASH' )
+			&& defined( $a_output->{'ata_smart_attributes'}{'table'} )
+			&& ( ref( $a_output->{'ata_smart_attributes'}{'table'} ) eq 'ARRAY' ) )
+		{
+			foreach my $attribute ( @{ $a_output->{'ata_smart_attributes'}{'table'} } ) {
 
-		} else {
-			@outputA = split( /\n/, $output );
-			my $outputAint = 0;
-			while ( defined( $outputA[$outputAint] ) ) {
-				my $line = $outputA[$outputAint];
-				$line =~ s/^ +//;
-				$line =~ s/  +/ /g;
-
-				if ( $line =~ /^[0123456789]+ / ) {
-					my @lineA      = split( /\ /, $line, 10 );
-					my $raw        = $lineA[9];
-					my $normalized = $lineA[3];
-					my $id         = $lineA[0];
+				if (   ( ref($attribute) eq 'HASH' )
+					&& defined( $attribute->{'id'} )
+					&& ( ref( $attribute->{'id'} ) eq '' )
+					&& defined( $attribute->{'name'} )
+					&& ( ref( $attribute->{'name'} ) eq '' )
+					&& defined( $attribute->{'value'} )
+					&& ( ref( $attribute->{'value'} ) eq '' )
+					&& defined( $attribute->{'raw'} )
+					&& ( ref( $attribute->{'raw'} ) eq 'HASH' )
+					&& defined( $attribute->{'raw'}{'string'} )
+					&& ( ref( $attribute->{'raw'}{'string'} ) eq '' ) )
+				{
+					my $id             = $attribute->{'id'};
+					my $normalized     = $attribute->{'value'};
+					my $raw            = $attribute->{'raw'}{'string'};
+					my $attribute_name = $attribute->{'name'};
 
 					# Crucial SSD
 					# 202, Percent_Lifetime_Remain, same as 231, SSD Life Left
 					if (   $id == 202
-						&& $line =~ /Percent_Lifetime_Remain/ )
+						&& $attribute_name =~ /Percent_Lifetime_Remain/ )
 					{
 						$IDs{231} = $raw;
 					}
 
 					# single int raw values
 					if (   ( $id == 5 )
+						|| ( $id == 9 )
 						|| ( $id == 10 )
 						|| ( $id == 173 )
 						|| ( $id == 183 )
@@ -679,7 +699,7 @@ foreach my $line (@disks) {
 					{
 						my @rawA = split( /\ /, $raw );
 						$IDs{$id} = $rawA[0];
-					} ## end if ( ( $id == 5 ) || ( $id == 10 ) || ( $id...))
+					} ## end if ( ( $id == 5 ) || ( $id == 9 ) || ( $id...))
 
 					# single int normalized values
 					if (   ( $id == 177 )
@@ -695,30 +715,24 @@ foreach my $line (@disks) {
 				 # 233 NAND_GB_Written_TLC     0x0032   100   100   ---    Old_age   Always       -       9816
 
 						if (   $id == 230
-							&& $line =~ /Media_Wearout_Indicator/ )
+							&& $attribute_name =~ /Media_Wearout_Indicator/ )
 						{
 							$IDs{233} = int($normalized);
 						} elsif ( $id == 232
-							&& $line =~ /Available_Reservd_Space/ )
+							&& $attribute_name =~ /Available_Reservd_Space/ )
 						{
 							$IDs{232} = int($normalized);
 						} else {
 							# only set 233 if it has not been set yet
 							# if it was set already then the above did it and we don't want
 							# to overwrite it
-							if ( $id == 233 && $IDs{233} eq "null" ) {
+							if ( $id == 233 && !defined( $IDs{'233'} ) ) {
 								$IDs{$id} = int($normalized);
 							} elsif ( $id != 233 ) {
 								$IDs{$id} = int($normalized);
 							}
-						} ## end else [ if ( $id == 230 && $line =~ /Media_Wearout_Indicator/)]
+						} ## end else [ if ( $id == 230 && $attribute_name =~ /Media_Wearout_Indicator/)]
 					} ## end if ( ( $id == 177 ) || ( $id == 230 ) || (...))
-
-					# 9, power on hours
-					if ( $id == 9 ) {
-						my @runtime = split( /[\ h]/, $raw );
-						$IDs{$id} = $runtime[0];
-					}
 
 					# 188, Command_Timeout
 					if ( $id == 188 ) {
@@ -740,44 +754,14 @@ foreach my $line (@disks) {
 						my ($temp) = split( /\ /, $raw );
 						$IDs{$id} = $temp;
 					}
-				} ## end if ( $line =~ /^[0123456789]+ / )
 
-				# SAS Wrapping
-				# Section by Cameron Munroe (munroenet[at]gmail.com)
-
-				# Elements in Grown Defect List.
-				# Marking as 5 Reallocated_Sector_Ct
-				if ( $line =~ "Elements in grown defect list:" ) {
-
-					my @lineA = split( /\ /, $line, 10 );
-					my $raw   = $lineA[5];
-
-					# Reallocated Sector Count ID
-					$IDs{5} = $raw;
-
-				}
-
-				# Current Drive Temperature
-				# Marking as 194 Temperature_Celsius
-				if ( $line =~ "Current Drive Temperature:" ) {
-
-					my @lineA = split( /\ /, $line, 10 );
-					my $raw   = $lineA[3];
-
-					# Temperature C ID
-					$IDs{194} = $raw;
-
-				}
-
-				# End of SAS Wrapper
-
-				$outputAint++;
-			} ## end while ( defined( $outputA[$outputAint] ) )
-		} ## end else [ if ( $output =~ /NVMe Log/ ) ]
+				} ## end if ( ( ref($attribute) eq 'HASH' ) && defined...)
+			} ## end foreach my $attribute ( @{ $a_output->{'ata_smart_attributes'...}})
+		} ## end if ( defined( $a_output->{'ata_smart_attributes'...}))
 
 		#get the selftest logs
-		$output  = `$smartctl -l selftest $disk`;
-		@outputA = split( /\n/, $output );
+		$output = `$smartctl -l selftest $disk`;
+		my @outputA   = split( /\n/, $output );
 		my @completed = grep( /Completed/, @outputA );
 		$IDs{'completed'} = scalar @completed;
 		my @interrupted = grep( /Interrupted/, @outputA );
@@ -816,77 +800,217 @@ foreach my $line (@disks) {
 			$IDs{'selftest_log'} = join( "\n", @headers, sort(@log_lines) );
 		} ## end if ( $IDs{'completed'} > 0 || $IDs{'interrupted'...})
 
-		# get the drive serial number, if needed
 		$disk_id = $name;
-		$output  = `$smartctl -i $disk`;
-		# generally upper case, HP branded drives seem to report with lower case n
-		while ( $output =~ /(?i)Serial Number:(.*)/g ) {
-			$IDs{'serial'} = $1;
-			$IDs{'serial'} =~ s/^\s+|\s+$//g;
+		if ( defined( $a_output->{'serial_number'} )
+			&& ( ref( $a_output->{'serial_number'} ) eq '' ) )
+		{
+			$IDs{'serial'} = $a_output->{'serial_number'};
 		}
 		if ($useSN) {
 			$disk_id = $IDs{'serial'};
 		}
 
-		while ( $output =~ /(?i)Model Family:(.*)/g ) {
-			$IDs{'model_family'} = $1;
-			$IDs{'model_family'} =~ s/^\s+|\s+$//g;
+		if ( defined( $a_output->{'firmware_version'} )
+			&& ( ref( $a_output->{'firmware_version'} ) eq '' ) )
+		{
+			$IDs{'fw_version'} = $a_output->{'firmware_version'};
 		}
 
-		while ( $output =~ /(?i)Device Model:(.*)/g ) {
-			$IDs{'device_model'} = $1;
-			$IDs{'device_model'} =~ s/^\s+|\s+$//g;
+		if ( defined( $a_output->{'model_family'} )
+			&& ( ref( $a_output->{'model_family'} ) eq '' ) )
+		{
+			$IDs{'model_family'} = $a_output->{'model_family'};
 		}
 
-		while ( $output =~ /(?i)Model Number:(.*)/g ) {
-			$IDs{'model_number'} = $1;
-			$IDs{'model_number'} =~ s/^\s+|\s+$//g;
+		if ( defined( $a_output->{'model_name'} )
+			&& ( ref( $a_output->{'model_name'} ) eq '' ) )
+		{
+			$IDs{'model_name'} = $a_output->{'model_name'};
 		}
 
-		while ( $output =~ /(?i)Firmware Version:(.*)/g ) {
-			$IDs{'fw_version'} = $1;
-			$IDs{'fw_version'} =~ s/^\s+|\s+$//g;
+		if ( defined( $a_output->{'device_model'} )
+			&& ( ref( $a_output->{'device_model'} ) eq '' ) )
+		{
+			$IDs{'device_model'} = $a_output->{'device_model'};
 		}
 
-		# mainly HP drives
-		while ( $output =~ /(?i)Vendor:(.*)/g ) {
-			$IDs{'vendor'} = $1;
-			$IDs{'vendor'} =~ s/^\s+|\s+$//g;
+		if ( defined( $a_output->{'model_number'} )
+			&& ( ref( $a_output->{'model_number'} ) eq '' ) )
+		{
+			$IDs{'model_number'} = $a_output->{'model_number'};
 		}
 
-		# mainly HP drives
-		while ( $output =~ /(?i)Product:(.*)/g ) {
-			$IDs{'product'} = $1;
-			$IDs{'product'} =~ s/^\s+|\s+$//g;
+		#
+		# scsi(including sas) drives
+		#
+		if ( defined( $a_output->{'scsi_vendor'} )
+			&& ( ref( $a_output->{'scsi_vendor'} ) eq '' ) )
+		{
+			$IDs{'vendor'} = $a_output->{'scsi_vendor'};
+		}
+		if ( defined( $a_output->{'scsi_product'} )
+			&& ( ref( $a_output->{'scsi_product'} ) eq '' ) )
+		{
+			$IDs{'product'} = $a_output->{'scsi_product'};
+		}
+		if ( defined( $a_output->{'scsi_model_name'} )
+			&& ( ref( $a_output->{'scsi_model_name'} ) eq '' ) )
+		{
+			$IDs{'model_name'} = $a_output->{'scsi_model_name'};
+		}
+		if ( defined( $a_output->{'scsi_revision'} )
+			&& ( ref( $a_output->{'scsi_revision'} ) eq '' ) )
+		{
+			$IDs{'revision'} = $a_output->{'scsi_revision'};
+		}
+		if ( defined( $a_output->{'scsi_grown_defect_list'} )
+			&& ( ref( $a_output->{'scsi_grown_defect_list'} ) eq '' ) )
+		{
+			$IDs{'5'} = $a_output->{'scsi_grown_defect_list'};
+		}
+		if (   defined( $a_output->{'power_on_time'} )
+			&& ( ref( $a_output->{'power_on_time'} ) eq 'HASH' )
+			&& defined( $a_output->{'power_on_time'}{'hours'} )
+			&& ( ref( $a_output->{'power_on_time'}{'hours'} ) eq '' ) )
+		{
+			$IDs{'9'} = $a_output->{'power_on_time'}{'hours'};
+		}
+		if (   defined( $a_output->{'scsi_start_stop_cycle_counter'} )
+			&& ( ref( $a_output->{'scsi_start_stop_cycle_counter'} ) eq 'HASH' )
+			&& defined( $a_output->{'scsi_start_stop_cycle_counter'}{'accumulated_start_stop_cycles'} )
+			&& ( ref( $a_output->{'scsi_start_stop_cycle_counter'}{'accumulated_start_stop_cycles'} ) eq '' ) )
+		{
+			$IDs{'12'} = $a_output->{'scsi_start_stop_cycle_counter'}{'accumulated_start_stop_cycles'};
 		}
 
-		# mainly HP drives
-		while ( $output =~ /(?i)Revision:(.*)/g ) {
-			$IDs{'revision'} = $1;
-			$IDs{'revision'} =~ s/^\s+|\s+$//g;
+		#
+		# nvme
+		#
+		if ( defined( $a_output->{'nvme_smart_health_information_log'} )
+			&& ( ref( $a_output->{'nvme_smart_health_information_log'} ) eq 'HASH' ) )
+		{
+			if (   defined( $a_output->{'nvme_smart_health_information_log'} )
+				&& ( ref( $a_output->{'nvme_smart_health_information_log'}{'percentage_used'} ) eq '' )
+				&& looks_like_number( $a_output->{'nvme_smart_health_information_log'}{'percentage_used'} ) )
+			{
+				$IDs{'231'} = 100 - $a_output->{'nvme_smart_health_information_log'}{'percentage_used'};
+			}
+			if ( defined( $a_output->{'nvme_smart_health_information_log'} )
+				&& ( ref( $a_output->{'nvme_smart_health_information_log'}{'power_cycles'} ) eq '' ) )
+			{
+				$IDs{'12'} = $a_output->{'nvme_smart_health_information_log'}{'power_cycles'};
+			}
+		} ## end if ( defined( $a_output->{'nvme_smart_health_information_log'...}))
+
+		# common on most things, just copy this to 194 is present
+		if (   defined( $a_output->{'temperature'} )
+			&& ( ref( $a_output->{'temperature'} ) eq 'hash' )
+			&& defined( $a_output->{'temperature'}{'current'} )
+			&& ( ref( $a_output->{'temperature'}{'current'} ) eq '' ) )
+		{
+			$IDs{'194'} = $a_output->{'temperature'}{'current'};
+		}
+
+		# get temp limit stuff
+		# seems to be common on NVMe
+		if (   defined( $a_output->{'temperature'} )
+			&& ( ref( $a_output->{'temperature'} ) eq 'hash' )
+			&& defined( $a_output->{'temperature'}{'op_limit_max'} )
+			&& ( ref( $a_output->{'temperature'}{'op_limit_max'} ) eq '' ) )
+		{
+			$IDs{'temp_limit'} = $a_output->{'temperature'}{'current'};
+		}
+		# seems to be common on some SAS
+		if (   defined( $a_output->{'temperature'} )
+			&& ( ref( $a_output->{'temperature'} ) eq 'hash' )
+			&& defined( $a_output->{'temperature'}{'drive_trip'} )
+			&& ( ref( $a_output->{'temperature'}{'drive_drip'} ) eq '' ) )
+		{
+			$IDs{'temp_limit'} = $a_output->{'temperature'}{'drive_trip'};
 		}
 
 		# figure out what to use for the max temp, if there is one
-		if ( $IDs{'190'} =~ /^\d+$/ ) {
+		if ( defined( $IDs{'190'} )
+			&& !defined( $IDs{'194'} && looks_like_number( $IDs{'190'} ) ) )
+		{
 			$IDs{max_temp} = $IDs{'190'};
-		} elsif ( $IDs{'194'} =~ /^\d+$/ ) {
+		} elsif ( !defined( $IDs{'190'} )
+			&& defined( $IDs{'194'} && looks_like_number( $IDs{'194'} ) ) )
+		{
 			$IDs{max_temp} = $IDs{'194'};
-		}
-		if ( $IDs{'194'} =~ /^\d+$/ && defined( $IDs{max_temp} ) && $IDs{'194'} > $IDs{max_temp} ) {
-			$IDs{max_temp} = $IDs{'194'};
+		} elsif ( defined( $IDs{'190'} )
+			&& defined( $IDs{'194'} && looks_like_number( $IDs{'190'} ) && looks_like_number( $IDs{'194'} ) ) )
+		{
+			if ( $IDs{'190'} > $IDs{'194'} ) {
+				$IDs{'max_temp'} = $IDs{'190'};
+			} else {
+				$IDs{'max_temp'} = $IDs{'194'};
+			}
 		}
 
-		$output = `$smartctl -H $disk`;
-		if ( $output =~ /SMART\ overall\-health\ self\-assessment\ test\ result\:\ PASSED/ ) {
-			$IDs{'health_pass'} = 1;
-		} elsif ( $output =~ /SMART\ Health\ Status\:\ OK/ ) {
+		# checks if we are have exceeded the max temp
+		if (   defined( $IDs{'max_temp'} )
+			&& looks_like_number( $IDs{'max_temp'} )
+			&& defined( $IDs{'temp_limit'} )
+			&& looks_like_number( $IDs{'temp_limit'} )
+			&& ( $IDs{'max_temp'} >= $IDs{'temp_limit'} ) )
+		{
+			$IDs{'over_temp'} = 1;
+		}
+
+		if (   defined( $a_output->{'smart_status'} )
+			&& ( ref( $a_output->{'smart_status'} ) eq 'HASH' )
+			&& defined( $a_output->{'smart_status'}{'passed'} )
+			&& ( ref( $a_output->{'smart_status'}{'passed'} ) eq 'JSON::PP::Boolean' )
+			&& $a_output->{'smart_status'}{'passed'} )
+		{
 			$IDs{'health_pass'} = 1;
 		}
 
 		if ( !$IDs{'health_pass'} ) {
 			$to_return->{data}{unhealthy}++;
 		}
-	} ## end else [ if ( $IDs{exit} != 0 ) ]
+
+		# get form factor info
+		if (   defined( $a_output->{'form_factor'} )
+			&& ( ref( $a_output->{'form_factor'} ) eq 'HASH' )
+			&& defined( $a_output->{'form_factor'}{'name'} )
+			&& ( ref( $a_output->{'form_factor'}{'name'} ) eq '' ) )
+		{
+			$IDs{'form_factor'} = $a_output->{'form_factor'}{'name'};
+
+			if (   defined( $a_output->{'scsi_transport_protocol'} )
+				&& ( ref( $a_output->{'scsi_transport_protocol'} ) eq 'HASH' )
+				&& defined( $a_output->{'scsi_transport_protocol'}{'name'} )
+				&& ( ref( $a_output->{'scsi_transport_protocol'}{'name'} ) eq '' ) )
+			{
+				$IDs{'form_factor'} = $IDs{'form_factor'} . ' ' . $a_output->{'scsi_transport_protocol'}{'name'};
+			} elsif ( defined( $a_output->{'device'} )
+				&& ( ref( $a_output->{'device'} ) eq 'HASH' )
+				&& defined( $a_output->{'device'}{'type'} )
+				&& ( ref( $a_output->{'device'}{'type'} ) eq '' )
+				&& ( $a_output->{'device'}{'type'} eq 'sat' )
+				&& defined( $a_output->{'device'}{'protocol'} )
+				&& ( ref( $a_output->{'device'}{'protocol'} ) eq '' )
+				&& ( $a_output->{'device'}{'protocol'} eq 'ATA' ) )
+			{
+				$IDs{'form_factor'} = $IDs{'form_factor'} . ' SATA';
+			} ## end elsif ( defined( $a_output->{'device'} ) && (...))
+		} elsif ( defined( $a_output->{'form_factor'} )
+			&& ( ref( $a_output->{'form_factor'} ) eq 'HASH' )
+			&& defined( $a_output->{'form_factor'}{'name'} )
+			&& ( ref( $a_output->{'form_factor'}{'name'} ) eq '' ) )
+		{
+			$IDs{'form_factor'} = 'NVMe';
+		}
+
+		# seems to be common for both SAS and SATA
+		if ( defined( $a_output->{'rotation_rate'} )
+			&& ( ref( $a_output->{'rotation_rate'} ) eq '' ) )
+		{
+			$IDs{'rpm'} = $a_output->{'rotation_rate'};
+		}
+	} ## end if ( $IDs{'json_err'} == 0 )
 
 	# only bother to save this if useSN is not being used
 	if ( !$useSN ) {
@@ -909,20 +1033,18 @@ if ( !$opts{p} ) {
 	$toReturn = $toReturn . "\n";
 }
 
-if ( $opts{Z} ) {
-	my $toReturnCompressed;
-	gzip \$toReturn => \$toReturnCompressed;
-	my $compressed = encode_base64($toReturnCompressed);
-	$compressed =~ s/\n//g;
-	$compressed = $compressed . "\n";
-	if ( length($compressed) < length($toReturn) ) {
-		$toReturn = $compressed;
-	}
-} ## end if ( $opts{Z} )
+my $toReturnCompressed;
+gzip \$toReturn => \$toReturnCompressed;
+my $compressed = encode_base64($toReturnCompressed);
+$compressed =~ s/\n//g;
+$compressed = $compressed . "\n";
 
 if ( !$noWrite ) {
 	open( my $writefh, ">", $cache ) or die "Can't open '" . $cache . "'";
 	print $writefh $toReturn;
+	close($writefh);
+	open( $writefh, ">", $cache . '.snmp' ) or die "Can't open '" . $cache . ".snmp'";
+	print $writefh $compressed;
 	close($writefh);
 } else {
 	print $toReturn;
