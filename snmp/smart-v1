@@ -26,7 +26,7 @@
 
 Add this to snmpd.conf like below.
 
-    extend smart /etc/snmp/smart
+    extend smart /bin/cat /var/cache/smart.snmp
 
 Then add to root's cron tab, if you have more than a few disks.
 
