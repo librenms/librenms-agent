@@ -789,7 +789,6 @@ foreach my $line (@disks) {
 		} ## end if ( $IDs{'completed'} > 0 || $IDs{'interrupted'...})
 
 		$disk_id = $name;
-		$output  = `$smartctl --json -i $disk`;
 		if ( defined( $a_output->{'serial_number'} )
 			&& ( ref( $a_output->{'serial_number'} ) eq '' ) )
 		{
