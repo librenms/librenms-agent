@@ -595,6 +595,7 @@ foreach my $line (@disks) {
 	my %IDs    = (
 		'5'            => undef,
 		'10'           => undef,
+		'12'           => undef,
 		'173'          => undef,
 		'177'          => undef,
 		'183'          => undef,
@@ -622,6 +623,7 @@ foreach my $line (@disks) {
 		'temp_limit'   => undef,
 		'from_factor'  => undef,
 		'over_temp'    => 0,
+		'rpm'          => undef,
 	);
 	$IDs{'disk'} =~ s/^\/dev\///;
 
@@ -878,7 +880,7 @@ foreach my $line (@disks) {
 			&& defined( $a_output->{'scsi_start_stop_cycle_counter'}{'accumulated_start_stop_cycles'} )
 			&& ( ref( $a_output->{'scsi_start_stop_cycle_counter'}{'accumulated_start_stop_cycles'} ) eq '' ) )
 		{
-			$IDs{'12'} = $a_output->{'power_on_time'}{'accumulated_start_stop_cycles'};
+			$IDs{'12'} = $a_output->{'scsi_start_stop_cycle_counter'}{'accumulated_start_stop_cycles'};
 		}
 
 		#
@@ -1002,6 +1004,12 @@ foreach my $line (@disks) {
 			$IDs{'form_factor'} = 'NVMe';
 		}
 
+		# seems to be common for both SAS and SATA
+		if ( defined( $a_output->{'rotation_rate'} )
+			&& ( ref( $a_output->{'rotation_rate'} ) eq '' ) )
+		{
+			$IDs{'rpm'} = $a_output->{'rotation_rate'};
+		}
 	} ## end if ( $IDs{'json_err'} == 0 )
 
 	# only bother to save this if useSN is not being used
