@@ -637,9 +637,11 @@ foreach my $line (@disks) {
 
 	# if polling exited non-zero above, no reason running the rest of the checks
 	my $disk_id = $name;
-	if ( $IDs{'exit'} != 0 ) {
-		$to_return->{data}{exit_nonzero}++;
-	} elsif ( $IDs{'json_err'} == 0 ) {
+	if ( $IDs{'json_err'} == 0 ) {
+		if ( $IDs{'exit'} != 0 ) {
+			$to_return->{data}{exit_nonzero}++;
+		}
+
 		if (   defined( $a_output->{'ata_smart_attributes'} )
 			&& ( ref( $a_output->{'ata_smart_attributes'} ) eq 'HASH' )
 			&& defined( $a_output->{'ata_smart_attributes'}{'table'} )
@@ -888,7 +890,7 @@ foreach my $line (@disks) {
 		if ( !$IDs{'health_pass'} ) {
 			$to_return->{data}{unhealthy}++;
 		}
-	} ## end elsif ( $IDs{'json_err'} == 0 )
+	} ## end if ( $IDs{'json_err'} == 0 )
 
 	# only bother to save this if useSN is not being used
 	if ( !$useSN ) {
