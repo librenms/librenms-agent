@@ -858,6 +858,13 @@ foreach my $line (@disks) {
 		{
 			$IDs{'5'} = $a_output->{'scsi_grown_defect_list'};
 		}
+		if (   defined( $a_output->{'power_on_time'} )
+			&& ( ref( $a_output->{'power_on_time'} ) eq 'HASH' )
+			&& defined( $a_output->{'power_on_time'}{'hours'} )
+			&& ( ref( $a_output->{'power_on_time'}{'hours'} ) eq '' ) )
+		{
+			$IDs{'9'} = $a_output->{'power_on_time'}{'hours'};
+		}
 
 		# figure out what to use for the max temp, if there is one
 		if ( defined( $IDs{'190'} )
