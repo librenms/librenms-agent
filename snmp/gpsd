@@ -32,12 +32,12 @@ $BIN_GPIPE -w -n $LINES > "$TMPFILE"
 
 # Parse Temp file for GPSD Data
 VERSION=$(cat "$TMPFILE" | $BIN_GREP -m 1 "VERSION" | $BIN_PYTHON -c 'import sys,json;print(json.load(sys.stdin)["rev"])' 2> /dev/null)
-GPSDMODE=$(cat "$TMPFILE" | $BIN_GREP -m 1 "mode" | $BIN_PYTHON -c 'import sys,json;print(json.load(sys.stdin)["mode"])' 2> /dev/null)
-HDOP=$(cat "$TMPFILE" | $BIN_GREP -m 1 "hdop" | $BIN_PYTHON -c 'import sys,json;print(json.load(sys.stdin)["hdop"])' 2> /dev/null)
-VDOP=$(cat "$TMPFILE" | $BIN_GREP -m 1 "vdop" | $BIN_PYTHON -c 'import sys,json;print(json.load(sys.stdin)["vdop"])' 2> /dev/null)
-LAT=$(cat "$TMPFILE" | $BIN_GREP -m 1 "lat" | $BIN_PYTHON -c 'import sys,json;print(json.load(sys.stdin)["lat"])' 2> /dev/null)
-LONG=$(cat "$TMPFILE" | $BIN_GREP -m 1 "lon" | $BIN_PYTHON -c 'import sys,json;print(json.load(sys.stdin)["lon"])' 2> /dev/null)
-ALT=$(cat "$TMPFILE" | $BIN_GREP -m 1 "alt" | $BIN_PYTHON -c 'import sys,json;print(json.load(sys.stdin)["alt"])' 2> /dev/null)
+GPSDMODE=$(cat "$TMPFILE" | $BIN_GREP -m 1 "TPV" | $BIN_PYTHON -c 'import sys,json;print(json.load(sys.stdin)["mode"])' 2> /dev/null)
+HDOP=$(cat "$TMPFILE" | $BIN_GREP -m 1 "SKY" | $BIN_PYTHON -c 'import sys,json;print(json.load(sys.stdin)["hdop"])' 2> /dev/null)
+VDOP=$(cat "$TMPFILE" | $BIN_GREP -m 1 "SKY" | $BIN_PYTHON -c 'import sys,json;print(json.load(sys.stdin)["vdop"])' 2> /dev/null)
+LAT=$(cat "$TMPFILE" | $BIN_GREP -m 1 "TPV" | $BIN_PYTHON -c 'import sys,json;print(json.load(sys.stdin)["lat"])' 2> /dev/null)
+LONG=$(cat "$TMPFILE" | $BIN_GREP -m 1 "TPV" | $BIN_PYTHON -c 'import sys,json;print(json.load(sys.stdin)["lon"])' 2> /dev/null)
+ALT=$(cat "$TMPFILE" | $BIN_GREP -m 1 "TPV" | $BIN_PYTHON -c 'import sys,json;print(json.load(sys.stdin)["alt"])' 2> /dev/null)
 SATS=$(cat "$TMPFILE" | $BIN_GREP -m 1 "SKY" | $BIN_PYTHON -c 'import sys,json;print(len(json.load(sys.stdin)["satellites"]))' 2> /dev/null)
 SATSUSED=$(cat "$TMPFILE" | $BIN_GREP -m 1 "SKY" | $BIN_PYTHON -c 'import sys,json;print(len([sat for sat in json.load(sys.stdin)["satellites"] if sat["used"]]))' 2> /dev/null)
 
