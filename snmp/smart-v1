@@ -573,10 +573,10 @@ if ( !defined( $opts{u} ) ) {
 #
 #
 my $to_return = {
-	data        => { disks => {}, exit_nonzero => 0, unhealthy => 0, useSN => $useSN },
-	version     => 1,
-	error       => 0,
-	errorString => '',
+	'data'        => { 'disks' => {}, 'exit_nonzero' => 0, 'dev_error' => 0, 'unhealthy' => 0, 'useSN' => $useSN },
+	'version'     => 1,
+	'error'       => 0,
+	'errorString' => '',
 };
 foreach my $line (@disks) {
 	my $disk;
@@ -618,12 +618,12 @@ foreach my $line (@disks) {
 		'health_pass'  => 0,
 		'max_temp'     => undef,
 		'exit'         => $?,
+		'dev_error'    => 0,
 		'json_err'     => 0,
 		'json_err_str' => '',
 		'temp_limit'   => undef,
 		'from_factor'  => undef,
 		'over_temp'    => 0,
-		'rpm'          => undef,
 	);
 	$IDs{'disk'} =~ s/^\/dev\///;
 
@@ -645,12 +645,29 @@ foreach my $line (@disks) {
 		$IDs{'json_err'}     = 1;
 	}
 
+	if ( $IDs{'exit'} != 0 ) {
+		$to_return->{'data'}{'exit_nonzero'}++;
+	}
+
 	# if polling exited non-zero above, no reason running the rest of the checks
 	my $disk_id = $name;
 	if ( $IDs{'json_err'} == 0 ) {
-		if ( $IDs{'exit'} != 0 ) {
-			$to_return->{data}{exit_nonzero}++;
-		}
+		if (   defined( $a_output->{'smartctl'} )
+			&& ( ref( $a_output->{'smartctl'} ) eq 'HASH' )
+			&& defined( $a_output->{'smartctl'}{'messages'} )
+			&& ( ref( $a_output->{'smartctl'}{'messages'} ) eq 'ARRAY' )
+			&& defined( $a_output->{'smartctl'}{'messages'}[0] )
+			&& ( ref( $a_output->{'smartctl'}{'messages'}[0] ) eq 'HASH' )
+			&& defined( $a_output->{'smartctl'}{'messages'}[0]{'string'} )
+			&& ( ref( $a_output->{'smartctl'}{'messages'}[0]{'string'} ) eq '' )
+			&& defined( $a_output->{'smartctl'}{'messages'}[0]{'severity'} )
+			&& ( ref( $a_output->{'smartctl'}{'messages'}[0]{'severity'} ) eq '' )
+			&& ( $a_output->{'smartctl'}{'messages'}[0]{'string'}   =~ /device/ )
+			&& ( $a_output->{'smartctl'}{'messages'}[0]{'severity'} =~ /error/ ) )
+		{
+			$IDs{'dev_error'} = 1;
+			$to_return->{'data'}{'dev_error'}++;
+		} ## end if ( defined( $a_output->{'smartctl'} ) &&...)
 
 		if (   defined( $a_output->{'ata_smart_attributes'} )
 			&& ( ref( $a_output->{'ata_smart_attributes'} ) eq 'HASH' )
