@@ -622,7 +622,6 @@ foreach my $line (@disks) {
 		'json_err'     => 0,
 		'json_err_str' => '',
 		'temp_limit'   => undef,
-		'from_factor'  => undef,
 		'over_temp'    => 0,
 	);
 	$IDs{'disk'} =~ s/^\/dev\///;
@@ -921,7 +920,7 @@ foreach my $line (@disks) {
 
 		# common on most things, just copy this to 194 is present
 		if (   defined( $a_output->{'temperature'} )
-			&& ( ref( $a_output->{'temperature'} ) eq 'hash' )
+			&& ( ref( $a_output->{'temperature'} ) eq 'HASH' )
 			&& defined( $a_output->{'temperature'}{'current'} )
 			&& ( ref( $a_output->{'temperature'}{'current'} ) eq '' ) )
 		{
@@ -931,15 +930,15 @@ foreach my $line (@disks) {
 		# get temp limit stuff
 		# seems to be common on NVMe
 		if (   defined( $a_output->{'temperature'} )
-			&& ( ref( $a_output->{'temperature'} ) eq 'hash' )
+			&& ( ref( $a_output->{'temperature'} ) eq 'HASH' )
 			&& defined( $a_output->{'temperature'}{'op_limit_max'} )
 			&& ( ref( $a_output->{'temperature'}{'op_limit_max'} ) eq '' ) )
 		{
-			$IDs{'temp_limit'} = $a_output->{'temperature'}{'current'};
+			$IDs{'temp_limit'} = $a_output->{'temperature'}{'op_limit_max'};
 		}
 		# seems to be common on some SAS
 		if (   defined( $a_output->{'temperature'} )
-			&& ( ref( $a_output->{'temperature'} ) eq 'hash' )
+			&& ( ref( $a_output->{'temperature'} ) eq 'HASH' )
 			&& defined( $a_output->{'temperature'}{'drive_trip'} )
 			&& ( ref( $a_output->{'temperature'}{'drive_drip'} ) eq '' ) )
 		{
@@ -1013,10 +1012,9 @@ foreach my $line (@disks) {
 			{
 				$IDs{'form_factor'} = $IDs{'form_factor'} . ' SATA';
 			} ## end elsif ( defined( $a_output->{'device'} ) && (...))
-		} elsif ( defined( $a_output->{'form_factor'} )
-			&& ( ref( $a_output->{'form_factor'} ) eq 'HASH' )
-			&& defined( $a_output->{'form_factor'}{'name'} )
-			&& ( ref( $a_output->{'form_factor'}{'name'} ) eq '' ) )
+		} elsif ( defined( $a_output->{'nvme_namespaces'} )
+			&& ( ref( $a_output->{'nvme_namespaces'} ) eq 'ARRAY' )
+			&& defined( $a_output->{'nvme_version'} ) )
 		{
 			$IDs{'form_factor'} = 'NVMe';
 		}
