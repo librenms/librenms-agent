@@ -3,7 +3,7 @@
 # Name: Socket Statistics Script
 # Author: bnerickson <bnerickson87@gmail.com> w/SourceDoctor's certificate.py script forming
 #         the base of the vast majority of this one.
-# Version: 1.0
+# Version: 1.1
 # Description: This is a simple script to parse "ss" output for ingestion into
 #              LibreNMS via the ss application.
 # Installation:
@@ -41,20 +41,22 @@
 #                                 Specifying "all" includes all of the families.
 #                                 For example: to include only inet and inet6
 #                                 families, you would specify "inet,inet6": ["all"]
-#         ```
-#         {
-#             "ss_cmd": "/sbin/ss",
-#             "socket_types": "all",
-#             "addr_families": "all"
-#         }
-#         ```
-#     4. Restart snmpd and activate the app for desired host.
+#           d.) Example file format
+#           {
+#                  "ss_cmd": "/usr/bin/ss",
+#                  "socket_types": "dccp,icmp6,mptcp,p_dgr,p_raw,raw,sctp,tcp,ti_dg,ti_rd,ti_sq,ti_st,u_dgr,u_seq,u_str,udp,unknown,v_dgr,v_str,xdp",
+#                  "addr_families": "inet,inet6,link,netlink,tipc,unix,vsock"
+#           }
+#
+##     4. Restart snmpd and activate the app for desired host.
 
+import argparse
 import json
 import subprocess
 import sys
 
-CONFIG_FILE = "/etc/snmp/ss.json"
+DEFAULT_CONFIG_FILE = "/etc/snmp/ss.json"
+
 SOCKET_MAPPINGS = {
     "dccp": {
         "args": ["--dccp"],
@@ -177,7 +179,20 @@ def error_handler(error_name, err):
     sys.exit(1)
 
 
-def config_file_parser():
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Socket Statistics Script for LibreNMS"
+    )
+    parser.add_argument(
+        "-r",
+        "--config",
+        default=DEFAULT_CONFIG_FILE,
+        help="Path to configuration JSON file (default: /etc/snmp/ss.json)",
+    )
+    return parser.parse_args()
+
+
+def config_file_parser(config_path):
     """
     config_file_parser(): Parses the config file (if it exists) and extracts the
                           necessary parameters.
@@ -194,7 +209,7 @@ def config_file_parser():
 
     # Load configuration file if it exists
     try:
-        with open(CONFIG_FILE, "r", encoding="utf-8") as json_file:
+        with open(config_path, "r", encoding="utf-8") as json_file:
             config_file = json.load(json_file)
             ss_cmd = [config_file["ss_cmd"]]
             socket_allow_list_clean = list(
@@ -331,7 +346,8 @@ def main():
     output_data = {"errorString": "", "error": 0, "version": 1, "data": {}}
 
     # Parse configuration file.
-    ss_cmd, socket_allow_list, addr_family_allow_list = config_file_parser()
+    args = parse_args()
+    ss_cmd, socket_allow_list, addr_family_allow_list = config_file_parser(args.config)
 
     # Execute ss command for socket types.
     for gentype in list(SOCKET_MAPPINGS.keys()):
