@@ -14,10 +14,6 @@
 #
 # See http://www.gnu.org/licenses/gpl.txt for the full license
 
-use constant {
-    TIMEZONE => 'Europe/Amsterdam'
-};
-
 use strict;
 use PVE::APIClient::LWP;
 use PVE::AccessControl;
