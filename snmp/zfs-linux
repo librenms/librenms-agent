@@ -76,7 +76,13 @@ def main(args):
     MFU_SIZE = 0
     RECENTLY_USED_PERCENT = 0
     FREQUENTLY_USED_PERCENT = 0
-    P = STATS["p"]
+
+    if "p" in STATS:
+        P = STATS["p"]
+    elif "pd" in STATS and "pm" in STATS:
+        P = STATS["pd"] + STATS["pm"]
+    else:
+        P = 0
 
     if ARC_SIZE >= TARGET_SIZE:
         MFU_SIZE = ARC_SIZE - P
