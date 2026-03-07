@@ -2,7 +2,7 @@
 
 # wlFrequency.sh
 # Returns wlFrequency, in MHz (not channel number)
-# Arguments: targed interface
+# Arguments: target interface
 
 # Check number of arguments
 if [ $# -ne 1 ]; then
