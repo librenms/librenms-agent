@@ -40,6 +40,8 @@ storcli64 is NOT concurrency-safe — all calls are sequential.
 
 from __future__ import annotations
 
+import base64
+import gzip
 import json
 import os
 import subprocess
@@ -578,14 +580,19 @@ def _extract_pd_detail(resp, detail_by_key, cid, eid, slot):
 
 def _envelope(error, error_string, data):
     # type: (int, str, Any) -> str
-    return json.dumps(
+    """Build the LibreNMS JSON envelope, gzip-compress it, and return it as a
+    base64 string.  LibreNMS detects the base64 encoding automatically and
+    gunzips before parsing, which avoids the snmpd backslash-mangling bug and
+    reduces the payload size significantly over the wire."""
+    payload = json.dumps(
         {
             "error": error,
             "errorString": error_string,
             "version": "1",
             "data": data,
         }
-    )
+    ).encode("utf-8")
+    return base64.b64encode(gzip.compress(payload)).decode("ascii")
 
 
 def write_output(text):
