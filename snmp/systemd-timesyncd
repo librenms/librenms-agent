@@ -1,0 +1,23 @@
+#!/bin/sh
+# Please make sure the paths below are correct.
+# Alternatively you can put them in $0.conf, meaning if you've named
+# this script ntp-client then it must go in ntp-client.conf .
+#
+# If you are unsure, which to set, run this script and make sure that
+# the JSON output variables match that in "ntpq -c rv".
+#
+################################################################
+# Don't change anything unless you know what are you doing     #
+################################################################
+BIN_TIMEDATECTL='/usr/bin/env timedatectl'
+BIN_GREP='/usr/bin/env grep'
+BIN_AWK='/usr/bin/env awk'
+
+NTP_OFFSET=$($BIN_TIMEDATECTL timesync-status | $BIN_GREP "Offset" | $BIN_AWK -F: '{print $2 + 0}')
+NTP_FREQUENCY=$($BIN_TIMEDATECTL timesync-status | $BIN_GREP "Frequency" | $BIN_AWK -F: '{print $2 + 0}')
+NTP_JITTER=$($BIN_TIMEDATECTL timesync-status | $BIN_GREP "Jitter" | $BIN_AWK -F: '{print $2 + 0}')
+NTP_DELAY=$($BIN_TIMEDATECTL timesync-status | $BIN_GREP "Delay" | $BIN_AWK -F: '{print $2 + 0}')
+
+echo '{"data":{"offset":"'"$NTP_OFFSET"'","frequency":"'"$NTP_FREQUENCY"'","jitter":"'"$NTP_JITTER"'","delay":"'"$NTP_DELAY"'"},"version":"1","error":"0","errorString":""}'
+
+exit 0
