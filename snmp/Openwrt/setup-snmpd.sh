@@ -11,6 +11,38 @@ echo "OpenWrt SNMPD Setup Script"
 echo "=========================="
 echo ""
 
+remove_managed_snmpd_sections() {
+	tmp_clean=$(mktemp)
+	awk '
+		BEGIN { RS=""; ORS="\n\n" }
+		{
+			block = $0
+			managed = 0
+
+			if (block ~ /LIBRENMS_OPENWRT_AUTOGEN_BEGIN/ || block ~ /LIBRENMS_OPENWRT_AUTOGEN_END/) {
+				managed = 1
+			}
+			if (block ~ /config extend/ && block ~ /option name '\''interfaces'\''/) {
+				managed = 1
+			}
+			if (block ~ /config extend/ && block ~ /option name '\''clients-wlan'\''/) {
+				managed = 1
+			}
+			if (block ~ /config extend/ && block ~ /option name '\''(clients|wl-clients|frequency|noise-floor|rate|snr)-[^'\'']+'\''/) {
+				managed = 1
+			}
+			if (block ~ /config pass/ && (block ~ /option name '\''lm-sensors'\''/ || block ~ /option prog '\''\/etc\/librenms\/lm-sensors-pass.sh'\''/)) {
+				managed = 1
+			}
+
+			if (!managed) {
+				print block
+			}
+		}
+	' /etc/config/snmpd > "$tmp_clean"
+	mv "$tmp_clean" /etc/config/snmpd
+}
+
 # Create directories
 echo "Creating directories..."
 mkdir -p "$SCRIPT_DIR"
@@ -26,7 +58,7 @@ fi
 # Copy scripts to /etc/librenms/
 echo "Installing monitoring scripts to $SCRIPT_DIR..."
 
-scripts="wlClients.sh wlFrequency.sh wlNoiseFloor.sh wlRate.sh wlSNR.sh lm-sensors-pass.sh distro.sh cleanup-and-fix.sh snmpd-config-generator.sh"
+scripts="wlInterfaces.sh wlClients.sh wlFrequency.sh wlNoiseFloor.sh wlRate.sh wlSNR.sh lm-sensors-pass.sh distro.sh snmpd-config-generator.sh"
 
 for script in $scripts; do
 	if [ -f "$script" ]; then
@@ -38,19 +70,6 @@ for script in $scripts; do
 	fi
 done
 
-# Generate wlInterfaces.txt
-echo ""
-echo "Generating wlInterfaces.txt..."
-# Force regeneration by removing old file
-rm -f "$SCRIPT_DIR/wlInterfaces.txt"
-"$SCRIPT_DIR/wlClients.sh" > /dev/null 2>&1
-if [ -f "$SCRIPT_DIR/wlInterfaces.txt" ]; then
-	echo "  ✓ Generated $SCRIPT_DIR/wlInterfaces.txt"
-	cat "$SCRIPT_DIR/wlInterfaces.txt"
-else
-	echo "  ✗ Failed to generate wlInterfaces.txt"
-fi
-
 # Generate sample config
 echo ""
 echo "Generating SNMPD configuration..."
@@ -60,7 +79,7 @@ echo "  $SCRIPT_DIR/snmpd-config-generator.sh"
 echo ""
 echo "To apply the configuration:"
 echo "  1. Backup your current config: cp /etc/config/snmpd /etc/config/snmpd.backup"
-echo "  2. Edit /etc/config/snmpd and add the generated sections"
+echo "  2. Replace old LibreNMS wireless sections with the generated block"
 echo "  3. Restart snmpd: /etc/init.d/snmpd restart"
 echo ""
 echo "Setup complete!"
@@ -77,15 +96,17 @@ if [ -z "$answer" ] || [ "$answer" = "y" ]; then
 
     # 1. Backup existing config
     cp /etc/config/snmpd /etc/config/snmpd-backup
-    
-    # 2. Append generated config
-    # Ensure the generator script is executable
+
+	# 2. Remove previously managed LibreNMS wireless sections
+	remove_managed_snmpd_sections
+
+	# 3. Append one fresh generated config block
     chmod +x "$SCRIPT_DIR/snmpd-config-generator.sh"
     "$SCRIPT_DIR/snmpd-config-generator.sh" >> /etc/config/snmpd
-    
-    # 3. Restart the service
+
+	# 4. Restart the service
     /etc/init.d/snmpd restart
-    
+
     echo "Done! Service restarted."
 else
     echo "Aborted. No changes made."

@@ -17,16 +17,19 @@ fi
 # Calculate result. Sum just for debug, and have to return integer
 # => If not integer (e.g. 2.67e+07), LibreNMS will drop the exponent (result, 2.67 bits/sec!)
 ratelist=$(/usr/sbin/iw dev "$1" station dump 2>/dev/null | /bin/grep "$2 bitrate" | /usr/bin/cut -f 2 -s -d" ")
-result=0
-if [ "$3" = "sum" ]; then
-  result=$(/bin/echo "$ratelist" | /usr/bin/awk -F ':' '{sum += $2} END {printf "%d\n", 1000000*sum}')
-elif [ "$3" = "avg" ]; then
-  result=$(/bin/echo "$ratelist" | /usr/bin/awk -F ':' '{sum += $2} END {printf "%d\n", 1000000*sum/NR}')
-elif [ "$3" = "min" ]; then
-  result=$(/bin/echo "$ratelist" | /usr/bin/awk -F ':' 'NR == 1 || $2 < min {min = $2} END {printf "%d\n", 1000000*min}')
-elif [ "$3" = "max" ]; then
-  result=$(/bin/echo "$ratelist" | /usr/bin/awk -F ':' 'NR == 1 || $2 > max {max = $2} END {printf "%d\n", 1000000*max}')
-fi
 
-# Return snmp result
-echo "$result"
+# Calculate min/avg/max rates
+min_rate=$(/bin/echo "$ratelist" | awk 'NR==1{min=$1} $1<min{min=$1} END{printf "%d\n", (min=="" ? 0 : min)}')
+avg_rate=$(/bin/echo "$ratelist" | awk '{sum+=$1; n++} END{printf "%d\n", (n>0 ? sum/n : 0)}')
+max_rate=$(/bin/echo "$ratelist" | awk '$1>max{max=$1} END{printf "%d\n", (max=="" ? 0 : max)}')
+
+case "$3" in
+  min) echo "$min_rate" ;;
+  avg) echo "$avg_rate" ;;
+  max) echo "$max_rate" ;;
+  *)   echo "0" ;;
+esac
+
+# Second line for nsExtendOutputFull compatibility
+echo "# wlRate $1 $2 $3"
+exit 0

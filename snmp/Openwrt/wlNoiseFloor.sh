@@ -15,5 +15,6 @@ fi
 # Use tail, not head (i.e. last line, not first), as head exits immediately, breaks the pipe to cut!
 noise=$(/usr/bin/iwinfo "$1" assoclist 2>/dev/null | grep -v "^$" | /usr/bin/cut -s -d "/" -f 2 | /usr/bin/cut -s -d "(" -f 1 | /usr/bin/cut -s -d " " -f 2 | /usr/bin/tail -1)
 
-# Return snmp result
+# Return snmp result (multi-line for nsExtendOutputFull)
 /bin/echo "$noise"
+/bin/echo "# wlNoiseFloor for $1"

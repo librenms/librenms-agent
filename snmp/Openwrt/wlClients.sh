@@ -1,101 +1,150 @@
 #!/bin/sh
+set -e
 
-# wlClients.sh
-# Counts connected (associated) Wi-Fi devices
-# Arguments: target interface. Assumes all interfaces if no argument
-# Auto-generates wlInterfaces.txt if it doesn't exist
+# wlClients.sh - OpenWrt wireless client count via ubus or fallback
+# Usage: wlClients.sh [interface]  # outputs integer count, always exit 0 for SNMP
 
-# Get path to this script (ash-compatible)
 scriptdir="$(cd "$(dirname "$0")" && pwd)"
-interfaces_file="$scriptdir/wlInterfaces.txt"
+interfaces_script="$scriptdir/wlInterfaces.sh"
 
-# Function to auto-detect and generate wlInterfaces.txt
-generate_interfaces_file() {
-	local tmpfile="$interfaces_file.tmp"
-	
-	# Find all wireless interfaces that are actually in use
-	for dev in /sys/class/net/*; do
-		iface=$(basename "$dev")
-		
-		# Skip known non-client interfaces
-		case "$iface" in
-			mld*|mon.*)  #|wifi*|phy*|wlan-*
-				continue 
-				;;
-		esac
-		
-		# Check if it's a wireless interface
-		if [ -d "$dev/wireless" ] || [ -d "$dev/phy80211" ]; then
-			# Get interface type and SSID using iw first
-			iw_info=$(/usr/sbin/iw dev "$iface" info 2>/dev/null)
-			iface_type=$(echo "$iw_info" | /usr/bin/awk '/^[[:space:]]*type / {print $2; exit}')
-			ssid=$(echo "$iw_info" | /bin/grep ssid | /usr/bin/cut -f 2 -s -d" " | /usr/bin/tr -d '\n')
-
-			# Skip AP/VLAN interfaces which can report "ESSID: unknown"
-			[ "$iface_type" = "AP/VLAN" ] && continue
-			
-			# If no SSID from iw, try iwinfo
-			if [ -z "$ssid" ]; then
-				ssid=$(/usr/bin/iwinfo "$iface" info 2>/dev/null | /bin/sed -n \
-					-e 's/.*ESSID: "\(.*\)".*/\1/p' \
-					-e 's/.*ESSID: \(.*\)$/\1/p' | /usr/bin/head -n 1)
-			fi
-			
-			# Skip interfaces without SSID (not active AP/client interfaces)
-			[ -z "$ssid" ] && continue
-			
-			# Skip malformed or unknown SSIDs
-			case "$ssid" in
-				unknown|*ESSID:*)
-					continue
-					;;
-			esac
-			
-			# Add to list (include even if DOWN, since SSID means it's configured)
-			echo "$iface,$ssid" >> "$tmpfile"
-		fi
-	done
-	
-	# Only replace if we found interfaces
-	if [ -s "$tmpfile" ]; then
-		mv "$tmpfile" "$interfaces_file"
-		return 0
-	else
-		rm -f "$tmpfile"
-		return 1
-	fi
+normalize_iface() {
+  # Keep only expected interface characters and strip CR/LF noise.
+  printf '%s' "$1" | tr -d '\r\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | sed 's/[^A-Za-z0-9._:-]//g'
 }
 
-# Check if wlInterfaces.txt exists, generate if not
-if [ ! -f "$interfaces_file" ]; then
-	generate_interfaces_file
-	if [ $? -ne 0 ]; then
-		/bin/echo "Error: Could not generate $interfaces_file and file does not exist"
-		exit 1
-	fi
-fi
+count_iface_clients() {
+  iface="$1"
+  new=0
 
-# Check number of arguments
-if [ $# -gt 1 ]; then
-	/bin/echo "Usage: wlClients.sh [interface]"
-	/bin/echo "Too many command line arguments, exiting."
-	exit 1
-fi
+  if ubus call "hostapd.$iface" get_clients >/dev/null 2>&1; then
+    new=$(list_assoc_macs_ubus "$iface" | awk 'NF' | sort -u | wc -l | awk '{print $1}')
+  else
+    # Fallback: iwinfo for generic OpenWrt
+    new=$(list_assoc_macs_iwinfo "$iface" | awk 'NF' | sort -u | wc -l | awk '{print $1}')
+  fi
 
-# Get interface list. Set target, which is name returned for interface
-if [ "$1" ]; then
-	interfaces=$1
+  # Normalize to a single integer token to avoid arithmetic parse errors.
+  new=$(printf '%s\n' "$new" | awk 'NF {print $1; exit}')
+  case "$new" in
+    ''|*[!0-9]*) new=0 ;;
+  esac
+
+  printf '%s\n' "$new"
+}
+
+list_assoc_macs_ubus() {
+  iface="$1"
+  ubus call "hostapd.$iface" get_clients 2>/dev/null | awk '
+    BEGIN { IGNORECASE=1; mac=""; mld="" }
+    /^[[:space:]]*"([0-9a-f]{2}:){5}[0-9a-f]{2}"[[:space:]]*:[[:space:]]*\{/ {
+      if (mac != "") {
+        if (mld != "" && mld != "00:00:00:00:00:00") {
+          print mld
+        } else {
+          print mac
+        }
+      }
+      if (match($0, /"([0-9a-f]{2}:){5}[0-9a-f]{2}"/)) {
+        mac=tolower(substr($0, RSTART+1, RLENGTH-2))
+        mld=""
+      }
+    }
+    /"mld_addr"[[:space:]]*:[[:space:]]*"([0-9a-f]{2}:){5}[0-9a-f]{2}"/ {
+      if (match($0, /"([0-9a-f]{2}:){5}[0-9a-f]{2}"[[:space:]]*$/)) {
+        val=tolower(substr($0, RSTART+1, RLENGTH-2))
+        if (val != "00:00:00:00:00:00") {
+          mld=val
+        }
+      } else if (match($0, /"([0-9a-f]{2}:){5}[0-9a-f]{2}"/)) {
+        val=tolower(substr($0, RSTART+1, RLENGTH-2))
+        if (val != "00:00:00:00:00:00") {
+          mld=val
+        }
+      }
+    }
+    END {
+      if (mac != "") {
+        if (mld != "" && mld != "00:00:00:00:00:00") {
+          print mld
+        } else {
+          print mac
+        }
+      }
+    }
+  '
+}
+
+list_assoc_macs_iwinfo() {
+  iface="$1"
+  iwinfo "$iface" assoclist 2>/dev/null | awk '
+    BEGIN { IGNORECASE=1 }
+    /^[[:space:]]*([0-9a-f]{2}:){5}[0-9a-f]{2}[[:space:]]/ {
+      print tolower($1)
+    }
+  '
+}
+
+count_aggregate_unique_clients() {
+  interfaces="$1"
+
+  if [ -z "$interfaces" ]; then
+    echo 0
+    return
+  fi
+
+  tmp="/tmp/wlClients.macs.$$"
+  trap 'rm -f "$tmp"' EXIT
+  : > "$tmp"
+
+  for iface in $interfaces; do
+    iface=$(normalize_iface "$iface")
+    [ -n "$iface" ] || continue
+
+    if ubus call "hostapd.$iface" get_clients >/dev/null 2>&1; then
+      list_assoc_macs_ubus "$iface" >> "$tmp" || true
+    else
+      list_assoc_macs_iwinfo "$iface" >> "$tmp" || true
+    fi
+  done
+
+  awk 'NF' "$tmp" | sort -u | wc -l | awk '{print $1}'
+}
+
+get_live_interfaces() {
+  # Reuse wlInterfaces.sh so we only count interfaces currently exported to LibreNMS.
+  if [ -x "$interfaces_script" ]; then
+    "$interfaces_script" 2>/dev/null | while IFS= read -r line; do
+      iface=$(printf '%s' "$line" | cut -d',' -f1)
+      iface=$(normalize_iface "$iface")
+      [ -n "$iface" ] && printf '%s\n' "$iface"
+    done | awk '!seen[$0]++'
+  fi
+}
+
+# Args: single iface or all
+if [ "${1:-}" ]; then
+  interfaces="$(normalize_iface "$1")"
 else
-	interfaces=$(cat "$interfaces_file" | cut -f 1 -d",")
+  interfaces=$(get_live_interfaces)
 fi
 
-# Count associated devices
 count=0
-for interface in $interfaces
-do
-	new=$(/usr/sbin/iw dev "$interface" station dump 2>/dev/null | /bin/grep Station | /usr/bin/cut -f 2 -s -d" " | /usr/bin/wc -l)
-	count=$(( count + new ))
-done
 
-# Return snmp result
-/bin/echo $count
+if [ "${1:-}" ]; then
+  # Per-interface mode (used by clients-<iface>)
+  for iface in $interfaces; do
+    iface=$(normalize_iface "$iface")
+    [ -n "$iface" ] || continue
+    new=$(count_iface_clients "$iface")
+    count=$((count + new))
+  done
+else
+  # Aggregate mode (clients-wlan): dedupe MACs to avoid MLO/MLD double-counting.
+  count=$(count_aggregate_unique_clients "$interfaces")
+fi
+
+# Output count first line for nsExtendOutput1Line queries.
+echo "$count"
+echo "# wlClients for $interfaces"
+exit 0
+
