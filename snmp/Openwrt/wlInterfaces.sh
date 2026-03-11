@@ -75,14 +75,6 @@ get_mode_from_iwinfo() {
   printf '%s\n' "$1" | sed -n 's/.*Mode:[[:space:]]*\([^ ]\+\).*/\1/p' | head -1
 }
 
-get_signal_from_iwinfo() {
-  printf '%s\n' "$1" | sed -n 's/.*Signal:[[:space:]]*\([^ ]\+\)[[:space:]]*dBm.*/\1/p' | head -1
-}
-
-get_bitrate_from_iwinfo() {
-  printf '%s\n' "$1" | sed -n 's/.*Bit Rate:[[:space:]]*\([^ ]\+\).*/\1/p' | head -1
-}
-
 get_access_point_from_iwinfo() {
   printf '%s\n' "$1" | sed -n 's/.*Access Point:[[:space:]]*\([^ ]\+\).*/\1/p' | head -1
 }
@@ -101,8 +93,6 @@ should_include_iwinfo_iface() {
   printf '%s\n' "$info" | grep -q '(VLAN)' && return 1
 
   mode=$(get_mode_from_iwinfo "$info")
-  signal=$(get_signal_from_iwinfo "$info")
-  bitrate=$(get_bitrate_from_iwinfo "$info")
   access_point=$(get_access_point_from_iwinfo "$info")
 
   case "$mode" in
@@ -113,24 +103,27 @@ should_include_iwinfo_iface() {
       return 0
       ;;
     Master)
-      case "$signal" in
-        ''|unknown|0) signal_inactive=1 ;;
-        *) signal_inactive=0 ;;
-      esac
-      case "$bitrate" in
-        ''|unknown) bitrate_inactive=1 ;;
-        *) bitrate_inactive=0 ;;
-      esac
-
-      # Ignore clearly inactive VAPs that report no real link metrics.
-      if [ "$signal_inactive" -eq 1 ] && [ "$bitrate_inactive" -eq 1 ]; then
-        return 1
-      fi
+      # Master-mode AP: include if ESSID is valid (checked above).
+      # Signal/bitrate at the AP interface level report 0/unknown when
+      # no clients are associated, so they cannot be used as filters.
       return 0
       ;;
   esac
 
   return 1
+}
+
+# Enumerate wireless interface names using iw (nl80211) or sysfs.
+# More reliable than parsing `iwinfo` without arguments.
+enum_wireless_ifaces() {
+  if command -v iw >/dev/null 2>&1; then
+    iw dev 2>/dev/null | awk '/[[:space:]]Interface[[:space:]]/{print $2}'
+    return
+  fi
+  for p in /sys/class/net/*/phy80211 /sys/class/net/*/wireless; do
+    [ -d "$p" ] || continue
+    basename "$(dirname "$p")"
+  done | sort -u
 }
 
 get_freq_mhz_from_hostapd() {
@@ -226,7 +219,7 @@ emit_iface_records() {
   fi
 
   if command -v iwinfo >/dev/null 2>&1; then
-    iwinfo 2>/dev/null | awk '/^[^[:space:]].*ESSID:/{print $1}' | while IFS= read -r iface; do
+    enum_wireless_ifaces | while IFS= read -r iface; do
       [ -n "$iface" ] || continue
       should_include_iwinfo_iface "$iface" || continue
       ssid=$(get_ssid_from_iwinfo "$iface")
