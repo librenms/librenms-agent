@@ -1,11 +1,37 @@
 #!/bin/sh
+set -eu
 
 # setup-snmpd.sh
-# Installation and configuration script for OpenWrt SNMP monitoring
-# This script sets up all necessary scripts and generates the snmpd config
+# Install OpenWrt LibreNMS helper scripts and optionally apply generated
+# SNMP extend configuration.
 
 SCRIPT_DIR="/etc/librenms"
-BACKUP_DIR="/etc/librenms/backup"
+BACKUP_DIR="$SCRIPT_DIR/backup"
+SOURCE_DIR=$(cd -- "$(dirname -- "$0")" && pwd)
+
+AUTO_YES=0
+NO_RESTART=0
+
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+		-y|--yes) AUTO_YES=1 ;;
+		--no-restart) NO_RESTART=1 ;;
+		-h|--help)
+			cat <<'EOF'
+Usage: setup-snmpd.sh [--yes|-y] [--no-restart]
+
+	-y, --yes       Apply generated snmpd config without prompt
+			--no-restart  Do not restart snmpd after applying config
+EOF
+			exit 0
+			;;
+		*)
+			echo "Unknown option: $1" >&2
+			exit 2
+			;;
+	esac
+	shift
+done
 
 echo "OpenWrt SNMPD Setup Script"
 echo "=========================="
@@ -43,6 +69,21 @@ remove_managed_snmpd_sections() {
 	mv "$tmp_clean" /etc/config/snmpd
 }
 
+apply_generated_snmpd_block() {
+	tmp_block=$(mktemp)
+	tmp_new=$(mktemp)
+
+	"$SCRIPT_DIR/snmpd-config-generator.sh" > "$tmp_block"
+
+	# Remove previously managed sections first (legacy and marker-based).
+	remove_managed_snmpd_sections
+
+	# Append exactly one fresh generated block.
+	cat /etc/config/snmpd "$tmp_block" > "$tmp_new"
+	mv "$tmp_new" /etc/config/snmpd
+	rm -f "$tmp_block"
+}
+
 # Create directories
 echo "Creating directories..."
 mkdir -p "$SCRIPT_DIR"
@@ -53,6 +94,8 @@ if [ -f /etc/config/snmpd ]; then
 	timestamp=$(date +%Y%m%d_%H%M%S)
 	echo "Backing up existing /etc/config/snmpd to $BACKUP_DIR/snmpd.$timestamp"
 	cp /etc/config/snmpd "$BACKUP_DIR/snmpd.$timestamp"
+else
+  touch /etc/config/snmpd
 fi
 
 # Copy scripts to /etc/librenms/
@@ -61,12 +104,13 @@ echo "Installing monitoring scripts to $SCRIPT_DIR..."
 scripts="wlInterfaces.sh wlClients.sh wlFrequency.sh wlNoiseFloor.sh wlRate.sh wlSNR.sh lm-sensors-pass.sh distro.sh snmpd-config-generator.sh"
 
 for script in $scripts; do
-	if [ -f "$script" ]; then
-		cp "$script" "$SCRIPT_DIR/"
+	src="$SOURCE_DIR/$script"
+	if [ -f "$src" ]; then
+		cp "$src" "$SCRIPT_DIR/"
 		chmod +x "$SCRIPT_DIR/$script"
 		echo "  ✓ Installed $script"
 	else
-		echo "  ✗ Warning: $script not found in current directory"
+		echo "  ✗ Warning: $script not found in $SOURCE_DIR"
 	fi
 done
 
@@ -84,28 +128,29 @@ echo "  3. Restart snmpd: /etc/init.d/snmpd restart"
 echo ""
 echo "Setup complete!"
 
-# Ask for confirmation
-printf "Do you want to update the SNMP configuration? [Y/n]: "
-read -r answer
-
-# Convert to lowercase and check (default to 'y' if empty)
-answer=$(echo "$answer" | tr '[:upper:]' '[:lower:]')
+if [ "$AUTO_YES" -eq 1 ]; then
+	answer="y"
+else
+	printf "Do you want to update the SNMP configuration? [Y/n]: "
+	read -r answer
+	answer=$(echo "$answer" | tr '[:upper:]' '[:lower:]')
+fi
 
 if [ -z "$answer" ] || [ "$answer" = "y" ]; then
     echo "Updating snmpd configuration..."
 
-    # 1. Backup existing config
-    cp /etc/config/snmpd /etc/config/snmpd-backup
+		# Extra one-shot backup before write
+		cp /etc/config/snmpd /etc/config/snmpd-backup
 
-	# 2. Remove previously managed LibreNMS wireless sections
-	remove_managed_snmpd_sections
-
-	# 3. Append one fresh generated config block
+		# Write exactly one fresh generated LibreNMS block.
     chmod +x "$SCRIPT_DIR/snmpd-config-generator.sh"
-    "$SCRIPT_DIR/snmpd-config-generator.sh" >> /etc/config/snmpd
+		apply_generated_snmpd_block
 
-	# 4. Restart the service
-    /etc/init.d/snmpd restart
+		if [ "$NO_RESTART" -eq 0 ]; then
+			/etc/init.d/snmpd restart
+		else
+			echo "Skipped snmpd restart (--no-restart)."
+		fi
 
     echo "Done! Service restarted."
 else
