@@ -105,10 +105,16 @@ scripts="wlInterfaces.sh wlClients.sh wlFrequency.sh wlNoiseFloor.sh wlRate.sh w
 
 for script in $scripts; do
 	src="$SOURCE_DIR/$script"
+	dst="$SCRIPT_DIR/$script"
 	if [ -f "$src" ]; then
-		cp "$src" "$SCRIPT_DIR/"
-		chmod +x "$SCRIPT_DIR/$script"
-		echo "  ✓ Installed $script"
+		if [ "$src" = "$dst" ]; then
+			chmod +x "$dst"
+			echo "  ✓ Using existing $script"
+		else
+			cp "$src" "$SCRIPT_DIR/"
+			chmod +x "$dst"
+			echo "  ✓ Installed $script"
+		fi
 	else
 		echo "  ✗ Warning: $script not found in $SOURCE_DIR"
 	fi
