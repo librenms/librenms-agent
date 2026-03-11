@@ -69,6 +69,34 @@ remove_managed_snmpd_sections() {
 	mv "$tmp_clean" /etc/config/snmpd
 }
 
+has_extend_name() {
+	name="$1"
+	grep -Eq "^[[:space:]]*option[[:space:]]+name[[:space:]]+'$name'[[:space:]]*$" /etc/config/snmpd
+}
+
+ensure_base_os_extends() {
+	if ! has_extend_name distro; then
+		cat >> /etc/config/snmpd <<'EOF'
+
+config extend
+	option name 'distro'
+	option prog '/etc/librenms/distro.sh'
+EOF
+		echo "  + Added missing extend: distro"
+	fi
+
+	if ! has_extend_name hardware; then
+		cat >> /etc/config/snmpd <<'EOF'
+
+config extend
+	option name 'hardware'
+	option prog '/bin/cat'
+	option args '/sys/firmware/devicetree/base/model'
+EOF
+		echo "  + Added missing extend: hardware"
+	fi
+}
+
 apply_generated_snmpd_block() {
 	tmp_block=$(mktemp)
 	tmp_new=$(mktemp)
@@ -150,6 +178,7 @@ if [ -z "$answer" ] || [ "$answer" = "y" ]; then
 
 		# Write exactly one fresh generated LibreNMS block.
     chmod +x "$SCRIPT_DIR/snmpd-config-generator.sh"
+		ensure_base_os_extends
 		apply_generated_snmpd_block
 
 		if [ "$NO_RESTART" -eq 0 ]; then
