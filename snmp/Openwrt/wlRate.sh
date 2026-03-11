@@ -43,23 +43,16 @@ fi
 
 # Fallback for devices where iw station dump is unavailable or differently formatted.
 if [ -z "$ratelist" ] && [ -n "$IWINFO_BIN" ]; then
-  if [ "$dir" = "tx" ]; then
-    ratelist=$($IWINFO_BIN "$iface" assoclist 2>/dev/null | awk '
-      /TX:[[:space:]]*[0-9]+(\.[0-9]+)?[[:space:]]*MBit\/s/ {
-        if (match($0, /TX:[[:space:]]*([0-9]+(\.[0-9]+)?)[[:space:]]*MBit\/s/, m)) {
-          print m[1]
-        }
+  ratelist=$($IWINFO_BIN "$iface" assoclist 2>/dev/null | awk -v d="$dir" '
+    {
+      key = tolower($1)
+      sub(/:$/, "", key)
+
+      if (key == d && $2 ~ /^[0-9]+(\.[0-9]+)?$/) {
+        print $2
       }
-    ')
-  else
-    ratelist=$($IWINFO_BIN "$iface" assoclist 2>/dev/null | awk '
-      /RX:[[:space:]]*[0-9]+(\.[0-9]+)?[[:space:]]*MBit\/s/ {
-        if (match($0, /RX:[[:space:]]*([0-9]+(\.[0-9]+)?)[[:space:]]*MBit\/s/, m)) {
-          print m[1]
-        }
-      }
-    ')
-  fi
+    }
+  ')
 fi
 
 # Calculate min/avg/max rates
