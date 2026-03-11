@@ -154,11 +154,11 @@ if [ -z "$answer" ] || [ "$answer" = "y" ]; then
 
 		if [ "$NO_RESTART" -eq 0 ]; then
 			/etc/init.d/snmpd restart
+			echo "Done! Service restarted."
 		else
 			echo "Skipped snmpd restart (--no-restart)."
+			echo "Done! Configuration updated."
 		fi
-
-    echo "Done! Service restarted."
 else
     echo "Aborted. No changes made."
     exit 1
