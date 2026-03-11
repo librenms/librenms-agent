@@ -1,11 +1,4 @@
 #!/bin/sh
-# Please make sure the paths below are correct.
-# Alternatively you can put them in $0.conf, meaning if you've named
-# this script ntp-client then it must go in ntp-client.conf .
-#
-# If you are unsure, which to set, run this script and make sure that
-# the JSON output variables match that in "ntpq -c rv".
-#
 ################################################################
 # Don't change anything unless you know what are you doing     #
 ################################################################
