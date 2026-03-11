@@ -201,9 +201,6 @@ emit_iface_records() {
     ubus list hostapd.* 2>/dev/null | sed 's/^hostapd\.//' | while IFS= read -r iface; do
       [ -n "$iface" ] || continue
       is_iface_active_hostapd "$iface" || continue
-      if command -v iwinfo >/dev/null 2>&1; then
-        should_include_iwinfo_iface "$iface" || continue
-      fi
       ssid=$(get_ssid_from_hostapd "$iface")
       if [ -z "$ssid" ] && command -v iwinfo >/dev/null 2>&1; then
         ssid=$(get_ssid_from_iwinfo "$iface")
