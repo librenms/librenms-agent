@@ -132,6 +132,18 @@ is_clearly_inactive_master_iface() {
   signal=$(get_signal_from_iwinfo "$info")
   bitrate=$(get_bitrate_from_iwinfo "$info")
 
+  # If hostapd reports airtime usage, keep this interface.
+  # This preserves active VAPs that still show Signal=0/Bit Rate=unknown in iwinfo.
+  air_util=$(get_hostapd_airtime_utilization "$iface")
+  case "$air_util" in
+    ''|unknown) ;;
+    *)
+      if [ "$air_util" -gt 0 ] 2>/dev/null; then
+        return 1
+      fi
+      ;;
+  esac
+
   # Some idle/placeholder VAPs report Signal=0 and unknown bitrate.
   # Treat only this exact combination as inactive.
   [ "$signal" = "0" ] || return 1
@@ -162,6 +174,15 @@ get_freq_mhz_from_hostapd() {
   hapd="hostapd.$iface"
   status_json=$(ubus call "$hapd" get_status 2>/dev/null || true)
   printf '%s' "$status_json" | get_json_value freq
+}
+
+get_hostapd_airtime_utilization() {
+  iface="$1"
+  hapd="hostapd.$iface"
+  status_json=$(ubus call "$hapd" get_status 2>/dev/null || true)
+  if command -v jsonfilter >/dev/null 2>&1; then
+    printf '%s' "$status_json" | jsonfilter -e '@.airtime.utilization' 2>/dev/null || true
+  fi
 }
 
 get_band_suffix() {
