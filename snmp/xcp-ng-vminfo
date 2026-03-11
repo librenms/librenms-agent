@@ -1,0 +1,374 @@
+#!/bin/bash
+# (c) 2026, LibreNMS
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# net-snmp pass_persist script for XCP-NG-VMINFO-MIB
+#
+# Exposes XCP-ng virtual machine information via SNMP using the
+# net-snmp "pass_persist" directive. The script stays running and
+# handles multiple requests without restarting.
+#
+# snmpd.conf example:
+#   pass_persist .1.3.6.1.4.1.60652.100 /etc/snmp/xcp-ng-vminfo
+#
+# OID structure:
+#   .1.3.6.1.4.1.60652.100.1.1.<column>.<row>
+#
+# Columns:
+#   2  xcpNgVmDisplayName  (string)  - VM name-label
+#   3  xcpNgVmConfigFile   (string)  - empty for now
+#   4  xcpNgVmGuestOS      (string)  - os-version
+#   5  xcpNgVmMemSize      (integer) - memory in MB
+#   6  xcpNgVmState        (integer) - power-state: running(1) halted(2) paused(3) suspended(4) crashed(5)
+#   7  xcpNgVmVMID         (string)  - uuid
+#   8  xcpNgVmGuestState   (string)  - guest tools state (derived from guest-metrics-last-updated)
+#   9  xcpNgVmIpAddress    (string)  - empty for now
+#  10  xcpNgVmCpus         (integer) - VCPUs-number
+#  11  xcpNgVmUUID         (string)  - uuid
+
+BASE_OID=".1.3.6.1.4.1.60652.100"
+ENTRY_OID="${BASE_OID}.1.1"
+
+# First accessible column and last column
+FIRST_COL=2
+LAST_COL=11
+
+# How often to refresh VM data (seconds)
+CACHE_TTL=60
+
+# ---------------------------------------------------------------
+# Map power-state string to integer enum
+# ---------------------------------------------------------------
+map_power_state() {
+    case "$1" in
+        running)   echo 1 ;;
+        halted)    echo 2 ;;
+        paused)    echo 3 ;;
+        suspended) echo 4 ;;
+        dying|crashed) echo 5 ;;
+        *)         echo 5 ;;
+    esac
+}
+
+# ---------------------------------------------------------------
+# Collect VM data from xe vm-list
+# ---------------------------------------------------------------
+declare -a VM_UUID VM_NAME VM_OS VM_MEM VM_STATE VM_CPUS VM_GUESTSTATE
+NUM_VMS=0
+LAST_REFRESH=0
+
+collect_vm_data() {
+    local now
+    now=$(date +%s)
+
+    # Only refresh if cache has expired
+    if [[ $((now - LAST_REFRESH)) -lt $CACHE_TTL && $NUM_VMS -gt 0 ]]; then
+        return
+    fi
+
+    # Clear old data
+    VM_UUID=()
+    VM_NAME=()
+    VM_OS=()
+    VM_MEM=()
+    VM_STATE=()
+    VM_CPUS=()
+    VM_GUESTSTATE=()
+
+    local idx=0
+    local line
+    local cur_uuid="" cur_name="" cur_os="" cur_mem="" cur_state="" cur_cpus="" cur_gueststate=""
+    local in_record=0
+
+    while IFS= read -r line; do
+        # Blank line (or whitespace-only) signals end of a VM record
+        if [[ "$line" =~ ^[[:space:]]*$ ]]; then
+            if [[ $in_record -eq 1 && -n "$cur_uuid" ]]; then
+                idx=$((idx + 1))
+                VM_UUID[$idx]="$cur_uuid"
+                VM_NAME[$idx]="$cur_name"
+                VM_OS[$idx]="$cur_os"
+                VM_STATE[$idx]=$(map_power_state "$cur_state")
+                VM_CPUS[$idx]="$cur_cpus"
+                VM_GUESTSTATE[$idx]="$cur_gueststate"
+
+                # Convert memory from bytes to MB
+                if [[ -n "$cur_mem" && "$cur_mem" != "<"* ]]; then
+                    VM_MEM[$idx]=$(( (cur_mem + 524288) / 1048576 ))
+                else
+                    VM_MEM[$idx]=0
+                fi
+
+                # Reset for next record
+                cur_uuid="" cur_name="" cur_os="" cur_mem="" cur_state="" cur_cpus="" cur_gueststate=""
+                in_record=0
+            fi
+            continue
+        fi
+
+        in_record=1
+
+        # Extract field name and value from xe output
+        # Lines look like: "                    name-label ( RW): some value"
+        # or:               "uuid ( RO)                        : some-uuid"
+        local key value trimmed
+
+        # Trim leading whitespace
+        trimmed="${line#"${line%%[![:space:]]*}"}"
+        # Extract key: first word (everything before the first space)
+        key="${trimmed%% *}"
+
+        # Extract value: everything after the first ": "
+        value="${line#*: }"
+
+        case "$key" in
+            uuid)
+                cur_uuid="$value"
+                ;;
+            name-label)
+                cur_name="$value"
+                ;;
+            os-version)
+                if [[ "$value" == "<"* ]]; then
+                    cur_os=""
+                else
+                    cur_os="$value"
+                fi
+                ;;
+            memory-actual)
+                if [[ "$value" == "<"* ]]; then
+                    cur_mem=""
+                else
+                    cur_mem="$value"
+                fi
+                ;;
+            power-state)
+                cur_state="$value"
+                ;;
+            VCPUs-number)
+                cur_cpus="$value"
+                ;;
+            guest-metrics-last-updated)
+                if [[ "$value" == "<"* ]]; then
+                    cur_gueststate="not installed"
+                else
+                    cur_gueststate="running"
+                fi
+                ;;
+        esac
+    done < <(xe vm-list params=uuid,name-label,os-version,memory-actual,power-state,VCPUs-number,guest-metrics-last-updated 2>/dev/null; echo "")
+
+    # Handle last record if output didn't end with blank line
+    if [[ $in_record -eq 1 && -n "$cur_uuid" ]]; then
+        idx=$((idx + 1))
+        VM_UUID[$idx]="$cur_uuid"
+        VM_NAME[$idx]="$cur_name"
+        VM_OS[$idx]="$cur_os"
+        VM_STATE[$idx]=$(map_power_state "$cur_state")
+        VM_CPUS[$idx]="$cur_cpus"
+        VM_GUESTSTATE[$idx]="$cur_gueststate"
+
+        if [[ -n "$cur_mem" && "$cur_mem" != "<"* ]]; then
+            VM_MEM[$idx]=$(( (cur_mem + 524288) / 1048576 ))
+        else
+            VM_MEM[$idx]=0
+        fi
+    fi
+
+    NUM_VMS=$idx
+    LAST_REFRESH=$now
+}
+
+# ---------------------------------------------------------------
+# Get value and type for a given column and row
+# ---------------------------------------------------------------
+get_value() {
+    local col=$1
+    local row=$2
+
+    case $col in
+        2)  echo "string";  echo "${VM_NAME[$row]}" ;;
+        3)  echo "string";  echo "" ;;
+        4)  echo "string";  echo "${VM_OS[$row]}" ;;
+        5)  echo "integer"; echo "${VM_MEM[$row]}" ;;
+        6)  echo "integer"; echo "${VM_STATE[$row]}" ;;
+        7)  echo "string";  echo "${VM_UUID[$row]}" ;;
+        8)  echo "string";  echo "${VM_GUESTSTATE[$row]}" ;;
+        9)  echo "string";  echo "" ;;
+        10) echo "integer"; echo "${VM_CPUS[$row]}" ;;
+        11) echo "string";  echo "${VM_UUID[$row]}" ;;
+        *)  return 1 ;;
+    esac
+    return 0
+}
+
+# ---------------------------------------------------------------
+# Respond to a GET or GETNEXT request
+# ---------------------------------------------------------------
+respond() {
+    local oid="$1"
+    local col=$2
+    local row=$3
+
+    echo "$oid"
+    get_value "$col" "$row"
+}
+
+# ---------------------------------------------------------------
+# Handle a GET request
+# ---------------------------------------------------------------
+handle_get() {
+    local GET_OID="$1"
+
+    # Strip the entry OID prefix to get column.row
+    local local_oid="${GET_OID#"${ENTRY_OID}".}"
+
+    # Must have column.row format
+    if [[ "$local_oid" == "$GET_OID" || "$local_oid" == "${ENTRY_OID}" ]]; then
+        echo "NONE"
+        return
+    fi
+
+    local col="${local_oid%%.*}"
+    local row="${local_oid#*.}"
+
+    # Validate
+    if [[ -z "$col" || -z "$row" ]]; then
+        echo "NONE"
+        return
+    fi
+    if [[ $col -lt $FIRST_COL || $col -gt $LAST_COL ]]; then
+        echo "NONE"
+        return
+    fi
+    if [[ $row -lt 1 || $row -gt $NUM_VMS ]]; then
+        echo "NONE"
+        return
+    fi
+
+    respond "${GET_OID}" "$col" "$row"
+}
+
+# ---------------------------------------------------------------
+# Handle a GETNEXT request
+# ---------------------------------------------------------------
+handle_getnext() {
+    local GET_OID="$1"
+
+    # Check if the requested OID is at or above our table
+    if [[ "$GET_OID" == "$BASE_OID" || \
+          "$GET_OID" == "${BASE_OID}.1" || \
+          "$GET_OID" == "${BASE_OID}.1.1" ]]; then
+        respond "${ENTRY_OID}.${FIRST_COL}.1" "$FIRST_COL" 1
+        return
+    fi
+
+    # Strip entry OID prefix
+    local local_oid="${GET_OID#"${ENTRY_OID}".}"
+
+    if [[ "$local_oid" == "$GET_OID" ]]; then
+        # OID is not under our tree
+        echo "NONE"
+        return
+    fi
+
+    # Parse column and optional row
+    local col="${local_oid%%.*}"
+    local remainder="${local_oid#*.}"
+
+    if [[ "$remainder" == "$local_oid" ]]; then
+        # Only column, no row (e.g., .1.3.6.1.4.1.60652.100.1.1.2)
+        if [[ $col -lt $FIRST_COL ]]; then
+            col=$FIRST_COL
+        fi
+        if [[ $col -gt $LAST_COL ]]; then
+            echo "NONE"
+            return
+        fi
+        respond "${ENTRY_OID}.${col}.1" "$col" 1
+        return
+    fi
+
+    local row="$remainder"
+
+    # Calculate next position
+    local next_row=$((row + 1))
+    local next_col=$col
+
+    if [[ $next_row -gt $NUM_VMS ]]; then
+        # Move to next column, first row
+        next_col=$((col + 1))
+        next_row=1
+    fi
+
+    # Skip column 1 (not-accessible index)
+    if [[ $next_col -lt $FIRST_COL ]]; then
+        next_col=$FIRST_COL
+        next_row=1
+    fi
+
+    if [[ $next_col -gt $LAST_COL ]]; then
+        # Past end of table
+        echo "NONE"
+        return
+    fi
+
+    respond "${ENTRY_OID}.${next_col}.${next_row}" "$next_col" "$next_row"
+}
+
+# ---------------------------------------------------------------
+# Main loop — pass_persist protocol
+#
+# Reads commands from stdin:
+#   PING        → respond with PONG
+#   get\n<OID>  → respond with OID/type/value or NONE
+#   getnext\n<OID> → respond with next OID/type/value or NONE
+# ---------------------------------------------------------------
+
+# Collect initial VM data
+collect_vm_data
+
+while read -r cmd; do
+    # Trim carriage return if present
+    cmd="${cmd%%$'\r'}"
+
+    case "$cmd" in
+        PING)
+            echo "PONG"
+            ;;
+        get)
+            read -r oid
+            oid="${oid%%$'\r'}"
+            collect_vm_data
+            if [[ $NUM_VMS -eq 0 ]]; then
+                echo "NONE"
+            else
+                handle_get "$oid"
+            fi
+            ;;
+        getnext)
+            read -r oid
+            oid="${oid%%$'\r'}"
+            collect_vm_data
+            if [[ $NUM_VMS -eq 0 ]]; then
+                echo "NONE"
+            else
+                handle_getnext "$oid"
+            fi
+            ;;
+        *)
+            echo "NONE"
+            ;;
+    esac
+done
