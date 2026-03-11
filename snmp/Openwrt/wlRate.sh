@@ -55,6 +55,16 @@ if [ -z "$ratelist" ] && [ -n "$IWINFO_BIN" ]; then
   ')
 fi
 
+# Final fallback for client-mode interfaces where iwinfo info exposes a single current rate.
+if [ -z "$ratelist" ] && [ -n "$IWINFO_BIN" ]; then
+  ratelist=$($IWINFO_BIN "$iface" info 2>/dev/null | awk '
+    /Bit Rate:[[:space:]]*[0-9]+(\.[0-9]+)?[[:space:]]*MBit\/s/ {
+      print $3
+      exit
+    }
+  ')
+fi
+
 # Calculate min/avg/max rates
 min_rate=$(/bin/echo "$ratelist" | awk 'NR==1{min=$1} $1<min{min=$1} END{printf "%d\n", (min=="" ? 0 : min)}')
 avg_rate=$(/bin/echo "$ratelist" | awk '{sum+=$1; n++} END{printf "%d\n", (n>0 ? sum/n : 0)}')

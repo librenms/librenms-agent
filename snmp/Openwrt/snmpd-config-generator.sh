@@ -20,14 +20,12 @@ config extend
 
 EOF
 
-# Live ubus discovery (ap1 wl*, ap2 wlan*, risc phy*)
-ubus list hostapd.* 2>/dev/null | sed 's/^hostapd\.//' | while IFS= read -r iface; do
-  # Robust ssid (handles JSON variance)
-  ssid=$(ubus call "hostapd.$iface" get_status 2>/dev/null | \
-    sed -n 's/.*"ssid":"\?\([^",]*\)"\?.*/\1/p' | head -1 || echo unknown)
+# Use the same interface inventory that LibreNMS discovery consumes.
+"$SCRIPT_DIR/wlInterfaces.sh" 2>/dev/null | while IFS=',' read -r iface label; do
   [ -n "$iface" ] || continue
 
-  [ -n "$ssid" ] || ssid="$iface"
+	ssid=$(printf '%s' "$label" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+	[ -n "$ssid" ] || ssid="$iface"
 
   cat << EOF
 

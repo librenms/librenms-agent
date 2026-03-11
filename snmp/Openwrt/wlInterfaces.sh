@@ -66,6 +66,73 @@ get_ssid_from_iwinfo() {
   iwinfo "$iface" info 2>/dev/null | sed -n 's/.*ESSID:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1
 }
 
+get_iwinfo_info() {
+  iface="$1"
+  iwinfo "$iface" info 2>/dev/null || true
+}
+
+get_mode_from_iwinfo() {
+  printf '%s\n' "$1" | sed -n 's/.*Mode:[[:space:]]*\([^ ]\+\).*/\1/p' | head -1
+}
+
+get_signal_from_iwinfo() {
+  printf '%s\n' "$1" | sed -n 's/.*Signal:[[:space:]]*\([^ ]\+\)[[:space:]]*dBm.*/\1/p' | head -1
+}
+
+get_bitrate_from_iwinfo() {
+  printf '%s\n' "$1" | sed -n 's/.*Bit Rate:[[:space:]]*\([^ ]\+\).*/\1/p' | head -1
+}
+
+get_access_point_from_iwinfo() {
+  printf '%s\n' "$1" | sed -n 's/.*Access Point:[[:space:]]*\([^ ]\+\).*/\1/p' | head -1
+}
+
+should_include_iwinfo_iface() {
+  iface="$1"
+  info=$(get_iwinfo_info "$iface")
+  [ -n "$info" ] || return 1
+
+  ssid=$(printf '%s\n' "$info" | sed -n 's/.*ESSID:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+  case "$ssid" in
+    ''|unknown) return 1 ;;
+  esac
+
+  # Skip synthetic VLAN helper interfaces.
+  printf '%s\n' "$info" | grep -q '(VLAN)' && return 1
+
+  mode=$(get_mode_from_iwinfo "$info")
+  signal=$(get_signal_from_iwinfo "$info")
+  bitrate=$(get_bitrate_from_iwinfo "$info")
+  access_point=$(get_access_point_from_iwinfo "$info")
+
+  case "$mode" in
+    Client)
+      case "$access_point" in
+        ''|Not-Associated|00:00:00:00:00:00) return 1 ;;
+      esac
+      return 0
+      ;;
+    Master)
+      case "$signal" in
+        ''|unknown|0) signal_inactive=1 ;;
+        *) signal_inactive=0 ;;
+      esac
+      case "$bitrate" in
+        ''|unknown) bitrate_inactive=1 ;;
+        *) bitrate_inactive=0 ;;
+      esac
+
+      # Ignore clearly inactive VAPs that report no real link metrics.
+      if [ "$signal_inactive" -eq 1 ] && [ "$bitrate_inactive" -eq 1 ]; then
+        return 1
+      fi
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
 get_freq_mhz_from_hostapd() {
   iface="$1"
   hapd="hostapd.$iface"
@@ -141,6 +208,9 @@ emit_iface_records() {
     ubus list hostapd.* 2>/dev/null | sed 's/^hostapd\.//' | while IFS= read -r iface; do
       [ -n "$iface" ] || continue
       is_iface_active_hostapd "$iface" || continue
+      if command -v iwinfo >/dev/null 2>&1; then
+        should_include_iwinfo_iface "$iface" || continue
+      fi
       ssid=$(get_ssid_from_hostapd "$iface")
       if [ -z "$ssid" ] && command -v iwinfo >/dev/null 2>&1; then
         ssid=$(get_ssid_from_iwinfo "$iface")
@@ -153,27 +223,12 @@ emit_iface_records() {
       [ -n "$ssid" ] || ssid="$iface"
       printf '%s\t%s\t%s\n' "$iface" "$ssid" "$band"
     done
-    return
-  fi
-
-  if command -v iw >/dev/null 2>&1; then
-    iw dev 2>/dev/null | awk '/Interface /{print $2}' | while IFS= read -r iface; do
-      [ -n "$iface" ] || continue
-      ssid="$iface"
-      band=''
-      if command -v iwinfo >/dev/null 2>&1; then
-        found_ssid=$(get_ssid_from_iwinfo "$iface")
-        [ -n "$found_ssid" ] && ssid="$found_ssid"
-        band=$(get_band_suffix "$iface")
-      fi
-      printf '%s\t%s\t%s\n' "$iface" "$ssid" "$band"
-    done
-    return
   fi
 
   if command -v iwinfo >/dev/null 2>&1; then
-    iwinfo 2>/dev/null | awk '{print $1}' | while IFS= read -r iface; do
+    iwinfo 2>/dev/null | awk '/^[^[:space:]].*ESSID:/{print $1}' | while IFS= read -r iface; do
       [ -n "$iface" ] || continue
+      should_include_iwinfo_iface "$iface" || continue
       ssid=$(get_ssid_from_iwinfo "$iface")
       [ -n "$ssid" ] || ssid="$iface"
       band=$(get_band_suffix "$iface")
@@ -185,9 +240,17 @@ emit_iface_records() {
 emit_iface_records > "$tmp"
 
 awk -F '\t' '
-  { rows[NR]=$0; ssid=$2; if (ssid != "") count[ssid]++ }
+  {
+    iface=$1
+    if (!(iface in seen)) {
+      seen[iface]=1
+      rows[++row_count]=$0
+      ssid=$2
+      if (ssid != "") count[ssid]++
+    }
+  }
   END {
-    for (i=1; i<=NR; i++) {
+    for (i=1; i<=row_count; i++) {
       split(rows[i], f, "\t")
       iface=f[1]; ssid=f[2]; band=f[3]
       label=ssid
