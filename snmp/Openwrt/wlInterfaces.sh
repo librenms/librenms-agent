@@ -72,7 +72,15 @@ get_iwinfo_info() {
 }
 
 get_mode_from_iwinfo() {
-  printf '%s\n' "$1" | sed -n 's/.*Mode:[[:space:]]*\([^ ]\+\).*/\1/p' | head -1
+  printf '%s\n' "$1" | awk '/^[[:space:]]*Mode:[[:space:]]/ {print $2; exit}'
+}
+
+get_signal_from_iwinfo() {
+  printf '%s\n' "$1" | sed -n 's/.*Signal:[[:space:]]*\([^ ]\+\)[[:space:]]*dBm.*/\1/p' | head -1
+}
+
+get_bitrate_from_iwinfo() {
+  printf '%s\n' "$1" | sed -n 's/.*Bit Rate:[[:space:]]*\([^ ]\+\).*/\1/p' | head -1
 }
 
 get_access_point_from_iwinfo() {
@@ -111,6 +119,29 @@ should_include_iwinfo_iface() {
   esac
 
   return 1
+}
+
+is_clearly_inactive_master_iface() {
+  iface="$1"
+  info=$(get_iwinfo_info "$iface")
+  [ -n "$info" ] || return 1
+
+  mode=$(get_mode_from_iwinfo "$info")
+  [ "$mode" = "Master" ] || return 1
+
+  signal=$(get_signal_from_iwinfo "$info")
+  bitrate=$(get_bitrate_from_iwinfo "$info")
+
+  # Some idle/placeholder VAPs report Signal=0 and unknown bitrate.
+  # Treat only this exact combination as inactive.
+  [ "$signal" = "0" ] || return 1
+  [ "$bitrate" = "unknown" ] || return 1
+  return 0
+}
+
+is_hostapd_managed_iface() {
+  iface="$1"
+  ubus list "hostapd.$iface" >/dev/null 2>&1
 }
 
 # Enumerate wireless interface names using iw (nl80211) or sysfs.
@@ -201,6 +232,9 @@ emit_iface_records() {
     ubus list hostapd.* 2>/dev/null | sed 's/^hostapd\.//' | while IFS= read -r iface; do
       [ -n "$iface" ] || continue
       is_iface_active_hostapd "$iface" || continue
+      if command -v iwinfo >/dev/null 2>&1; then
+        is_clearly_inactive_master_iface "$iface" && continue
+      fi
       ssid=$(get_ssid_from_hostapd "$iface")
       if [ -z "$ssid" ] && command -v iwinfo >/dev/null 2>&1; then
         ssid=$(get_ssid_from_iwinfo "$iface")
@@ -218,6 +252,7 @@ emit_iface_records() {
   if command -v iwinfo >/dev/null 2>&1; then
     enum_wireless_ifaces | while IFS= read -r iface; do
       [ -n "$iface" ] || continue
+      is_hostapd_managed_iface "$iface" && continue
       should_include_iwinfo_iface "$iface" || continue
       ssid=$(get_ssid_from_iwinfo "$iface")
       [ -n "$ssid" ] || ssid="$iface"
