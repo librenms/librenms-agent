@@ -14,9 +14,19 @@ if [ $# -ne 3 ]; then
 	exit 1
 fi
 
-# Calculate result. Sum just for debug, and have to return integer
-# => If not integer (e.g. 2.67e+07), LibreNMS will drop the exponent (result, 2.67 bits/sec!)
-ratelist=$(/usr/sbin/iw dev "$1" station dump 2>/dev/null | /bin/grep "$2 bitrate" | /usr/bin/cut -f 2 -s -d" ")
+# Extract numeric bitrate values from "tx bitrate:" / "rx bitrate:" lines.
+# Example input line:
+#   tx bitrate:     1201.0 MBit/s HE-MCS 11 HE-NSS 2 HE-GI 0 HE-DCM 0
+ratelist=$(/usr/sbin/iw dev "$1" station dump 2>/dev/null | awk -v dir="$2" '
+  tolower($1) == dir && $2 == "bitrate:" {
+    for (i = 3; i <= NF; i++) {
+      if ($i ~ /^[0-9]+(\.[0-9]+)?$/) {
+        print $i;
+        break;
+      }
+    }
+  }
+')
 
 # Calculate min/avg/max rates
 min_rate=$(/bin/echo "$ratelist" | awk 'NR==1{min=$1} $1<min{min=$1} END{printf "%d\n", (min=="" ? 0 : min)}')
