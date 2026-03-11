@@ -71,9 +71,11 @@ EOF
         get_zones | while IFS=':' read -r idx name temp; do
             # Pad index to ensure proper numeric sorting
             # Format: column.index where index is zero-padded to 3 digits
-            printf '%d.%03d|%s.1.%s|integer|%s\n' 1 "$idx" "$BASE_OID" "$idx" "$idx" >> "$TMP_FILE"
-            printf '%d.%03d|%s.2.%s|string|%s\n' 2 "$idx" "$BASE_OID" "$idx" "$name" >> "$TMP_FILE"
-            printf '%d.%03d|%s.3.%s|gauge|%s\n' 3 "$idx" "$BASE_OID" "$idx" "$temp" >> "$TMP_FILE"
+            {
+                printf '%d.%03d|%s.1.%s|integer|%s\n' 1 "$idx" "$BASE_OID" "$idx" "$idx"
+                printf '%d.%03d|%s.2.%s|string|%s\n' 2 "$idx" "$BASE_OID" "$idx" "$name"
+                printf '%d.%03d|%s.3.%s|gauge|%s\n' 3 "$idx" "$BASE_OID" "$idx" "$temp"
+            } >> "$TMP_FILE"
         done
         
         # Sort by our padded key, then extract and compare OIDs
