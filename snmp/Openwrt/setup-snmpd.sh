@@ -97,6 +97,21 @@ EOF
 	fi
 }
 
+ensure_system_section() {
+	if ! grep -Eq "^[[:space:]]*config[[:space:]]+system[[:space:]]+'system'[[:space:]]*$" /etc/config/snmpd; then
+		hostname=$(uname -n 2>/dev/null || echo openwrt)
+		cat >> /etc/config/snmpd <<EOF
+
+config system 'system'
+	option sysLocation 'unknown'
+	option sysName '$hostname'
+	option sysContact 'root@localhost'
+	option sysDescr 'OpenWrt'
+EOF
+		echo "  + Added missing section: config system 'system'"
+	fi
+}
+
 apply_generated_snmpd_block() {
 	tmp_block=$(mktemp)
 	tmp_new=$(mktemp)
@@ -179,6 +194,7 @@ if [ -z "$answer" ] || [ "$answer" = "y" ]; then
 		# Write exactly one fresh generated LibreNMS block.
     chmod +x "$SCRIPT_DIR/snmpd-config-generator.sh"
 		ensure_base_os_extends
+		ensure_system_section
 		apply_generated_snmpd_block
 
 		if [ "$NO_RESTART" -eq 0 ]; then
