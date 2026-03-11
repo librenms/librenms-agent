@@ -14,19 +14,53 @@ if [ $# -ne 3 ]; then
 	exit 1
 fi
 
+iface="$1"
+dir="$2"
+
+IW_BIN=$(command -v iw 2>/dev/null || true)
+IWINFO_BIN=$(command -v iwinfo 2>/dev/null || true)
+
 # Extract numeric bitrate values from "tx bitrate:" / "rx bitrate:" lines.
 # Example input line:
 #   tx bitrate:     1201.0 MBit/s HE-MCS 11 HE-NSS 2 HE-GI 0 HE-DCM 0
-ratelist=$(/usr/sbin/iw dev "$1" station dump 2>/dev/null | awk -v dir="$2" '
-  tolower($1) == dir && $2 == "bitrate:" {
-    for (i = 3; i <= NF; i++) {
-      if ($i ~ /^[0-9]+(\.[0-9]+)?$/) {
-        print $i;
-        break;
+ratelist=""
+if [ -n "$IW_BIN" ]; then
+  ratelist=$($IW_BIN dev "$iface" station dump 2>/dev/null | awk -v d="$dir" '
+    {
+      key1 = tolower($1)
+      key2 = tolower($2)
+      if (key1 == d && key2 == "bitrate:") {
+        for (i = 3; i <= NF; i++) {
+          if ($i ~ /^[0-9]+(\.[0-9]+)?$/) {
+            print $i
+            break
+          }
+        }
       }
     }
-  }
-')
+  ')
+fi
+
+# Fallback for devices where iw station dump is unavailable or differently formatted.
+if [ -z "$ratelist" ] && [ -n "$IWINFO_BIN" ]; then
+  if [ "$dir" = "tx" ]; then
+    ratelist=$($IWINFO_BIN "$iface" assoclist 2>/dev/null | awk '
+      /TX:[[:space:]]*[0-9]+(\.[0-9]+)?[[:space:]]*MBit\/s/ {
+        if (match($0, /TX:[[:space:]]*([0-9]+(\.[0-9]+)?)[[:space:]]*MBit\/s/, m)) {
+          print m[1]
+        }
+      }
+    ')
+  else
+    ratelist=$($IWINFO_BIN "$iface" assoclist 2>/dev/null | awk '
+      /RX:[[:space:]]*[0-9]+(\.[0-9]+)?[[:space:]]*MBit\/s/ {
+        if (match($0, /RX:[[:space:]]*([0-9]+(\.[0-9]+)?)[[:space:]]*MBit\/s/, m)) {
+          print m[1]
+        }
+      }
+    ')
+  fi
+fi
 
 # Calculate min/avg/max rates
 min_rate=$(/bin/echo "$ratelist" | awk 'NR==1{min=$1} $1<min{min=$1} END{printf "%d\n", (min=="" ? 0 : min)}')
