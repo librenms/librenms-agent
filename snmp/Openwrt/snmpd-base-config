@@ -83,7 +83,8 @@ config access 'private_access'
 # System information
 config extend
 	option name 'distro'
-	option prog '/etc/librenms/distro.sh'
+	option prog '/bin/sh'
+	option args '-c "/bin/grep OpenWrt /etc/banner | /bin/sed s/.*OpenWrt/OpenWrt/ | /usr/bin/head -1"'
 
 config extend
 	option name 'hardware'

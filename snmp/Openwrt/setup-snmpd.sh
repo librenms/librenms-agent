@@ -80,7 +80,8 @@ ensure_base_os_extends() {
 
 config extend
 	option name 'distro'
-	option prog '/etc/librenms/distro.sh'
+	option prog '/bin/sh'
+	option args '-c "/bin/grep OpenWrt /etc/banner | /bin/sed s/.*OpenWrt/OpenWrt/ | /usr/bin/head -1"'
 EOF
 		echo "  + Added missing extend: distro"
 	fi
@@ -144,7 +145,7 @@ fi
 # Copy scripts to /etc/librenms/
 echo "Installing monitoring scripts to $SCRIPT_DIR..."
 
-scripts="wlInterfaces.sh wlClients.sh wlFrequency.sh wlNoiseFloor.sh wlRate.sh wlSNR.sh lm-sensors-pass.sh distro.sh snmpd-config-generator.sh"
+scripts="wlInterfaces.sh wlClients.sh wlFrequency.sh wlNoiseFloor.sh wlRate.sh wlSNR.sh lm-sensors-pass.sh snmpd-config-generator.sh"
 
 for script in $scripts; do
 	src="$SOURCE_DIR/$script"
