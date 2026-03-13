@@ -14,19 +14,69 @@ if [ $# -ne 3 ]; then
 	exit 1
 fi
 
-# Calculate result. Sum just for debug, and have to return integer
-# => If not integer (e.g. 2.67e+07), LibreNMS will drop the exponent (result, 2.67 bits/sec!)
-ratelist=$(/usr/sbin/iw dev "$1" station dump 2>/dev/null | /bin/grep "$2 bitrate" | /usr/bin/cut -f 2 -s -d" ")
-result=0
-if [ "$3" = "sum" ]; then
-  result=$(/bin/echo "$ratelist" | /usr/bin/awk -F ':' '{sum += $2} END {printf "%d\n", 1000000*sum}')
-elif [ "$3" = "avg" ]; then
-  result=$(/bin/echo "$ratelist" | /usr/bin/awk -F ':' '{sum += $2} END {printf "%d\n", 1000000*sum/NR}')
-elif [ "$3" = "min" ]; then
-  result=$(/bin/echo "$ratelist" | /usr/bin/awk -F ':' 'NR == 1 || $2 < min {min = $2} END {printf "%d\n", 1000000*min}')
-elif [ "$3" = "max" ]; then
-  result=$(/bin/echo "$ratelist" | /usr/bin/awk -F ':' 'NR == 1 || $2 > max {max = $2} END {printf "%d\n", 1000000*max}')
+iface="$1"
+dir="$2"
+
+IW_BIN=$(command -v iw 2>/dev/null || true)
+IWINFO_BIN=$(command -v iwinfo 2>/dev/null || true)
+
+# Extract numeric bitrate values from "tx bitrate:" / "rx bitrate:" lines.
+# Example input line:
+#   tx bitrate:     1201.0 MBit/s HE-MCS 11 HE-NSS 2 HE-GI 0 HE-DCM 0
+ratelist=""
+if [ -n "$IW_BIN" ]; then
+  ratelist=$($IW_BIN dev "$iface" station dump 2>/dev/null | awk -v d="$dir" '
+    {
+      key1 = tolower($1)
+      key2 = tolower($2)
+      if (key1 == d && key2 == "bitrate:") {
+        for (i = 3; i <= NF; i++) {
+          if ($i ~ /^[0-9]+(\.[0-9]+)?$/) {
+            print $i
+            break
+          }
+        }
+      }
+    }
+  ')
 fi
 
-# Return snmp result
-echo "$result"
+# Fallback for devices where iw station dump is unavailable or differently formatted.
+if [ -z "$ratelist" ] && [ -n "$IWINFO_BIN" ]; then
+  ratelist=$($IWINFO_BIN "$iface" assoclist 2>/dev/null | awk -v d="$dir" '
+    {
+      key = tolower($1)
+      sub(/:$/, "", key)
+
+      if (key == d && $2 ~ /^[0-9]+(\.[0-9]+)?$/) {
+        print $2
+      }
+    }
+  ')
+fi
+
+# Final fallback for client-mode interfaces where iwinfo info exposes a single current rate.
+if [ -z "$ratelist" ] && [ -n "$IWINFO_BIN" ]; then
+  ratelist=$($IWINFO_BIN "$iface" info 2>/dev/null | awk '
+    /Bit Rate:[[:space:]]*[0-9]+(\.[0-9]+)?[[:space:]]*MBit\/s/ {
+      print $3
+      exit
+    }
+  ')
+fi
+
+# Calculate min/avg/max rates
+min_rate=$(/bin/echo "$ratelist" | awk 'NR==1{min=$1} $1<min{min=$1} END{printf "%d\n", (min=="" ? 0 : min)}')
+avg_rate=$(/bin/echo "$ratelist" | awk '{sum+=$1; n++} END{printf "%d\n", (n>0 ? sum/n : 0)}')
+max_rate=$(/bin/echo "$ratelist" | awk '$1>max{max=$1} END{printf "%d\n", (max=="" ? 0 : max)}')
+
+case "$3" in
+  min) echo "$min_rate" ;;
+  avg) echo "$avg_rate" ;;
+  max) echo "$max_rate" ;;
+  *)   echo "0" ;;
+esac
+
+# Second line for nsExtendOutputFull compatibility
+echo "# wlRate $1 $2 $3"
+exit 0
