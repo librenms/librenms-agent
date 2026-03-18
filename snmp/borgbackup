@@ -379,13 +379,12 @@ my $to_return = {
 	errorString => '',
 };
 
-if ( !$update && !$pretty ) {
-	my $cache_extra = '';
-	if ($compress) {
-		$cache_extra = '.snmp';
+if ( !$update ) {
+	if ( $pretty ) {
+		die "Cannot pretty print without -u (update mode)\n";
 	}
-	if ( -f $output_dir . '/extend_return' . $cache_extra ) {
-		my $old = read_file( $output_dir . '/extend_return' . $cache_extra );
+	if ( -f $output_dir . '/extend_return' ) {
+		my $old = read_file( $output_dir . '/extend_return' );
 		print $old;
 		exit 0;
 	} else {
