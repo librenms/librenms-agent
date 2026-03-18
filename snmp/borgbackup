@@ -1,6 +1,5 @@
 #!/usr/bin/env perl
-
-#Copyright (c) 2023, Zane C. Bowers-Hadley
+#Copyright (c) 2026, Zane C. Bowers-Hadley
 #All rights reserved.
 #
 #Redistribution and use in source and binary forms, with or without modification,
@@ -29,15 +28,11 @@ borgbackup - LibreNMS JSON SNMP extend for gathering backups for borg
 
 =head1 VERSION
 
-0.0.1
+0.1.0
 
 =head1 SYNOPSIS
 
-borgbackup [B<-c> <config file>] [B<-o> <output dir>]
-
-borgbackup [B<--help>|B<-h>]
-
-borgbackup [B<--version>|B<-v>]
+borgbackup [-c <config>] [-o <output dir>] [-u] [-p] [-Z] [-v] [-V] [-h]
 
 =head1 DESCRIPTION
 
@@ -62,7 +57,14 @@ For SNMPD generally going to be setup like this.
 
 Then the extend is set to be ran via cron.
 
-    */5 * * * * /etc/snmp/extends/borgbackup
+    */5 * * * * /etc/snmp/extends/borgbackup -u -Z
+
+=head1 USAGE
+
+When called without flags, it reads from the cache file if it exists.
+Use -u to update the cache, or -u -v for verbose updates.
+
+    /etc/snmp/extends/borgbackup -u -v
 
 =head1 FLAGS
 
@@ -79,13 +81,30 @@ for the SNMP extend.
 
 Default :: /var/cache/borgbackup_extend
 
-=head2 -h|--help
+=head2 -u
+
+Update mode. When called from snmpd, it reads from the cache file instead
+of running borg commands directly.
+
+=head2 -p
+
+Pretty print the JSON output.
+
+=head2 -Z
+
+GZip+Base64 compress the results.
+
+=head2 -v
+
+Verbose output. Print status info to STDERR.
+
+=head2 -V
+
+Print version and exit.
+
+=head2 -h
 
 Print help info.
-
-=head2 -v|--version
-
-Print version info.
 
 =head1 CONFIG
 
@@ -204,7 +223,7 @@ use strict;
 use warnings;
 use Config::Tiny;
 use JSON;
-use Getopt::Long;
+use Getopt::Long qw( GetOptions :config no_ignore_case );
 use File::Slurp;
 use File::Path qw(make_path);
 use MIME::Base64;
@@ -214,26 +233,62 @@ use Pod::Usage;
 
 our $output_dir = '/var/cache/borgbackup_extend';
 my $config_file = '/usr/local/etc/borgbackup_extend.ini';
-my $version;
-my $help;
+my $verbose = 0;
+my $pretty = 0;
+my $compress = 0;
+my $update = 0;
+
+sub VERSION_MESSAGE {
+	print "borgbackup SNMP extend 0.1.0\n";
+}
+
+sub HELP_MESSAGE {
+	print "borgbackup SNMP extend 0.1.0\n\n";
+	print "Usage: borgbackup [options]\n\n";
+	print "Options:\n";
+	print "  -c <file>   Config file (default: $config_file)\n";
+	print "  -o <dir>    Output directory (default: $output_dir)\n";
+	print "  -u          Update mode - regenerate cache from borg repos\n";
+	print "  -p          Pretty print JSON output\n";
+	print "  -Z          GZip+Base64 compress the cache file\n";
+	print "  -v          Verbose output to STDERR\n";
+	print "  -V          Print version and exit\n";
+	print "  -h          Print this help message\n";
+	print "\n";
+	print "When called without -u, reads from cache file for SNMP extend.\n";
+	print "\n";
+	print "Typical usage:\n";
+	print "  SNMPD:  extend borgbackup /bin/cat /var/cache/borgbackup_extend/extend_return\n";
+	print "  Cron:   */5 * * * * /usr/local/lib/snmpd/borgbackup -u -Z\n";
+	print "\n";
+	print "Config file (INI format):\n";
+	print "  mode=multi                    # single or multi\n";
+	print "  repo=/path/to/repo            # for single mode\n";
+	print "  passphrase=secret              # or use passcommand\n";
+	print "\n";
+	print "  [repo1]                       # for multi mode\n";
+	print "  repo=/path/to/repo1\n";
+	print "  passphrase=secret1\n";
+	print "\n";
+	print "  [repo2]\n";
+	print "  repo=/path/to/repo2\n";
+	print "  passcommand=pass show repo2\n";
+}
+
 GetOptions(
 	'c=s'   => \$config_file,
 	'o=s'   => \$output_dir,
-	v       => \$version,
-	version => \$version,
-	h       => \$help,
-	help    => \$help,
-);
-
-if ($version) {
-	pod2usage( -exitval => 255, -verbose => 99, -sections => qw(VERSION), -output => \*STDOUT, );
+	'v'     => \$verbose,
+	'p'     => \$pretty,
+	'Z'     => \$compress,
+	'u'     => \$update,
+	'V'     => sub { VERSION_MESSAGE(); exit 0; },
+	'h'     => sub { HELP_MESSAGE(); exit 0; },
+) or die "Error in command line arguments\n";
+if ($verbose) {
+	warn "DEBUG: verbose=$verbose, update=$update, pretty=$pretty, compress=$compress\n";
 }
 
-if ($help) {
-	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
-}
-
-# save the return
 sub finish {
 	my (%opts) = @_;
 
@@ -244,24 +299,40 @@ sub finish {
 	}
 
 	my $j = JSON->new;
+	if ($pretty) {
+		$j->pretty(1);
+		$j->canonical(1);
+	}
 
 	my $return_string = $j->encode( $opts{to_return} );
 
-	my $compressed_string;
-	gzip \$return_string => \$compressed_string;
-	my $compressed = encode_base64($compressed_string);
-	$compressed =~ s/\n//g;
-	$compressed = $compressed . "\n";
-	if ( length($compressed) > length($return_string) ) {
-		write_file( $output_dir . '/extend_return', $return_string );
+	if ($compress) {
+		my $compressed_string;
+		gzip \$return_string => \$compressed_string;
+		my $compressed = encode_base64($compressed_string);
+		$compressed =~ s/\n//g;
+		$compressed = $compressed . "\n";
+		if ( length($compressed) > length($return_string) ) {
+			if ($verbose) {
+				print STDERR "Writing uncompressed extend_return to: $output_dir/extend_return\n";
+			}
+			write_file( $output_dir . '/extend_return', $return_string );
+		} else {
+			if ($verbose) {
+				print STDERR "Writing compressed extend_return to: $output_dir/extend_return\n";
+			}
+			write_file( $output_dir . '/extend_return', $compressed );
+		}
 	} else {
-		write_file( $output_dir . '/extend_return', $compressed );
+		if ($verbose) {
+			print STDERR "Writing extend_return to: $output_dir/extend_return\n";
+		}
+		write_file( $output_dir . '/extend_return', $return_string );
 	}
 
-	$j->pretty(1);
-	$j->canonical(1);
-	$return_string = $j->encode( $opts{to_return} );
-
+	if ($verbose) {
+		print STDERR "Writing pretty JSON to: $output_dir/pretty\n";
+	}
 	write_file( $output_dir . '/pretty', $return_string );
 
 	print $return_string;
@@ -291,6 +362,24 @@ my $to_return = {
 	errorString => '',
 };
 
+if ( !$update && !$pretty ) {
+	my $cache_extra = '';
+	if ($compress) {
+		$cache_extra = '.snmp';
+	}
+	if ( -f $output_dir . '/extend_return' . $cache_extra ) {
+		my $old = read_file( $output_dir . '/extend_return' . $cache_extra );
+		print $old;
+		exit 0;
+	} else {
+		$update = 1;
+	}
+}
+
+if ($verbose) {
+	print STDERR "Processing repos in mode: update\n";
+}
+
 # attempt to read in the config
 my $config;
 eval {
@@ -303,12 +392,24 @@ if ($@) {
 	finish( to_return => $to_return );
 }
 
+if ($verbose) {
+	print STDERR "Config file: $config_file\n";
+}
+
 if ( !defined( $config->{_}{mode} ) ) {
 	$config->{_}{mode} = 'single';
+	if ($verbose) {
+		print STDERR "Config: mode not set, defaulting to 'single'\n";
+	}
 } elsif ( $config->{_}{mode} ne 'single' && $config->{_}{mode} ne 'multi' ) {
 	$to_return->{error}       = 2;
 	$to_return->{errorString} = '"' . $config->{_}{mode} . '" mode is not set to single or multi';
 	finish( to_return => $to_return );
+}
+
+$to_return->{data}{mode} = $config->{_}{mode};
+if ($verbose) {
+	print STDERR "Config: mode set to '" . $config->{_}{mode} . "'\n";
 }
 
 # get a list of repos to use
@@ -317,6 +418,9 @@ if ( $config->{_}{mode} eq 'single' ) {
 	# if single, just create a single repo
 	push( @repos, 'single' );
 	$config->{single} = {};
+	if ($verbose) {
+		print STDERR "Config: single mode, using root section config\n";
+	}
 
 	# make sure we have passcommand or passphrase with passphrase being used as the default
 	if ( !defined( $config->{_}{passcommand} ) && !defined( $config->{_}{passphrase} ) ) {
@@ -325,8 +429,14 @@ if ( $config->{_}{mode} eq 'single' ) {
 		finish( to_return => $to_return );
 	} elsif ( $config->{_}{passphrase} ) {
 		$config->{single}{passphrase} = $config->{_}{passphrase};
+		if ($verbose) {
+			print STDERR "Config: using passphrase from root section\n";
+		}
 	} elsif ( $config->{_}{passcommand} ) {
 		$config->{single}{passcommand} = $config->{_}{passcommand};
+		if ($verbose) {
+			print STDERR "Config: using passcommand from root section\n";
+		}
 	}
 
 	# make sure have a repo specified
@@ -336,10 +446,16 @@ if ( $config->{_}{mode} eq 'single' ) {
 		finish( to_return => $to_return );
 	}
 	$config->{single}{repo} = $config->{_}{repo};
+	if ($verbose) {
+		print STDERR "Config: repo path: " . $config->{_}{repo} . "\n";
+	}
 
 } else {
 	# we don't want _ as that is the root of the ini file
 	@repos = grep( !/^\_$/, keys( %{$config} ) );
+	if ($verbose) {
+		print STDERR "Config: multi mode, found " . scalar(@repos) . " repos: " . join(', ', @repos) . "\n";
+	}
 }
 
 my @totals
@@ -347,6 +463,10 @@ my @totals
 my @stats = ( 'total_chunks', 'total_csize', 'total_size', 'total_unique_chunks', 'unique_csize', 'unique_size' );
 
 foreach my $repo (@repos) {
+	if ($verbose) {
+		print STDERR "Processing repo: $repo\n";
+	}
+
 	my $process = 1;
 
 	# unset borg pass bits
@@ -371,20 +491,44 @@ foreach my $repo (@repos) {
 		$to_return->{errorString}
 			= $to_return->{errorString} . "\n" . 'Neither passcommand or passphrase defined for ' . $repo;
 		$process = 0;
+		if ($verbose) {
+			print STDERR "  ERROR: No passphrase or passcommand for $repo\n";
+		}
 	}
 
 	if ( !defined( $config->{$repo}{repo} ) ) {
 		$to_return->{error}       = 4;
 		$to_return->{errorString} = $to_return->{errorString} . "\n" . 'repo is not defined for ' . $repo;
 		$process                  = 0;
+		if ($verbose) {
+			print STDERR "  ERROR: No repo path defined for $repo\n";
+		}
 	}
 
 	if ($process) {
-		my ( $dev, $ino, $mode, $nlink, $uid, $gid, $rdev, $size, $atime, $mtime, $ctime, $blksize, $blocks )
-			= stat( $config->{$repo}{repo} . '/nonce' );
+		if ($verbose) {
+			print STDERR "  Repo path: " . $config->{$repo}{repo} . "\n";
+		}
+
+		my $nonce_file = $config->{$repo}{repo} . '/nonce';
+		my $mtime;
+		if ( -e $nonce_file ) {
+			if ($verbose) {
+				print STDERR "  Checking nonce file mtime: $nonce_file\n";
+			}
+			( undef, undef, undef, undef, undef, undef, undef, undef, undef, $mtime, undef, undef, undef ) = stat($nonce_file);
+		} else {
+			if ($verbose) {
+				print STDERR "  No nonce file found, using repo directory mtime: " . $config->{$repo}{repo} . "\n";
+			}
+			( undef, undef, undef, undef, undef, undef, undef, undef, undef, $mtime, undef, undef, undef ) = stat( $config->{$repo}{repo} );
+		}
 
 		my $time_diff = time - $mtime;
 		$repo_info->{time_since_last_modified} = $time_diff;
+		if ($verbose) {
+			print STDERR "  Time since last modified: $time_diff seconds\n";
+		}
 
 		# if we don't have a largest time diff or if it is larger than then
 		# the old one save the time diff
@@ -401,6 +545,9 @@ foreach my $repo (@repos) {
 		}
 
 		my $command    = 'borg info ' . shell_quote( $config->{$repo}{repo} ) . ' --json 2>&1';
+		if ($verbose) {
+			print STDERR "  Command: $command\n";
+		}
 		my $output_raw = `$command`;
 
 		my $info;
@@ -411,16 +558,27 @@ foreach my $repo (@repos) {
 				$repo_info->{locked} = 1;
 
 				my $lock_file = $config->{$repo}{repo} . '/lock.exclusive';
-				( $dev, $ino, $mode, $nlink, $uid, $gid, $rdev, $size, $atime, $mtime, $ctime, $blksize, $blocks )
-					= stat($lock_file);
-				$repo_info->{locked_for} = time - $ctime;
+				if ($verbose) {
+					print STDERR "  Repo is locked, checking: $lock_file\n";
+				}
+				my ( $lock_dev, $lock_ino, $lock_mode, $lock_nlink, $lock_uid, $lock_gid, $lock_rdev, $lock_size, $lock_atime, $lock_mtime, $lock_ctime, $lock_blksize, $lock_blocks ) = stat($lock_file);
+				$repo_info->{locked_for} = time - $lock_ctime;
+				if ($verbose) {
+					print STDERR "  Repo is locked for " . $repo_info->{locked_for} . " seconds\n";
+				}
 			} else {
 				$repo_info->{error} = $error;
+				if ($verbose) {
+					print STDERR "  ERROR: " . $error . "\n";
+				}
 			}
 		} else {
 			if ( defined( $info->{cache} ) && defined( $info->{cache}{stats} ) ) {
 				for my $stat (@stats) {
 					$repo_info->{$stat} = $info->{cache}{stats}{$stat};
+				}
+				if ($verbose) {
+					print STDERR "  Stats: total_size=" . $repo_info->{total_size} . ", total_csize=" . $repo_info->{total_csize} . "\n";
 				}
 			}
 		}
@@ -442,5 +600,13 @@ foreach my $repo (@repos) {
 
 	$to_return->{data}{repos}{$repo} = $repo_info;
 } ## end foreach my $repo (@repos)
+
+if ($verbose) {
+	print STDERR "Totals:\n";
+	print STDERR "  errored: " . $to_return->{data}{totals}{errored} . "\n";
+	print STDERR "  locked: " . $to_return->{data}{totals}{locked} . "\n";
+	print STDERR "  total_size: " . $to_return->{data}{totals}{total_size} . "\n";
+	print STDERR "  total_csize: " . $to_return->{data}{totals}{total_csize} . "\n";
+}
 
 finish( to_return => $to_return );
