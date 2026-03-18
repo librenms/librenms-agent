@@ -123,6 +123,10 @@ The config file is a ini file and handled by L<Coonfig::Tiny>.
     - passcommand :: Passcommand for the borg backup repo.
         - Default :: undef
 
+    - timeout :: Timeout in seconds for borg info command per repo.
+            Use 0 to disable timeout.
+        - Default :: 300
+
 For single repos all those variables are in the root section of the config,
 so lets the repo is at '/backup/borg' with a passphrase of '1234abc'.
 
@@ -237,6 +241,7 @@ my $verbose = 0;
 my $pretty = 0;
 my $compress = 0;
 my $update = 0;
+my $default_timeout = 300;
 
 sub VERSION_MESSAGE {
 	print "borgbackup SNMP extend 0.1.0\n";
@@ -264,11 +269,13 @@ sub HELP_MESSAGE {
 	print "Config file (INI format):\n";
 	print "  mode=multi                    # single or multi\n";
 	print "  repo=/path/to/repo            # for single mode\n";
-	print "  passphrase=secret              # or use passcommand\n";
+	print "  passphrase=secret             # or use passcommand\n";
+	print "  timeout=300                  # seconds (0=disable)\n";
 	print "\n";
 	print "  [repo1]                       # for multi mode\n";
 	print "  repo=/path/to/repo1\n";
 	print "  passphrase=secret1\n";
+	print "  timeout=600                   # per-repo override\n";
 	print "\n";
 	print "  [repo2]\n";
 	print "  repo=/path/to/repo2\n";
@@ -285,6 +292,9 @@ GetOptions(
 	'V'     => sub { VERSION_MESSAGE(); exit 0; },
 	'h'     => sub { HELP_MESSAGE(); exit 0; },
 ) or die "Error in command line arguments\n";
+if ($compress && !$update) {
+	die "-Z requires -u (update mode) for compression\n";
+}
 if ($verbose) {
 	warn "DEBUG: verbose=$verbose, update=$update, pretty=$pretty, compress=$compress\n";
 }
@@ -370,7 +380,7 @@ if ( !$update && !$pretty ) {
 		print $old;
 		exit 0;
 	} else {
-		$update = 1;
+		die "Cache file not found. Run with -u to update cache.\n";
 	}
 }
 
@@ -464,9 +474,6 @@ print "Processing " . scalar(@repos) . " repos...\n";
 
 foreach my $repo (@repos) {
 	print "Processing repo $repo\n";
-	if ($verbose) {
-		print STDERR "Processing repo: $repo\n";
-	}
 
 	my $process = 1;
 
@@ -545,11 +552,20 @@ foreach my $repo (@repos) {
 			$ENV{BORG_PASSPHRASE} = $config->{$repo}{passphrase};
 		}
 
-		my $command    = 'borg info ' . shell_quote( $config->{$repo}{repo} ) . ' --json 2>&1';
+		my $timeout = $config->{$repo}{timeout} || $default_timeout;
+		my $command = 'borg info ' . shell_quote( $config->{$repo}{repo} ) . ' --json 2>&1';
+		if ($timeout > 0) {
+			$command = 'timeout ' . $timeout . ' ' . $command;
+		}
 		if ($verbose) {
 			print STDERR "  Command: $command\n";
 		}
+		my $start_time = time;
 		my $output_raw = `$command`;
+		my $elapsed = time - $start_time;
+		if ($verbose) {
+			print STDERR "  Runtime: $elapsed seconds\n";
+		}
 
 		my $info;
 		eval { $info = decode_json($output_raw); };
