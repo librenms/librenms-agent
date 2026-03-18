@@ -317,6 +317,7 @@ sub finish {
 	}
 
 	my $j = JSON->new;
+	$j->allow_nonref(1);
 	if ($pretty) {
 		$j->pretty(1);
 		$j->canonical(1);
@@ -608,7 +609,7 @@ foreach my $repo (@repos) {
 		} else {
 			if ( defined( $info->{cache} ) && defined( $info->{cache}{stats} ) ) {
 				for my $stat (@stats) {
-					$repo_info->{$stat} = $info->{cache}{stats}{$stat};
+					$repo_info->{$stat} = $info->{cache}{stats}{$stat} + 0;
 				}
 				if ($verbose) {
 					print STDERR "  Stats: total_size=" . $repo_info->{total_size} . ", total_csize=" . $repo_info->{total_csize} . "\n";
