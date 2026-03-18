@@ -118,14 +118,19 @@ The config file is a ini file and handled by L<Coonfig::Tiny>.
         - Default :: undef
 
     - passphrase :: Passphrase for the borg backup repo.
+            If not set, will try without passphrase.
         - Default :: undef
 
     - passcommand :: Passcommand for the borg backup repo.
+            If not set, will try without passcommand.
         - Default :: undef
 
     - timeout :: Timeout in seconds for borg info command per repo.
             Use 0 to disable timeout.
         - Default :: 300
+
+    - cache_dir :: BORG_CACHE_DIR environment variable for borg cache location.
+        - Default :: undef
 
 For single repos all those variables are in the root section of the config,
 so lets the repo is at '/backup/borg' with a passphrase of '1234abc'.
@@ -271,6 +276,7 @@ sub HELP_MESSAGE {
 	print "  repo=/path/to/repo            # for single mode\n";
 	print "  passphrase=secret             # or use passcommand\n";
 	print "  timeout=300                  # seconds (0=disable)\n";
+	print "  cache_dir=/path/to/cache      # BORG_CACHE_DIR\n";
 	print "\n";
 	print "  [repo1]                       # for multi mode\n";
 	print "  repo=/path/to/repo1\n";
@@ -280,6 +286,7 @@ sub HELP_MESSAGE {
 	print "  [repo2]\n";
 	print "  repo=/path/to/repo2\n";
 	print "  passcommand=pass show repo2\n";
+	print "  cache_dir=/tmp/borg-cache\n";
 }
 
 GetOptions(
@@ -430,20 +437,28 @@ if ( $config->{_}{mode} eq 'single' ) {
 		print STDERR "Config: single mode, using root section config\n";
 	}
 
-	# make sure we have passcommand or passphrase with passphrase being used as the default
-	if ( !defined( $config->{_}{passcommand} ) && !defined( $config->{_}{passphrase} ) ) {
-		$to_return->{error}       = 3;
-		$to_return->{errorString} = 'Neither passcommand or passphrase defined';
-		finish( to_return => $to_return );
-	} elsif ( $config->{_}{passphrase} ) {
+	# store passphrase/passcommand if provided
+	if ( defined( $config->{_}{passphrase} ) ) {
 		$config->{single}{passphrase} = $config->{_}{passphrase};
 		if ($verbose) {
 			print STDERR "Config: using passphrase from root section\n";
 		}
-	} elsif ( $config->{_}{passcommand} ) {
+	} elsif ( defined( $config->{_}{passcommand} ) ) {
 		$config->{single}{passcommand} = $config->{_}{passcommand};
 		if ($verbose) {
 			print STDERR "Config: using passcommand from root section\n";
+		}
+	} else {
+		if ($verbose) {
+			print STDERR "Config: no passphrase/passcommand, will try without\n";
+		}
+	}
+
+	# store cache_dir if provided
+	if ( defined( $config->{_}{cache_dir} ) ) {
+		$config->{single}{cache_dir} = $config->{_}{cache_dir};
+		if ($verbose) {
+			print STDERR "Config: using cache_dir from root section\n";
 		}
 	}
 
@@ -477,9 +492,10 @@ foreach my $repo (@repos) {
 
 	my $process = 1;
 
-	# unset borg pass bits
+	# unset borg env bits
 	delete( $ENV{BORG_PASSPHRASE} );
 	delete( $ENV{BORG_PASSCOMMAND} );
+	delete( $ENV{BORG_CACHE_DIR} );
 
 	my $repo_info = {
 		total_chunks             => 0,
@@ -493,16 +509,6 @@ foreach my $repo (@repos) {
 		error                    => undef,
 		locked_for               => undef,
 	};
-
-	if ( !defined( $config->{$repo}{passcommand} ) && !defined( $config->{$repo}{passphrase} ) ) {
-		$to_return->{error} = 3;
-		$to_return->{errorString}
-			= $to_return->{errorString} . "\n" . 'Neither passcommand or passphrase defined for ' . $repo;
-		$process = 0;
-		if ($verbose) {
-			print STDERR "  ERROR: No passphrase or passcommand for $repo\n";
-		}
-	}
 
 	if ( !defined( $config->{$repo}{repo} ) ) {
 		$to_return->{error}       = 4;
@@ -548,11 +554,31 @@ foreach my $repo (@repos) {
 
 		if ( defined( $config->{$repo}{passcommand} ) ) {
 			$ENV{BORG_PASSCOMMAND} = $config->{$repo}{passcommand};
-		} else {
+			if ($verbose) {
+				print STDERR "  Auth: using passcommand\n";
+			}
+		} elsif ( defined( $config->{$repo}{passphrase} ) ) {
 			$ENV{BORG_PASSPHRASE} = $config->{$repo}{passphrase};
+			if ($verbose) {
+				print STDERR "  Auth: using passphrase\n";
+			}
+		} else {
+			if ($verbose) {
+				print STDERR "  Auth: none configured, trying without\n";
+			}
+		}
+
+		if ( defined( $config->{$repo}{cache_dir} ) ) {
+			$ENV{BORG_CACHE_DIR} = $config->{$repo}{cache_dir};
+			if ($verbose) {
+				print STDERR "  Cache dir: $ENV{BORG_CACHE_DIR}\n";
+			}
 		}
 
 		my $timeout = $config->{$repo}{timeout} || $default_timeout;
+		if ($verbose) {
+			print STDERR "  Timeout: " . ($timeout > 0 ? $timeout . " seconds" : "disabled") . "\n";
+		}
 		my $command = 'borg info ' . shell_quote( $config->{$repo}{repo} ) . ' --json 2>&1';
 		if ($timeout > 0) {
 			$command = 'timeout ' . $timeout . ' ' . $command;
@@ -571,22 +597,38 @@ foreach my $repo (@repos) {
 		eval { $info = decode_json($output_raw); };
 		if ($@) {
 			my $error = $@;
-			if ( $output_raw =~ /lock.*lock\.exclusive/ ) {
-				$repo_info->{locked} = 1;
+			my $tried_without_pass = 0;
+			if ( !defined( $config->{$repo}{passcommand} ) && !defined( $config->{$repo}{passphrase} ) ) {
+				delete $ENV{BORG_PASSPHRASE};
+				delete $ENV{BORG_PASSCOMMAND};
+				$output_raw = `$command`;
+				$elapsed = time - $start_time;
+				if ($verbose) {
+					print STDERR "  No passphrase configured, retrying without...\n";
+					print STDERR "  Runtime: $elapsed seconds\n";
+				}
+				eval { $info = decode_json($output_raw); };
+				$tried_without_pass = 1;
+			}
+			if ($@) {
+				$error = $@;
+				if ( $output_raw =~ /lock.*lock\.exclusive/ ) {
+					$repo_info->{locked} = 1;
 
-				my $lock_file = $config->{$repo}{repo} . '/lock.exclusive';
-				if ($verbose) {
-					print STDERR "  Repo is locked, checking: $lock_file\n";
-				}
-				my ( $lock_dev, $lock_ino, $lock_mode, $lock_nlink, $lock_uid, $lock_gid, $lock_rdev, $lock_size, $lock_atime, $lock_mtime, $lock_ctime, $lock_blksize, $lock_blocks ) = stat($lock_file);
-				$repo_info->{locked_for} = time - $lock_ctime;
-				if ($verbose) {
-					print STDERR "  Repo is locked for " . $repo_info->{locked_for} . " seconds\n";
-				}
-			} else {
-				$repo_info->{error} = $error;
-				if ($verbose) {
-					print STDERR "  ERROR: " . $error . "\n";
+					my $lock_file = $config->{$repo}{repo} . '/lock.exclusive';
+					if ($verbose) {
+						print STDERR "  Repo is locked, checking: $lock_file\n";
+					}
+					my ( $lock_dev, $lock_ino, $lock_mode, $lock_nlink, $lock_uid, $lock_gid, $lock_rdev, $lock_size, $lock_atime, $lock_mtime, $lock_ctime, $lock_blksize, $lock_blocks ) = stat($lock_file);
+					$repo_info->{locked_for} = time - $lock_ctime;
+					if ($verbose) {
+						print STDERR "  Repo is locked for " . $repo_info->{locked_for} . " seconds\n";
+					}
+				} else {
+					$repo_info->{error} = $error;
+					if ($verbose) {
+						print STDERR "  ERROR: " . $error . "\n";
+					}
 				}
 			}
 		} else {
