@@ -174,7 +174,7 @@ Totaled info is in the hash .totals.
     - .totals.locked_for :: Longest time any repo has been locked.
         - Type :: seconds
 
-    - .totals.time_since_last_modified :: Largest time - mtime for the repo directory
+    - .totals.time_since_last_modified :: Largest time since last archive was created
         - Type :: seconds
 
     - .total.total_chunks :: Total number of checks between all repos.
@@ -205,7 +205,7 @@ Each repo then has it's own hash under .repo .
             locked. If it is not locked this is undef.
         - Type :: seconds
 
-    - .repo.$repo.time_since_last_modified :: time - mtime for the repo directory
+    - .repo.$repo.time_since_last_modified :: time since last archive was created
         - Type :: seconds
 
     - .repo.$repo.total_chunks :: Total number of checks for the repo.
@@ -239,6 +239,7 @@ use MIME::Base64;
 use IO::Compress::Gzip qw(gzip $GzipError);
 use String::ShellQuote;
 use Pod::Usage;
+use Time::Local;
 
 our $output_dir = '/var/cache/borgbackup_extend';
 my $config_file = '/usr/local/etc/borgbackup_extend.ini';
@@ -519,38 +520,12 @@ foreach my $repo (@repos) {
 		}
 	}
 
-	if ($process) {
+		if ($process) {
 		if ($verbose) {
 			print STDERR "  Repo path: " . $config->{$repo}{repo} . "\n";
 		}
 
-		my $nonce_file = $config->{$repo}{repo} . '/nonce';
-		my $mtime;
-		if ( -e $nonce_file ) {
-			if ($verbose) {
-				print STDERR "  Checking nonce file mtime: $nonce_file\n";
-			}
-			( undef, undef, undef, undef, undef, undef, undef, undef, undef, $mtime, undef, undef, undef ) = stat($nonce_file);
-		} else {
-			if ($verbose) {
-				print STDERR "  No nonce file found, using repo directory mtime: " . $config->{$repo}{repo} . "\n";
-			}
-			( undef, undef, undef, undef, undef, undef, undef, undef, undef, $mtime, undef, undef, undef ) = stat( $config->{$repo}{repo} );
-		}
-
-		my $time_diff = time - $mtime;
-		$repo_info->{time_since_last_modified} = $time_diff;
-		if ($verbose) {
-			print STDERR "  Time since last modified: $time_diff seconds\n";
-		}
-
-		# if we don't have a largest time diff or if it is larger than then
-		# the old one save the time diff
-		if ( !defined( $to_return->{data}{totals}{time_since_last_modified} )
-			|| $to_return->{data}{totals}{time_since_last_modified} < $time_diff )
-		{
-			$to_return->{data}{totals}{time_since_last_modified} = $time_diff;
-		}
+		my $timeout = $config->{$repo}{timeout} || $default_timeout;
 
 		if ( defined( $config->{$repo}{passcommand} ) ) {
 			$ENV{BORG_PASSCOMMAND} = $config->{$repo}{passcommand};
@@ -575,7 +550,6 @@ foreach my $repo (@repos) {
 			}
 		}
 
-		my $timeout = $config->{$repo}{timeout} || $default_timeout;
 		if ($verbose) {
 			print STDERR "  Timeout: " . ($timeout > 0 ? $timeout . " seconds" : "disabled") . "\n";
 		}
@@ -639,6 +613,51 @@ foreach my $repo (@repos) {
 				if ($verbose) {
 					print STDERR "  Stats: total_size=" . $repo_info->{total_size} . ", total_csize=" . $repo_info->{total_csize} . "\n";
 				}
+			}
+		}
+
+		if ( !defined( $repo_info->{error} ) && !$repo_info->{locked} ) {
+			my $list_cmd = 'borg list ' . shell_quote( $config->{$repo}{repo} ) . ' --json --last 1 2>&1';
+			if ($timeout > 0) {
+				$list_cmd = 'timeout ' . $timeout . ' ' . $list_cmd;
+			}
+			if ($verbose) {
+				print STDERR "  List Command: $list_cmd\n";
+			}
+			my $list_start = time;
+			my $list_output = `$list_cmd`;
+			my $list_elapsed = time - $list_start;
+			if ($verbose) {
+				print STDERR "  List Runtime: $list_elapsed seconds\n";
+			}
+
+			my $list_info;
+			eval { $list_info = decode_json($list_output); };
+			if (!$@ && defined($list_info->{archives}) && scalar(@{$list_info->{archives}}) > 0) {
+				my $archive = $list_info->{archives}[0];
+				my $archive_time = $archive->{time};
+				if ($archive_time =~ /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/) {
+					my $archive_timestamp = timelocal($6, $5, $4, $3, $2-1, $1-1900);
+					my $time_diff = time - $archive_timestamp;
+					$repo_info->{time_since_last_modified} = $time_diff;
+					if ($verbose) {
+						print STDERR "  Last archive: $archive_time\n";
+						print STDERR "  Time since last modified: $time_diff seconds\n";
+					}
+					if ( !defined( $to_return->{data}{totals}{time_since_last_modified} )
+						|| $to_return->{data}{totals}{time_since_last_modified} < $time_diff )
+					{
+						$to_return->{data}{totals}{time_since_last_modified} = $time_diff;
+					}
+				}
+			} else {
+				if ($verbose) {
+					print STDERR "  Could not get archive list, skipping time_since_last_modified\n";
+				}
+			}
+		} else {
+			if ($verbose) {
+				print STDERR "  Repo has error or is locked, skipping time_since_last_modified\n";
 			}
 		}
 
