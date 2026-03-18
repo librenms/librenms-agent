@@ -1,0 +1,627 @@
+#!/usr/bin/env python3
+
+import argparse
+import base64
+import gzip
+import json
+import os
+import random
+import string
+import subprocess
+import sys
+import time
+from datetime import datetime, timedelta
+
+import yaml
+
+DEFAULT_CONFIG = "/etc/snmp/extension/proxmox.yaml"
+DEFAULT_OUTPUT = "/run/snmp/extension/proxmox.json"
+CACHE_DIR = "/run/snmp/extension"
+ENDPOINT_CACHE_FILE = f"{CACHE_DIR}/proxmox_endpoints.cache"
+DISCOVERY_TTL_HOURS = 6
+
+
+def load_endpoint_cache():
+    if os.path.exists(ENDPOINT_CACHE_FILE):
+        try:
+            with open(ENDPOINT_CACHE_FILE) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return None
+
+
+def save_endpoint_cache(cache):
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    with open(ENDPOINT_CACHE_FILE, "w") as f:
+        json.dump(cache, f)
+
+
+def is_cache_valid(cache):
+    if not cache or "timestamp" not in cache:
+        return False
+    cached_time = datetime.fromisoformat(cache["timestamp"])
+    return datetime.now() - cached_time < timedelta(hours=DISCOVERY_TTL_HOURS)
+
+
+ENDPOINT_SCOPES = {
+    "node": {
+        "base_path": "/nodes/{nodename}",
+        "endpoints": [
+            "lxc",
+            "qemu",
+            "status",
+            "storage",
+            "netstat",
+            {"name": "ceph", "sub": "status"},
+            "subscription",
+            "replication",
+        ],
+    },
+    "cluster": {
+        "base_path": "/cluster",
+        "endpoints": [
+            "resources",
+            "status",
+            {"name": "ceph", "sub": "status"},
+            {"name": "ha", "subs": ["status", "resources", "groups", "rules"]},
+            "options",
+            {"name": "config", "sub": "nodes"},
+            "replication",
+        ],
+    },
+    "pool": {
+        "base_path": "",
+        "endpoints": ["pools"],
+    },
+}
+
+REDACT_KEYS = [
+    "clustername",
+    "email_from",
+    "serial",
+    "by_id_link",
+    "serverid",
+]
+
+
+def redact_string():
+    return "redacted+" + "".join(random.choices(string.ascii_lowercase, k=6))
+
+
+def redact_data(data, privacy_enabled):
+    if not privacy_enabled:
+        return data
+
+    if isinstance(data, dict):
+        result = {}
+        for key, value in data.items():
+            if key in REDACT_KEYS and value:
+                result[key] = redact_string()
+            else:
+                result[key] = redact_data(value, privacy_enabled)
+        return result
+    elif isinstance(data, list):
+        return [redact_data(item, privacy_enabled) for item in data]
+    else:
+        return data
+
+
+class Agent:
+    def __init__(self, verbose=False, privacy=False):
+        self.verbose = verbose
+        self.privacy = privacy
+        self.nodename = None
+        self.clustername = None
+        self.compress = False
+        self.start_time = None
+        self.endpoint_stats = {
+            "node": {"total": 0, "success": 0, "errors": 0},
+            "cluster": {"total": 0, "success": 0, "errors": 0},
+            "pool": {"total": 0, "success": 0, "errors": 0},
+        }
+
+    def info(self, msg):
+        print(msg, flush=True)
+
+    def log(self, msg):
+        if self.verbose:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"[{timestamp}] {msg}", flush=True)
+
+    def error(self, msg):
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[{timestamp}] ERROR: {msg}", flush=True)
+
+    def duration_str(self, seconds):
+        if seconds < 1:
+            return f"{int(seconds * 1000)}ms"
+        elif seconds < 60:
+            return f"{seconds:.1f}s"
+        else:
+            mins = int(seconds // 60)
+            secs = seconds % 60
+            return f"{mins}m {secs:.0f}s"
+
+    def get_hostname(self):
+        try:
+            return subprocess.check_output(
+                ["hostname"], stderr=subprocess.STDOUT, text=True
+            ).strip()
+        except subprocess.CalledProcessError as e:
+            error_handler("HostnameError", f"Failed to get hostname: {e.output}")
+
+    def get_node_info(self, pvesh_path):
+        hostname = self.get_hostname()
+        nodename = hostname
+        clustername = hostname
+
+        try:
+            result = subprocess.check_output(
+                [pvesh_path, "get", "/cluster/config/nodes", "--output-format", "json"],
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            self.log("  [GET] /cluster/config/nodes")
+            nodes = json.loads(result)
+            for node in nodes:
+                if node.get("node") and node.get("local"):
+                    nodename = node["node"]
+                    break
+        except (
+            FileNotFoundError,
+            subprocess.CalledProcessError,
+            json.JSONDecodeError,
+            KeyError,
+        ):
+            self.log("  [GET] /cluster/config/nodes ERROR")
+
+        try:
+            result = subprocess.check_output(
+                [pvesh_path, "get", "/cluster/status", "--output-format", "json"],
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            self.log("  [GET] /cluster/status")
+            status = json.loads(result)
+            for item in status:
+                if item.get("type") == "cluster":
+                    clustername = item.get("name", hostname)
+                    break
+        except (
+            FileNotFoundError,
+            subprocess.CalledProcessError,
+            json.JSONDecodeError,
+            KeyError,
+        ):
+            self.log("  [GET] /cluster/status ERROR")
+
+        return {"nodename": nodename, "clustername": clustername}
+
+    def _endpoint_name(self, endpoint):
+        return endpoint if isinstance(endpoint, str) else endpoint["name"]
+
+    def _endpoint_config(self, endpoint):
+        if isinstance(endpoint, str):
+            return {}
+        return endpoint
+
+    def get_version(self):
+        start = time.time()
+        try:
+            result = subprocess.check_output(
+                ["pvesh", "get", "/nodes/localhost/version", "--output-format", "json"],
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            duration = time.time() - start
+            self.log(
+                f"  [GET] /nodes/localhost/version [{self.duration_str(duration)}]"
+            )
+            data = json.loads(result)
+            if isinstance(data, dict):
+                data["exitcode"] = 0
+            else:
+                data = {"data": data, "exitcode": 0}
+            return data
+        except FileNotFoundError as e:
+            duration = time.time() - start
+            self.log(
+                f"  [GET] /nodes/localhost/version [{self.duration_str(duration)}] ERROR"
+            )
+            return {"error": f"pvesh not found: {e}", "exitcode": 127}
+        except subprocess.CalledProcessError as e:
+            duration = time.time() - start
+            self.log(
+                f"  [GET] /nodes/localhost/version [{self.duration_str(duration)}] ERROR"
+            )
+            return {
+                "error": f"Failed to get version: {e.output}",
+                "exitcode": e.returncode,
+            }
+        except json.JSONDecodeError as e:
+            duration = time.time() - start
+            self.log(
+                f"  [GET] /nodes/localhost/version [{self.duration_str(duration)}] ERROR"
+            )
+            return {"error": f"Failed to parse version: {e}", "exitcode": 1}
+
+    def discover_endpoints(self, pvesh_path, scope):
+        base_path = ENDPOINT_SCOPES[scope]["base_path"]
+        if scope == "node":
+            path = base_path.format(nodename="localhost")
+        else:
+            path = base_path if base_path else "/"
+
+        try:
+            result = subprocess.check_output(
+                [pvesh_path, "get", path, "--output-format", "json"],
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            self.log(f"  [DISCOVERY] {path}")
+            data = json.loads(result)
+            if isinstance(data, list):
+                return [
+                    item.get("name") or item.get("id")
+                    for item in data
+                    if isinstance(item, dict)
+                ]
+            return []
+        except FileNotFoundError:
+            self.log(f"  [DISCOVERY] {path} ERROR: pvesh not found")
+            return []
+        except subprocess.CalledProcessError as e:
+            self.log(f"  [DISCOVERY] {path} ERROR: exit code {e.returncode}")
+            return []
+        except json.JSONDecodeError:
+            self.log(f"  [DISCOVERY] {path} ERROR: invalid JSON")
+            return []
+
+    def get_endpoints(self, pvesh_path, log=False, force_rediscover=False):
+        cache = None if force_rediscover else load_endpoint_cache()
+
+        if not is_cache_valid(cache):
+            self.log("[DISCOVERY] Discovering endpoints...")
+            cache = {
+                "timestamp": datetime.now().isoformat(),
+                "endpoints": {},
+            }
+            for scope in ENDPOINT_SCOPES:
+                discovered = self.discover_endpoints(pvesh_path, scope)
+                cache["endpoints"][scope] = discovered
+            save_endpoint_cache(cache)
+        elif log:
+            if cache and "timestamp" in cache:
+                cached_time = datetime.fromisoformat(cache["timestamp"])
+                age = datetime.now() - cached_time
+                self.log(
+                    f"[DISCOVERY] Using cached endpoints (age: {self.duration_str(age.total_seconds())})"
+                )
+
+        endpoints = {
+            scope: sorted([self._endpoint_name(e) for e in cfg["endpoints"]])
+            for scope, cfg in ENDPOINT_SCOPES.items()
+        }
+
+        if log:
+            for scope in endpoints:
+                self.log(
+                    f"[DISCOVERY] {scope.capitalize()}: {', '.join(endpoints[scope])}"
+                )
+
+        return endpoints
+
+    def query_pvesh(self, pvesh_path, path):
+        start = time.time()
+        try:
+            result = subprocess.check_output(
+                [pvesh_path, "get", path, "--output-format", "json"],
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            duration = time.time() - start
+            self.log(f"  [GET] {path} [{self.duration_str(duration)}]")
+            data = json.loads(result)
+            if isinstance(data, dict):
+                data["exitcode"] = 0
+            else:
+                data = {"data": data, "exitcode": 0}
+            return data
+        except FileNotFoundError as e:
+            duration = time.time() - start
+            self.log(f"  [GET] {path} [{self.duration_str(duration)}] ERROR")
+            return {"error": f"pvesh not found: {e}", "exitcode": 127}
+        except subprocess.CalledProcessError as e:
+            duration = time.time() - start
+            self.log(f"  [GET] {path} [{self.duration_str(duration)}] ERROR")
+            return {
+                "error": str(e),
+                "stderr": e.output if hasattr(e, "output") else "",
+                "exitcode": e.returncode,
+            }
+        except json.JSONDecodeError as e:
+            duration = time.time() - start
+            self.log(f"  [GET] {path} [{self.duration_str(duration)}] ERROR")
+            return {"error": f"JSON decode error: {e}", "exitcode": 1}
+
+    def _build_path(self, base_path, endpoint):
+        name = self._endpoint_name(endpoint)
+        cfg = self._endpoint_config(endpoint)
+        path = f"{base_path}/{name}"
+        if cfg.get("sub"):
+            path = f"{path}/{cfg['sub']}"
+        return path
+
+    def _query_endpoint(self, pvesh_path, scope, base_path, endpoint):
+        name = self._endpoint_name(endpoint)
+        cfg = self._endpoint_config(endpoint)
+        self.endpoint_stats[scope]["total"] += 1
+
+        if cfg.get("subs"):
+            return {
+                sub: self.query_pvesh(pvesh_path, f"{base_path}/{name}/{sub}")
+                for sub in cfg["subs"]
+            }
+
+        return self.query_pvesh(pvesh_path, self._build_path(base_path, endpoint))
+
+    def get_endpoints_data(self, pvesh_path, scope, base_path, endpoints_list):
+        data = {}
+
+        for endpoint in endpoints_list:
+            name = self._endpoint_name(endpoint)
+            result = self._query_endpoint(pvesh_path, scope, base_path, endpoint)
+
+            if isinstance(result, dict) and "error" in result:
+                self.endpoint_stats[scope]["errors"] += 1
+                self.error(
+                    f"  {self._build_path(base_path, endpoint)}: {result.get('error', 'Unknown error')}"
+                )
+            else:
+                self.endpoint_stats[scope]["success"] += 1
+
+            data[name] = result
+
+        return data
+
+    def collect_exit_codes(self, data):
+        codes = []
+        if isinstance(data, dict):
+            if "exitcode" in data:
+                if data["exitcode"] != 0:
+                    codes.append(data["exitcode"])
+            for value in data.values():
+                codes.extend(self.collect_exit_codes(value))
+        elif isinstance(data, list):
+            for item in data:
+                codes.extend(self.collect_exit_codes(item))
+        return codes
+
+    def strip_exitcode(self, data):
+        if isinstance(data, dict):
+            result = {}
+            for key, value in data.items():
+                if key != "exitcode":
+                    result[key] = self.strip_exitcode(value)
+            return result
+        elif isinstance(data, list):
+            return [self.strip_exitcode(item) for item in data]
+        return data
+
+    def compress_data(self, data_str):
+        compressed = gzip.compress(data_str.encode("utf-8"))
+        return base64.b64encode(compressed).decode("ascii")
+
+    def run(
+        self, config_path, output_path, override_nodename=None, force_rediscover=False
+    ):
+        self.start_time = time.time()
+        total_start = self.start_time
+
+        self.info("Proxmox VE Agent v2 starting")
+
+        config = self.load_config(config_path)
+        pvesh_path = config["pvesh_path"]
+
+        self.log(f"Using pvesh: {pvesh_path}")
+
+        node_info = self.get_node_info(pvesh_path)
+        self.nodename = (
+            override_nodename if override_nodename else node_info["nodename"]
+        )
+        self.clustername = node_info["clustername"]
+
+        version_data = self.get_version()
+
+        if "exitcode" in version_data and version_data["exitcode"] != 0:
+            self.error(
+                f"Version check failed with exit code {version_data['exitcode']}"
+            )
+            total_duration = time.time() - total_start
+            self.info(f"Finished in {self.duration_str(total_duration)}, 1 error")
+            return False
+
+        self.get_endpoints(pvesh_path, log=True, force_rediscover=force_rediscover)
+
+        all_data = {}
+        for scope, cfg in ENDPOINT_SCOPES.items():
+            base_path = cfg["base_path"].format(nodename=self.nodename)
+            data = self.get_endpoints_data(
+                pvesh_path, scope, base_path, cfg["endpoints"]
+            )
+            if self.privacy and scope != "node":
+                data = redact_data(data, True)
+            all_data[scope] = data
+
+        all_data = self.strip_exitcode(all_data)
+        version_data_clean = self.strip_exitcode(version_data)
+
+        output_data = {
+            "version": 2,
+            "error": 0,
+            "errorString": "",
+            "data": {
+                "clustername": self.clustername,
+                "nodename": self.nodename,
+                "timestamp": datetime.now().isoformat(),
+                "version": version_data_clean,
+                "endpoints": all_data,
+            },
+        }
+
+        os.makedirs(os.path.dirname(output_path) or ".", mode=0o755, exist_ok=True)
+
+        try:
+            if self.compress:
+                json_str = json.dumps(output_data, separators=(",", ":"))
+                compressed_data = self.compress_data(json_str)
+
+                with open(output_path, "w") as f:
+                    f.write(compressed_data)
+
+                original_size = len(json_str)
+                compressed_size = len(compressed_data)
+                ratio = (
+                    (1 - compressed_size / original_size) * 100
+                    if original_size > 0
+                    else 0
+                )
+                self.info(
+                    f"Compressed output: {output_path} ({compressed_size} bytes, {ratio:.1f}% reduction)"
+                )
+
+                pretty_path = output_path.replace(".json", "_pretty.json")
+                with open(pretty_path, "w") as f:
+                    json.dump(output_data, f, indent=2, sort_keys=True)
+            else:
+                with open(output_path, "w") as f:
+                    json.dump(output_data, f, indent=2)
+                self.info(f"Output: {output_path}")
+
+                pretty_path = output_path.replace(".json", "_pretty.json")
+                with open(pretty_path, "w") as f:
+                    json.dump(output_data, f, indent=2, sort_keys=True)
+        except OSError as e:
+            self.error(f"Failed to write output: {e}")
+            output_data["error"] = 1
+            output_data["errorString"] = f"Failed to write output: {e}"
+
+        total_duration = time.time() - total_start
+        total_errors = sum(stats["errors"] for stats in self.endpoint_stats.values())
+
+        all_exit_codes = self.collect_exit_codes(output_data)
+        non_zero_codes = sorted(set(c for c in all_exit_codes if c != 0))
+        if non_zero_codes:
+            self.info(f"Non-zero exit codes: {non_zero_codes}")
+
+        self.info(
+            f"Finished in {self.duration_str(total_duration)}, {total_errors} errors"
+        )
+
+        return output_data["error"] == 0 and len(non_zero_codes) == 0
+
+    def load_config(self, config_path):
+        config = {"pvesh_path": "pvesh", "compress": True}
+
+        if not os.path.exists(config_path):
+            self.log(f"Config file not found: {config_path} (using defaults)")
+            return config
+
+        try:
+            with open(config_path, "r") as f:
+                user_config = yaml.safe_load(f)
+
+            if user_config and isinstance(user_config, dict):
+                if "pvesh_path" in user_config:
+                    config["pvesh_path"] = user_config["pvesh_path"]
+
+                if "compress" in user_config:
+                    config["compress"] = bool(user_config["compress"])
+                    self.compress = config["compress"]
+
+            self.log(f"Loaded config from: {config_path}")
+
+        except (yaml.YAMLError, OSError):
+            self.log(f"Config file error: {config_path}, using defaults")
+            return config
+
+        return config
+
+
+def error_handler(error_name, err):
+    output_data = {
+        "version": 2,
+        "error": 1,
+        "errorString": f"{error_name}: {err}",
+        "data": {},
+    }
+    print(json.dumps(output_data))
+    sys.exit(1)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Proxmox VE agent for LibreNMS")
+    parser.add_argument(
+        "-c",
+        "--config",
+        default=DEFAULT_CONFIG,
+        help=f"Path to configuration file (default: {DEFAULT_CONFIG})",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        default=DEFAULT_OUTPUT,
+        help=f"Path to output cache file (default: {DEFAULT_OUTPUT})",
+    )
+    parser.add_argument(
+        "-n", "--node", help="Override node name (default: auto-detect)"
+    )
+    parser.add_argument(
+        "-f",
+        "--force-rediscover",
+        action="store_true",
+        help="Force re-discovery of available endpoints",
+    )
+    parser.add_argument(
+        "-z",
+        "--compress",
+        action="store_true",
+        help="Enable gzip+base64 compression (default)",
+    )
+    parser.add_argument(
+        "--no-compress",
+        action="store_true",
+        help="Disable compression",
+    )
+    parser.add_argument(
+        "--privacy", action="store_true", help="Redact sensitive information in output"
+    )
+    parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose output"
+    )
+
+    args = parser.parse_args()
+
+    try:
+        agent = Agent(verbose=args.verbose, privacy=args.privacy)
+        if args.no_compress:
+            agent.compress = False
+        elif args.compress:
+            agent.compress = True
+
+        success = agent.run(
+            config_path=args.config,
+            output_path=args.output,
+            override_nodename=args.node,
+            force_rediscover=args.force_rediscover,
+        )
+
+        sys.exit(0 if success else 1)
+    except (KeyboardInterrupt, EOFError):
+        print("\nInterrupted, exiting.", flush=True)
+        sys.exit(130)
+
+
+if __name__ == "__main__":
+    main()
