@@ -335,8 +335,6 @@ sub finish {
 	}
 	write_file( $output_dir . '/pretty', $return_string );
 
-	print $return_string;
-
 	exit $opts{to_return}->{error};
 } ## end sub finish
 
@@ -462,7 +460,10 @@ my @totals
 	= ( 'total_chunks', 'total_csize', 'total_size', 'total_unique_chunks', 'unique_csize', 'unique_size', 'locked' );
 my @stats = ( 'total_chunks', 'total_csize', 'total_size', 'total_unique_chunks', 'unique_csize', 'unique_size' );
 
+print "Processing " . scalar(@repos) . " repos...\n";
+
 foreach my $repo (@repos) {
+	print "Processing repo $repo\n";
 	if ($verbose) {
 		print STDERR "Processing repo: $repo\n";
 	}
