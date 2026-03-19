@@ -32,7 +32,7 @@ borgbackup - LibreNMS JSON SNMP extend for gathering backups for borg
 
 =head1 SYNOPSIS
 
-borgbackup [-c <config>] [-o <output dir>] [-u] [-p] [-Z] [-v] [-V] [-h]
+borgbackup [-c|--config <config>] [-o|--output <output dir>] [-u|--update] [-p|--pretty] [-Z|--compress] [-v|--verbose] [-V|--version] [-h|--help] [-m|--manual]
 
 =head1 DESCRIPTION
 
@@ -68,43 +68,47 @@ Use -u to update the cache, or -u -v for verbose updates.
 
 =head1 FLAGS
 
-=head2 -c <config file>
+=head2 -c|--config <config file>
 
 The config file to use for the extend.
 
 Default :: /usr/local/etc/borgbackup_extend.ini
 
-=head2 -o <output dir>
+=head2 -o|--output <output dir>
 
 The output directory write the pretty JSON file to and the file to use
 for the SNMP extend.
 
 Default :: /var/cache/borgbackup_extend
 
-=head2 -u
+=head2 -u|--update
 
 Update mode. When called from snmpd, it reads from the cache file instead
 of running borg commands directly.
 
-=head2 -p
+=head2 -p|--pretty
 
 Pretty print the JSON output.
 
-=head2 -Z
+=head2 -Z|--compress
 
 GZip+Base64 compress the results.
 
-=head2 -v
+=head2 -v|--verbose
 
 Verbose output. Print status info to STDERR.
 
-=head2 -V
+=head2 -V|--version
 
 Print version and exit.
 
-=head2 -h
+=head2 -h|--help
 
 Print help info.
+
+=head2 -m|--manual
+
+Print full manual page using L<Pod::Usage>.
 
 =head1 CONFIG
 
@@ -257,48 +261,28 @@ sub HELP_MESSAGE {
 	print "borgbackup SNMP extend 0.1.0\n\n";
 	print "Usage: borgbackup [options]\n\n";
 	print "Options:\n";
-	print "  -c <file>   Config file (default: $config_file)\n";
-	print "  -o <dir>    Output directory (default: $output_dir)\n";
-	print "  -u          Update mode - regenerate cache from borg repos\n";
-	print "  -p          Pretty print JSON output\n";
-	print "  -Z          GZip+Base64 compress the cache file\n";
-	print "  -v          Verbose output to STDERR\n";
-	print "  -V          Print version and exit\n";
-	print "  -h          Print this help message\n";
+	print "  -c, --config <file>   Config file (default: $config_file)\n";
+	print "  -o, --output <dir>    Output directory (default: $output_dir)\n";
+	print "  -u, --update          Update mode - regenerate cache from borg repos\n";
+	print "  -p, --pretty          Pretty print JSON output\n";
+	print "  -Z, --compress        GZip+Base64 compress the cache file\n";
+	print "  -v, --verbose         Verbose output to STDERR\n";
+	print "  -V, --version         Print version and exit\n";
+	print "  -h, --help            Print this help message\n";
+	print "  -m, --manual          Print full manual page\n";
 	print "\n";
-	print "When called without -u, reads from cache file for SNMP extend.\n";
-	print "\n";
-	print "Typical usage:\n";
-	print "  SNMPD:  extend borgbackup /bin/cat /var/cache/borgbackup_extend/extend_return\n";
-	print "  Cron:   */5 * * * * /usr/local/lib/snmpd/borgbackup -u -Z\n";
-	print "\n";
-	print "Config file (INI format):\n";
-	print "  mode=multi                    # single or multi\n";
-	print "  repo=/path/to/repo            # for single mode\n";
-	print "  passphrase=secret             # or use passcommand\n";
-	print "  timeout=300                  # seconds (0=disable)\n";
-	print "  cache_dir=/path/to/cache      # BORG_CACHE_DIR\n";
-	print "\n";
-	print "  [repo1]                       # for multi mode\n";
-	print "  repo=/path/to/repo1\n";
-	print "  passphrase=secret1\n";
-	print "  timeout=600                   # per-repo override\n";
-	print "\n";
-	print "  [repo2]\n";
-	print "  repo=/path/to/repo2\n";
-	print "  passcommand=pass show repo2\n";
-	print "  cache_dir=/tmp/borg-cache\n";
 }
 
 GetOptions(
-	'c=s'   => \$config_file,
-	'o=s'   => \$output_dir,
-	'v'     => \$verbose,
-	'p'     => \$pretty,
-	'Z'     => \$compress,
-	'u'     => \$update,
-	'V'     => sub { VERSION_MESSAGE(); exit 0; },
-	'h'     => sub { HELP_MESSAGE(); exit 0; },
+	'c|config=s'      => \$config_file,
+	'o|output=s'      => \$output_dir,
+	'v|verbose'       => \$verbose,
+	'p|pretty'        => \$pretty,
+	'Z|compress'      => \$compress,
+	'u|update'        => \$update,
+	'V|version'      => sub { VERSION_MESSAGE(); exit 0; },
+	'h|help'          => sub { HELP_MESSAGE(); exit 0; },
+	'm|manual'        => sub { pod2usage(-verbose => 2) },
 ) or die "Error in command line arguments\n";
 if ($compress && !$update) {
 	die "-Z requires -u (update mode) for compression\n";
