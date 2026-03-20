@@ -81,7 +81,7 @@ ensure_base_os_extends() {
 config extend
 	option name 'distro'
 	option prog '/bin/sh'
-	option args '-c "/bin/grep OpenWrt /etc/banner | /bin/sed s/.*OpenWrt/OpenWrt/ | /usr/bin/head -1"'
+	option args "-c '. /etc/os-release; echo \"\$PRETTY_NAME\"'"
 EOF
 		echo "  + Added missing extend: distro"
 	fi
