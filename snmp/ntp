@@ -1,0 +1,71 @@
+#!/bin/sh
+# Please make sure the paths below are correct.
+# Alternatively you can put them in $0.conf, meaning if you've named
+# this script ntp-client then it must go in ntp-client.conf .
+#
+# If you are unsure, which to set, run this script and make sure that
+# the JSON output variables match that in "ntpq -c rv".
+#
+# `--ntpsec` for ntpsec, `--systemd-timesyncd` for `systemd-timesyncd`
+#
+################################################################
+# Don't change anything unless you know what are you doing     #
+################################################################
+BIN_GREP='/usr/bin/env grep'
+BIN_AWK='/usr/bin/env awk'
+
+if [ $# -gt 0 ]; then
+  SEQUENCE=$1
+else
+  if dpkg-query -W -f='${status}' ntpsec | grep -q "ok installed"; then
+    SEQUENCE="--ntpsec"
+  elif dpkg-query -W -f='${status}' systemd-timesyncd | grep -q "ok installed"; then
+    SEQUENCE="--systemd-timesyncd"
+  fi
+fi
+
+case $SEQUENCE in
+  --ntpsec)
+    BIN_NTPQ='/usr/bin/env ntpq'
+
+    CONFIG=$0".conf"
+    if [ -f "$CONFIG" ]; then
+        # shellcheck disable=SC1090
+        . "$CONFIG"
+    fi
+
+    NTP_RV=$($BIN_NTPQ -c rv 127.0.0.1)
+    NTP_IOSTAT=$($BIN_NTPQ -c iostat 127.0.0.1 2> /dev/null)
+
+    NTP_STRATUM=$(echo $NTP_RV | $BIN_AWK -Fstratum= '{print $2}' | $BIN_AWK -F, '{print $1}')
+    NTP_OFFSET=$(echo $NTP_RV | $BIN_AWK -Foffset= '{print $2}' | $BIN_AWK -F, '{print $1}')
+    NTP_FREQUENCY=$(echo $NTP_RV | $BIN_AWK -Ffrequency= '{print $2}' | $BIN_AWK -F, '{print $1}')
+    NTP_SYS_JITTER=$(echo $NTP_RV | $BIN_AWK -Fsys_jitter= '{print $2}' | $BIN_AWK -F, '{print $1}')
+    NTP_CLK_JITTER=$(echo $NTP_RV | $BIN_AWK -Fclk_jitter= '{print $2}' | $BIN_AWK -F, '{print $1}')
+    NTP_WANDER=$(echo $NTP_RV | $BIN_AWK -Fclk_wander= '{print $2}' | $BIN_AWK -F, '{print $1}')
+    NTP_RESET=$(echo $NTP_IOSTAT | $BIN_GREP "reset" | sed 's/.*reset://' | grep -oE '[0-9:]+' | head -n 1 )
+    NTP_RESET=$(date -u -d "1970-01-01 $NTP_RESET" +"%s")
+    NTP_FREE_BUFFER=$(echo $NTP_IOSTAT | sed 's/.*free receive buffers://' | grep -oE '[0-9:]+' | head -n 1 )
+    NTP_USED_BUFFER=$(echo $NTP_IOSTAT | sed 's/.*used receive buffers://' | grep -oE '[0-9:]+' | head -n 1 )
+    NTP_BUFFERS=$(($NTP_USED_BUFFER + $NTP_FREE_BUFFER))
+    NTP_DROP_PACK=$(echo $NTP_IOSTAT | sed 's/.*dropped packets://' | grep -oE '[0-9]+' | head -n 1)
+    NTP_IGNOR_PACK=$(echo $NTP_IOSTAT | sed 's/.*ignored packets://' | grep -oE '[0-9]+' | head -n 1)
+    NTP_RCV_PACK=$(echo $NTP_IOSTAT | sed 's/.*received packets://' | grep -oE '[0-9]+' | head -n 1)
+    NTP_SENT_PACK=$(echo $NTP_IOSTAT | sed 's/.*packets sent://' | grep -oE '[0-9]+' | head -n 1)
+
+    echo '{"data":{"stratum":"'"$NTP_STRATUM"'","offset":"'"$NTP_OFFSET"'","frequency":"'"$NTP_FREQUENCY"'","sys_jitter":"'"$NTP_SYS_JITTER"'","clk_jitter":"'"$NTP_CLK_JITTER"'","clk_wander":"'"$NTP_WANDER"'","time_since_reset":"'"$NTP_RESET"'","receive_buffers":"'"$NTP_BUFFERS"'","free_receive_buffers":"'"$NTP_FREE_BUFFER"'","used_receive_buffers":"'"$NTP_USED_BUFFER"'","dropped_packets":"'"$NTP_DROP_PACK"'","ignored_packets":"'"$NTP_IGNOR_PACK"'","received_packets":"'"$NTP_RCV_PACK"'","packets_sent":"'"$NTP_SENT_PACK"'"},"version":"1","error":"0","errorString":""}'
+    ;;
+
+  --systemd-timesyncd)
+    BIN_TIMEDATECTL='/usr/bin/env timedatectl'
+    NTP_TIMESYNCD=$($BIN_TIMEDATECTL timesync-status)
+    NTP_OFFSET=$(echo $NTP_TIMESYNCD | sed 's/.*Offset://' | grep -oE '[0-9.]+' | head -n 1)
+    NTP_FREQUENCY=$(echo $NTP_TIMESYNCD | sed 's/.*Frequency://' | grep -oE '[0-9.]+' | head -n 1)
+    NTP_JITTER=$(echo $NTP_TIMESYNCD | sed 's/.*Jitter://' | grep -oE '[0-9.]+' | head -n 1)
+    NTP_DELAY=$(echo $NTP_TIMESYNCD | sed 's/.*Delay://' | grep -oE '[0-9.]+' | head -n 1)
+
+    echo '{"data":{"offset":"'"$NTP_OFFSET"'","frequency":"'"$NTP_FREQUENCY"'","jitter":"'"$NTP_JITTER"'","delay":"'"$NTP_DELAY"'"},"version":"1","error":"0","errorString":""}'
+    ;;
+esac
+
+exit 0
