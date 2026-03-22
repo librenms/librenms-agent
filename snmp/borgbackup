@@ -284,9 +284,21 @@ GetOptions(
 	'h|help'          => sub { HELP_MESSAGE(); exit 0; },
 	'm|manual'        => sub { pod2usage(-verbose => 2) },
 ) or die "Error in command line arguments\n";
-if ($compress && !$update) {
-	die "-Z requires -u (update mode) for compression\n";
+
+if ( ( $compress || $pretty ) && !$update ) {
+	die "Cannot use -Z|--compress or -p|--pretty without -u (update mode)\n";
 }
+
+if ( !$update ) {
+	if ( -f $output_dir . '/extend_return' ) {
+		my $old = read_file( $output_dir . '/extend_return' );
+		print $old;
+		exit 0;
+	} else {
+		die "Cache file not found. Run with -u to update cache.\n";
+	}
+}
+
 if ($verbose) {
 	warn "DEBUG: verbose=$verbose, update=$update, pretty=$pretty, compress=$compress\n";
 }
@@ -362,19 +374,6 @@ my $to_return = {
 	error       => 0,
 	errorString => '',
 };
-
-if ( !$update ) {
-	if ( $pretty ) {
-		die "Cannot pretty print without -u (update mode)\n";
-	}
-	if ( -f $output_dir . '/extend_return' ) {
-		my $old = read_file( $output_dir . '/extend_return' );
-		print $old;
-		exit 0;
-	} else {
-		die "Cache file not found. Run with -u to update cache.\n";
-	}
-}
 
 if ($verbose) {
 	print STDERR "Processing repos in mode: update\n";
