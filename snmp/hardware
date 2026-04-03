@@ -1,0 +1,20 @@
+#!/usr/bin/env sh
+# Detects which hardware.
+
+if [ -r /sys/devices/virtual/dmi/id/product_name ]; then
+  DMI=$(cat /sys/devices/virtual/dmi/id/product_name)
+fi
+if [ -r /sys/firmware/devicetree/base/model ]; then
+  DT=$(cat /sys/firmware/devicetree/base/model)
+fi
+
+if [ -n "${DMI}" ]; then
+  if [ "${DMI}" != "To Be Filled By O.E.M." ] && [ "${DMI}" != "Default string" ] && [ "${DMI}" != "Not Specified" ] && [ "${DMI}" != "None" ] ; then
+    HARDWARESTR="${DMI}"
+  fi
+fi
+if [ -z "${HARDWARESTR}" ] && [ -n "${DT}" ]; then
+  HARDWARESTR="${DT}"
+fi
+  
+echo "${HARDWARESTR}"
