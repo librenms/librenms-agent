@@ -14,7 +14,7 @@
 BIN_GPIPE='/usr/bin/env gpspipe'
 BIN_GREP='/usr/bin/env grep'
 BIN_PYTHON='/usr/bin/env python3'
-LINES=20
+LINES=50
 
 # Check for config file
 CONFIG=$0".conf"
@@ -30,16 +30,65 @@ trap 'rm -f $TMPFILE' 0 2 3 15
 # Write GPSPIPE Data to Temp File
 $BIN_GPIPE -w -n $LINES > "$TMPFILE"
 
-# Parse Temp file for GPSD Data
-VERSION=$(cat "$TMPFILE" | $BIN_GREP -m 1 "VERSION" | $BIN_PYTHON -c 'import sys,json;print(json.load(sys.stdin)["rev"])' 2> /dev/null)
-GPSDMODE=$(cat "$TMPFILE" | $BIN_GREP -m 1 "TPV" | $BIN_PYTHON -c 'import sys,json;print(json.load(sys.stdin)["mode"])' 2> /dev/null)
-HDOP=$(cat "$TMPFILE" | $BIN_GREP -m 1 "SKY" | $BIN_PYTHON -c 'import sys,json;print(json.load(sys.stdin)["hdop"])' 2> /dev/null)
-VDOP=$(cat "$TMPFILE" | $BIN_GREP -m 1 "SKY" | $BIN_PYTHON -c 'import sys,json;print(json.load(sys.stdin)["vdop"])' 2> /dev/null)
-LAT=$(cat "$TMPFILE" | $BIN_GREP -m 1 "TPV" | $BIN_PYTHON -c 'import sys,json;print(json.load(sys.stdin)["lat"])' 2> /dev/null)
-LONG=$(cat "$TMPFILE" | $BIN_GREP -m 1 "TPV" | $BIN_PYTHON -c 'import sys,json;print(json.load(sys.stdin)["lon"])' 2> /dev/null)
-ALT=$(cat "$TMPFILE" | $BIN_GREP -m 1 "TPV" | $BIN_PYTHON -c 'import sys,json;print(json.load(sys.stdin)["alt"])' 2> /dev/null)
-SATS=$(cat "$TMPFILE" | $BIN_GREP -m 1 "SKY" | $BIN_PYTHON -c 'import sys,json;print(len(json.load(sys.stdin)["satellites"]))' 2> /dev/null)
-SATSUSED=$(cat "$TMPFILE" | $BIN_GREP -m 1 "SKY" | $BIN_PYTHON -c 'import sys,json;print(len([sat for sat in json.load(sys.stdin)["satellites"] if sat["used"]]))' 2> /dev/null)
+# Parse data using a single Python pass that scans the whole buffer:
+# - latest TPV for mode/lat/lon/alt
+# - the "richest" SKY (highest satellites count) for hdop/vdop/sats counts
+# - this works around multi-constellation receivers (e.g. Quectel LC29H)
+#   that emit several DOP-only SKY frames between fuller accumulated ones.
+VALUES=$(cat "$TMPFILE" | $BIN_PYTHON -c '
+import sys, json
+
+best_sky = None
+best_score = -1
+last_tpv = None
+version = None
+
+for line in sys.stdin:
+    try:
+        d = json.loads(line)
+    except ValueError:
+        continue
+    cls = d.get("class")
+    if cls == "VERSION":
+        version = d.get("rev", "")
+    elif cls == "TPV":
+        last_tpv = d
+    elif cls == "SKY":
+        score = len(d.get("satellites", []) or [])
+        nsat = d.get("nSat")
+        usat = d.get("uSat")
+        if score == 0 and nsat is None and usat is None:
+            continue
+        # prefer SKY with the most satellites in the array; fall back to nSat/uSat
+        rank = score or (nsat or 0) or (usat or 0)
+        if rank > best_score:
+            best_score = rank
+            best_sky = d
+
+def g(d, k, default=""):
+    if d is None:
+        return default
+    v = d.get(k)
+    return default if v is None else v
+
+mode = g(last_tpv, "mode")
+lat  = g(last_tpv, "lat")
+lon  = g(last_tpv, "lon")
+alt  = g(last_tpv, "alt")
+hdop = g(best_sky, "hdop")
+vdop = g(best_sky, "vdop")
+
+sats_arr_len = len(best_sky.get("satellites", []) or []) if best_sky else 0
+nsat = (best_sky or {}).get("nSat")
+usat = (best_sky or {}).get("uSat")
+sats = sats_arr_len if sats_arr_len else (nsat if nsat is not None else 0)
+used = usat if usat is not None else len([s for s in (best_sky or {}).get("satellites", []) or [] if s.get("used")])
+
+# emit as space-separated for easy bash readout
+print("|".join(str(x) for x in [version, mode, hdop, vdop, lat, lon, alt, sats, used]))
+' 2> /dev/null)
+
+IFS='|' read -r VERSION GPSDMODE HDOP VDOP LAT LONG ALT SATS SATSUSED <<< "$VALUES"
 
 if [ -z "$SATS" ]; then
     SATS=0;
