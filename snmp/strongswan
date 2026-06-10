@@ -1,0 +1,222 @@
+#!/usr/bin/env python3
+"""
+strongswan - LibreNMS JSON SNMP extend for strongSwan / IPsec.
+
+Outputs the LibreNMS "JSON SNMP extend" format:
+  {"version":1,"error":0,"errorString":"","data":{...}}
+
+Per IPsec connection it reports:
+  state, children, bytes_in/out, pkts_in/out, reestablishes
+plus a "global" object from `swanctl --counters` (rekeys, invalid, ...).
+
+The raw per-SA byte/packet counters in `swanctl --list-sas` RESET on every rekey.
+To give LibreNMS clean DERIVE rates we keep a small state file and emit MONOTONIC
+cumulative counters (any counter decrease is treated as a reset).
+
+Install:
+  1. Copy to /etc/snmp/strongswan ; chmod +x /etc/snmp/strongswan
+  2. Add to snmpd.conf:   extend strongswan /etc/snmp/strongswan
+     (it must run as a user able to call `swanctl`, usually root)
+  3. Restart snmpd. Test:
+     snmpwalk -v2c -c <community> localhost 'NET-SNMP-EXTEND-MIB::nsExtendOutputFull."strongswan"'
+
+Tested on OPNsense (21.1/22.7/23.7) and Linux strongSwan.
+"""
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+STATE_FILE = "/var/lib/librenms-strongswan-state.json"
+# OPNsense config (used best-effort for nice connection labels); absent on plain Linux.
+CONFIG_XML = "/conf/config.xml"
+
+SWANCTL = (
+    shutil.which("swanctl")
+    or next(
+        (p for p in ("/usr/sbin/swanctl", "/usr/local/sbin/swanctl", "/sbin/swanctl")
+         if os.path.exists(p)),
+        "swanctl",
+    )
+)
+
+
+def run(cmd):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=20).stdout
+    except Exception:
+        return ""
+
+
+def load_state():
+    try:
+        with open(STATE_FILE) as fh:
+            return json.load(fh)
+    except Exception:
+        return {}
+
+
+def save_state(state):
+    try:
+        tmp = STATE_FILE + ".tmp"
+        with open(tmp, "w") as fh:
+            json.dump(state, fh)
+        os.replace(tmp, STATE_FILE)
+    except Exception:
+        pass  # never fail the extend because of state persistence
+
+
+def descr_map():
+    """Best-effort label map keyed by the swanctl connection name (OPNsense only).
+
+    Works for BOTH OPNsense IPsec models:
+      * legacy "Tunnel Settings": <phase1><ikeid>N</ikeid><descr>..  -> swanctl name "conN"
+      * new "Connections" (//OPNsense/Swanctl/Connections/Connection): <Connection uuid><description>
+    On plain Linux (no config.xml) this returns {} and the raw swanctl connection name is used.
+    """
+    out = {}
+    try:
+        import xml.etree.ElementTree as ET
+        root = ET.parse(CONFIG_XML).getroot()
+    except Exception:
+        return out
+    for p1 in root.iter("phase1"):
+        ike = p1.findtext("ikeid")
+        if ike:
+            out["con" + ike] = (p1.findtext("descr") or "").strip()
+    for conn in root.iter("Connection"):
+        uuid = conn.get("uuid") or conn.findtext("uuid")
+        descr = (conn.findtext("description") or conn.findtext("descr") or "").strip()
+        if uuid and descr:
+            out[uuid] = descr
+    return out
+
+
+def parse_sas():
+    """Parse `swanctl --list-sas` into per-connection aggregates."""
+    text = run([SWANCTL, "--list-sas"])
+    cons = {}
+    cur = None
+    # Top-level IKE SA line, e.g.:  con7: #1512930, ESTABLISHED, IKEv1, ...
+    # Connection name is ANY non-space token (legacy "conN" OR new-model name/uuid).
+    re_con = re.compile(r"^([^\s:]+):\s+#(\d+),\s+(\w+),\s+(IKEv\d)")
+    re_remote = re.compile(r"^\s+remote\s+'([^']+)'")
+    re_in = re.compile(r"^\s+in\s+\w+,\s+(\d+)\s+bytes,\s+(\d+)\s+packets")
+    re_out = re.compile(r"^\s+out\s+\w+,\s+(\d+)\s+bytes,\s+(\d+)\s+packets")
+    re_child = re.compile(r"INSTALLED|REKEYED")
+    for line in text.splitlines():
+        m = re_con.match(line)
+        if m:
+            name = m.group(1)
+            cur = cons.setdefault(name, {
+                "name": name, "ike_id": m.group(2),
+                "state": 1 if m.group(3) == "ESTABLISHED" else 0,
+                "ikev": int(m.group(4)[-1]), "peer": "",
+                "children": 0, "bytes_in": 0, "bytes_out": 0,
+                "pkts_in": 0, "pkts_out": 0,
+            })
+            continue
+        if cur is None:
+            continue
+        mr = re_remote.match(line)
+        if mr and not cur["peer"]:
+            cur["peer"] = mr.group(1)
+            continue
+        if re_child.search(line):
+            cur["children"] += 1
+        mi = re_in.match(line)
+        if mi:
+            cur["bytes_in"] += int(mi.group(1))
+            cur["pkts_in"] += int(mi.group(2))
+            continue
+        mo = re_out.match(line)
+        if mo:
+            cur["bytes_out"] += int(mo.group(1))
+            cur["pkts_out"] += int(mo.group(2))
+    return cons
+
+
+def parse_counters():
+    """Global counters from `swanctl --counters` (rekeys, invalid, ...)."""
+    text = run([SWANCTL, "--counters"])
+    g = {}
+    for line in text.splitlines():
+        m = re.match(r"\s*([a-z0-9\-]+)\s*:\s*(\d+)\s*$", line)
+        if m:
+            g[m.group(1).replace("-", "_")] = int(m.group(2))
+    return g
+
+
+def _sort_key(name):
+    """Natural sort tolerant of any connection name (legacy conN / conN-MMM and
+    new-model names / uuids). conN* sort numerically first, then the rest."""
+    m = re.match(r"^con(\d+)", name)
+    return (0, int(m.group(1)), name) if m else (1, 0, name)
+
+
+def accumulate(cons, state):
+    """Turn resetting per-SA counters into monotonic cumulative counters + count
+    reestablishes (IKE SA unique-id change)."""
+    new_state = {}
+    descr = descr_map()
+    out = []
+    for name, c in sorted(cons.items(), key=lambda kv: _sort_key(kv[0])):
+        prev = state.get(name, {})
+        cum = {
+            "bytes_in": prev.get("cum_bytes_in", 0),
+            "bytes_out": prev.get("cum_bytes_out", 0),
+            "pkts_in": prev.get("cum_pkts_in", 0),
+            "pkts_out": prev.get("cum_pkts_out", 0),
+            "reest": prev.get("cum_reest", 0),
+        }
+        for k in ("bytes_in", "bytes_out", "pkts_in", "pkts_out"):
+            last = prev.get("last_" + k, 0)
+            now = c[k]
+            cum[k] += (now - last) if now >= last else now  # reset-safe delta
+        if prev and prev.get("ike_id") and prev["ike_id"] != c["ike_id"]:
+            cum["reest"] += 1
+        new_state[name] = {
+            "ike_id": c["ike_id"],
+            "last_bytes_in": c["bytes_in"], "last_bytes_out": c["bytes_out"],
+            "last_pkts_in": c["pkts_in"], "last_pkts_out": c["pkts_out"],
+            "cum_bytes_in": cum["bytes_in"], "cum_bytes_out": cum["bytes_out"],
+            "cum_pkts_in": cum["pkts_in"], "cum_pkts_out": cum["pkts_out"],
+            "cum_reest": cum["reest"],
+        }
+        out.append({
+            "name": name,
+            "descr": descr.get(name, ""),
+            "peer": c["peer"],
+            "ikev": c["ikev"],
+            "state": c["state"],
+            "children": c["children"],
+            "bytes_in": cum["bytes_in"], "bytes_out": cum["bytes_out"],
+            "pkts_in": cum["pkts_in"], "pkts_out": cum["pkts_out"],
+            "reestablishes": cum["reest"],
+        })
+    return out, new_state
+
+
+def main():
+    result = {"version": 1, "error": 0, "errorString": "", "data": {}}
+    try:
+        cons = parse_sas()
+        state = load_state()
+        tunnels, new_state = accumulate(cons, state)
+        save_state(new_state)
+        result["data"] = {
+            "tunnels": tunnels,
+            "global": parse_counters(),
+        }
+    except Exception as exc:  # surface errors to LibreNMS instead of crashing
+        result["error"] = 1
+        result["errorString"] = str(exc)
+    json.dump(result, sys.stdout)
+    sys.stdout.write("\n")
+
+
+if __name__ == "__main__":
+    main()
