@@ -131,3 +131,5 @@ if ( $? ne 0 ) {
 	$return_json->{'error'} = 'syslog-ng-ctl stats exited non-zero... ' . $output;
 	return_the_data($return_json);
 }
+
+$to_return->{'data'}
