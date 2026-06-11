@@ -1,0 +1,135 @@
+#!/usr/bin/env perl
+
+use warnings;
+use strict;
+
+=head1 NAME
+
+syslog-ng - LinbreNMS JSON extend for syslog-ng.
+
+=head1 VERSION
+
+0.0.1
+
+=cut
+
+our $VERSION = '0.0.1';
+
+=head1 SYNOPSIS
+
+syslog-ng [B<-w>] [B<-o> <output dir>]
+
+=head1 SWITCHES
+
+=head2 -B
+
+Do not the print output via GZip+Base64.
+
+=head2 -o <dir>
+
+The base output dir.
+
+Defaults: /var/cache/syslog-ng.extend
+
+=head2 -w
+
+Write the results out to files.
+
+=head2 -h|--help
+
+Print help info.
+
+=head2 -h|--version
+
+Print version info.
+
+=head1 INSTALL
+
+Install the depends.
+
+    # FreeBSD
+    pkg install p5-JSON-XS p5-File-Slurp p5-MIME-Base64
+    # Debian
+    apt-get install libjson-xs-perl libmime-base64-perl libfile-slurp-perl
+
+Then set it up in SNMPD.
+
+    # if running it via cron
+    extend syslog-ng /usr/local/etc/snmp/syslog-ng
+
+=cut
+
+use JSON;
+use Getopt::Std;
+use MIME::Base64;
+use IO::Compress::Gzip qw(gzip $GzipError);
+use File::Slurp;
+use Pod::Usage;
+
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
+
+#gets the options
+our %opts = ();
+getopts( 'Bvho:w', \%opts );
+if ( !defined( $opts{'o'} ) ) {
+	$opts{'o'} = '/var/cache/syslog-ng.extend/';
+}
+
+sub main::VERSION_MESSAGE {
+	print 'syslog-ng LibreNMS extend v. ' . $VERSION . "\n";
+}
+
+sub main::HELP_MESSAGE {
+	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
+}
+
+sub return_the_data {
+	my $to_return = $_[0];
+
+	my $to_return_string = encode_json($to_return);
+
+	my $toReturnCompressed;
+	gzip \$to_return_string => \$toReturnCompressed;
+	my $compressed = encode_base64($toReturnCompressed);
+	$compressed =~ s/\n//g;
+	$compressed = $compressed . "\n";
+
+	if ( $opts{'B'} ) {
+		print $to_return_string;
+	} else {
+		print $compressed;
+	}
+
+	if ( $opts{'w'} ) {
+		if ( -d $opts{'o'} ) {
+			mkdir( $opts{'o'} ) || die( 'Failed to mkdir "' . $opts{'o'} . '"' );
+		}
+		write_file( $opts{'o'} . '/snmp', $compressed );
+		write_file( $opts{'o'} . '/json', $to_return_string );
+	}
+} ## end sub return_the_data
+
+if ( $opts{'v'} ) {
+	&main::VERSION_MESSAGE;
+	exit 1;
+}
+
+if ( $opts{'h'} ) {
+	&main::HELP_MESSAGE;
+	exit 1;
+}
+
+my $return_json = {
+	'error'       => 0,
+	'errorString' => '',
+	'version'     => 2,
+	'data'        => {},
+};
+
+my $output = `syslog-ng-ctl stats 2>&1`;
+if ( $? ne 0 ) {
+	$return_json->{'error'} = 'syslog-ng-ctl stats exited non-zero... ' . $output;
+	return_the_data($return_json);
+}
+
+$to_return->{'data'}
