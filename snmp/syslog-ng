@@ -64,6 +64,7 @@ use Getopt::Std;
 use MIME::Base64;
 use IO::Compress::Gzip qw(gzip $GzipError);
 use File::Slurp;
+use Statistics::Lite qw(min max sum mean median mode);
 use Pod::Usage;
 
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
@@ -123,8 +124,32 @@ my $return_json = {
 	'error'       => 0,
 	'errorString' => '',
 	'version'     => 2,
-	'data'        => {},
+	'data'        => {
+		'center_queued_processed'   => undef,
+		'center_received_processed' => undef,
+		'global'                    => {
+
+		},
+		'sources' => {},
+	},
 };
+
+my %global_stats = (
+	'batch_size_avg'  => [],
+	'batch_size_max'  => [],
+	'connections'     => [],
+	'dropped'         => [],
+	'memory_usage'    => [],
+	'msg_size_avg'    => [],
+	'msg_size_max'    => [],
+	'processed'       => [],
+	'queued'          => [],
+	'truncated_bytes' => [],
+	'truncated_count' => [],
+	'written'         => [],
+);
+
+my %id_stats;
 
 my $output = `syslog-ng-ctl stats 2>&1`;
 if ( $? ne 0 ) {
@@ -132,4 +157,94 @@ if ( $? ne 0 ) {
 	return_the_data($return_json);
 }
 
-$to_return->{'data'}
+my @outputA = split( /\n/, $output );
+# chops SourceName;SourceId;SourceInstance;State;Type;Number head off the output
+shift(@outputA);
+
+foreach my $line (@outputA) {
+	my ( $SourceName, $SourceId, $SourceInstance, $State, $Type, $Number ) = split( /\;/, $line );
+
+	if ( ( $SourceName eq 'center' ) && ( $SourceInstance eq 'received' ) && ( $Type eq 'processed' ) ) {
+		$return_json->{'data'}{'center_received_processed'} = $Number;
+	} elsif ( ( $SourceName eq 'center' ) && ( $SourceInstance eq 'queued' ) && ( $Type eq 'processed' ) ) {
+		$return_json->{'data'}{'center_queued_processed'} = $Number;
+	} elsif (
+		( $SourceId ne '' )
+		&& (   ( $Type ne 'eps_last_1h' )
+			|| ( $Type ne 'eps_last_24h' )
+			|| ( $Type ne 'eps_last_1h' )
+			|| ( $Type ne 'stamp' ) )
+		)
+	{
+		$SourceId =~ s/\#.*$//;
+
+		if ( !defined( $id_stats{$SourceId} ) ) {
+			$id_stats{$SourceId} = {
+				'batch_size_avg'  => [],
+				'batch_size_max'  => [],
+				'connections'     => [],
+				'dropped'         => [],
+				'memory_usage'    => [],
+				'msg_size_avg'    => [],
+				'msg_size_max'    => [],
+				'processed'       => [],
+				'queued'          => [],
+				'truncated_bytes' => [],
+				'truncated_count' => [],
+				'written'         => [],
+			};
+		} ## end if ( !defined( $id_stats{$SourceId} ) )
+
+		if ( defined( $id_stats{$SourceId}{$Type} ) ) {
+			push( @{ $id_stats{$SourceId}{$Type} }, $Number );
+		}
+		if ( defined( $global_stats{$Type} ) ) {
+			push( @{ $global_stats{$Type} }, $Number );
+		}
+
+	} ## end elsif ( ( $SourceId ne '' ) && ( ( $Type ne 'eps_last_1h'...)))
+
+} ## end foreach my $line (@outputA)
+
+foreach my $stat ( keys(%global_stats) ) {
+	$return_json->{'data'}{'global'}{$stat} = {
+		'min'    => undef,
+		'max'    => undef,
+		'sum'    => undef,
+		'mean'   => undef,
+		'median' => undef,
+		'mode'   => undef,
+	};
+	if ( defined( $global_stats{$stat}[0] ) ) {
+		$return_json->{'data'}{'global'}{$stat}{'min'}    = min( @{ $global_stats{$stat} } );
+		$return_json->{'data'}{'global'}{$stat}{'max'}    = max( @{ $global_stats{$stat} } );
+		$return_json->{'data'}{'global'}{$stat}{'sum'}    = sum( @{ $global_stats{$stat} } );
+		$return_json->{'data'}{'global'}{$stat}{'mean'}   = mean( @{ $global_stats{$stat} } );
+		$return_json->{'data'}{'global'}{$stat}{'median'} = median( @{ $global_stats{$stat} } );
+		$return_json->{'data'}{'global'}{$stat}{'mode'}   = mode( @{ $global_stats{$stat} } );
+	}
+} ## end foreach my $stat ( keys(%global_stats) )
+
+foreach my $id ( keys(%id_stats) ) {
+	$return_json->{'data'}{'sources'}{$id} = {};
+	foreach my $stat ( keys( %{ $id_stats{$id} } ) ) {
+		$return_json->{'data'}{'sources'}{$id}{$stat} = {
+			'min'    => undef,
+			'max'    => undef,
+			'sum'    => undef,
+			'mean'   => undef,
+			'median' => undef,
+			'mode'   => undef,
+		};
+		if ( defined( $id_stats{$id}{$stat}[0] ) ) {
+			$return_json->{'data'}{'sources'}{$id}{$stat}{'min'}    = min( @{ $id_stats{$id}{$stat} } );
+			$return_json->{'data'}{'sources'}{$id}{$stat}{'max'}    = max( @{ $id_stats{$id}{$stat} } );
+			$return_json->{'data'}{'sources'}{$id}{$stat}{'sum'}    = sum( @{ $id_stats{$id}{$stat} } );
+			$return_json->{'data'}{'sources'}{$id}{$stat}{'mean'}   = mean( @{ $id_stats{$id}{$stat} } );
+			$return_json->{'data'}{'sources'}{$id}{$stat}{'median'} = median( @{ $id_stats{$id}{$stat} } );
+			$return_json->{'data'}{'sources'}{$id}{$stat}{'mode'}   = mode( @{ $id_stats{$id}{$stat} } );
+		}
+	} ## end foreach my $stat ( keys( %{ $id_stats{$id} } ) )
+} ## end foreach my $id ( keys(%id_stats) )
+
+return_the_data($return_json);
