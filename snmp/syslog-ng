@@ -5,7 +5,7 @@ use strict;
 
 =head1 NAME
 
-syslog-ng - LinbreNMS JSON extend for syslog-ng.
+syslog-ng - LibreNMS JSON extend for syslog-ng.
 
 =head1 VERSION
 
@@ -17,7 +17,7 @@ our $VERSION = '0.0.1';
 
 =head1 SYNOPSIS
 
-syslog-ng [B<-w>] [B<-o> <output dir>]
+syslog-ng [B<-w>] [B<-o> <output dir>] [B<-q>]
 
 =head1 SWITCHES
 
@@ -35,6 +35,10 @@ Defaults: /var/cache/syslog-ng.extend
 
 Write the results out to files.
 
+=head2 -q
+
+If -w is specified, don't print anything.
+
 =head2 -h|--help
 
 Print help info.
@@ -48,9 +52,9 @@ Print version info.
 Install the depends.
 
     # FreeBSD
-    pkg install p5-JSON-XS p5-File-Slurp p5-MIME-Base64
+    pkg install p5-JSON-XS p5-File-Slurp p5-MIME-Base64 p5-Statistics-Lite
     # Debian
-    apt-get install libjson-xs-perl libmime-base64-perl libfile-slurp-perl
+    apt-get install libjson-xs-perl libmime-base64-perl libfile-slurp-perl libstatistics-lite-perl
 
 Then set it up in SNMPD.
 
@@ -71,7 +75,7 @@ $Getopt::Std::STANDARD_HELP_VERSION = 1;
 
 #gets the options
 our %opts = ();
-getopts( 'Bvho:w', \%opts );
+getopts( 'qBvho:w', \%opts );
 if ( !defined( $opts{'o'} ) ) {
 	$opts{'o'} = '/var/cache/syslog-ng.extend/';
 }
@@ -93,16 +97,23 @@ sub return_the_data {
 	gzip \$to_return_string => \$toReturnCompressed;
 	my $compressed = encode_base64($toReturnCompressed);
 	$compressed =~ s/\n//g;
-	$compressed = $compressed . "\n";
+	$compressed       = $compressed . "\n";
+	$to_return_string = $to_return_string . "\n";
 
-	if ( $opts{'B'} ) {
-		print $to_return_string;
-	} else {
-		print $compressed;
+	my $print_it = 1;
+	if ( $opts{'w'} && $opts{'q'} ) {
+		$print_it = 0;
+	}
+	if ($print_it) {
+		if ( $opts{'B'} ) {
+			print $to_return_string;
+		} else {
+			print $compressed;
+		}
 	}
 
 	if ( $opts{'w'} ) {
-		if ( -d $opts{'o'} ) {
+		if ( !-d $opts{'o'} ) {
 			mkdir( $opts{'o'} ) || die( 'Failed to mkdir "' . $opts{'o'} . '"' );
 		}
 		write_file( $opts{'o'} . '/snmp', $compressed );
@@ -153,8 +164,12 @@ my %id_stats;
 
 my $output = `syslog-ng-ctl stats 2>&1`;
 if ( $? ne 0 ) {
+	if ( !defined($output) ) {
+		$output = '';
+	}
 	$return_json->{'error'} = 'syslog-ng-ctl stats exited non-zero... ' . $output;
 	return_the_data($return_json);
+	exit 3;
 }
 
 my @outputA = split( /\n/, $output );
