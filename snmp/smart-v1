@@ -72,6 +72,8 @@ Switches:
 -u            Update
 -p            Pretty print the JSON.
 -Z            GZip+Base64 compress the results.
+-v            Verbose output (print status info to STDERR)
+-V            Print version and exit
 
 -g            Guess at the config and print it to STDOUT
 -C            Enable manual checking for guess and cciss.
@@ -105,6 +107,7 @@ use JSON               qw( decode_json );
 use MIME::Base64       qw( encode_base64 );
 use IO::Compress::Gzip qw(gzip);
 use Scalar::Util       qw( looks_like_number );
+use List::Util         qw( min );
 
 my $cache    = '/var/cache/smart';
 my $smartctl = '/usr/bin/env smartctl';
@@ -114,11 +117,13 @@ my $useSN = 1;
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 
 sub main::VERSION_MESSAGE {
-	print "SMART SNMP extend 0.3.2\n";
+	print "SMART SNMP extend 0.3.4\n";
 }
 
 sub main::HELP_MESSAGE {
 	&VERSION_MESSAGE;
+	print "\n" . "-v            Verbose output\n";
+	print "-V            Print version and exit\n";
 	print "\n" . "-u   Update '" . $cache . "'\n" . '-g            Guess at the config and print it to STDOUT
 -c <config>   The config file to use.
 -p            Pretty print the JSON.
@@ -148,13 +153,17 @@ Scan Modes:
 
 #gets the options
 my %opts = ();
-getopts( 'ugc:pZhvCSGt:U', \%opts );
+my $verbose = 0;
+getopts( 'ugc:pZhvVCSGt:U', \%opts );
 
 if ( $opts{h} ) {
 	&HELP_MESSAGE;
 	exit;
 }
 if ( $opts{v} ) {
+	$verbose = 1;
+}
+if ( $opts{V} ) {
 	&VERSION_MESSAGE;
 	exit;
 }
@@ -578,6 +587,10 @@ my $to_return = {
 	'error'       => 0,
 	'errorString' => '',
 };
+
+if ($verbose) {
+	print "Processing " . scalar(@disks) . " disks (useSN=$useSN)\n";
+}
 foreach my $line (@disks) {
 	my $disk;
 	my $name;
@@ -591,7 +604,28 @@ foreach my $line (@disks) {
 		$disk = '/dev/' . $disk;
 	}
 
+	if ($verbose) {
+		print "Processing disk: $name -> $disk\n";
+	}
+
+	if ($verbose) {
+		print "  Command: $smartctl --json -a $disk\n";
+	}
+
 	my $output = `$smartctl --json -a $disk`;
+	my $exit_code = $? >> 8;
+	
+	if ($verbose && $exit_code != 0) {
+		print "  WARNING: smartctl exit code: $exit_code\n";
+		my @output_lines = split(/\n/, $output);
+		if (@output_lines > 0) {
+			print "  First few lines of output:\n";
+			for my $i (0..min($#output_lines, 5)) {
+				print "    $output_lines[$i]\n";
+			}
+		}
+	}
+
 	my %IDs    = (
 		'5'            => undef,
 		'10'           => undef,
@@ -776,6 +810,9 @@ foreach my $line (@disks) {
 		} ## end if ( defined( $a_output->{'ata_smart_attributes'...}))
 
 		#get the selftest logs
+		if ($verbose) {
+			print "  Command: $smartctl -l selftest $disk\n";
+		}
 		$output = `$smartctl -l selftest $disk`;
 		my @outputA   = split( /\n/, $output );
 		my @completed = grep( /Completed/, @outputA );
@@ -1029,15 +1066,40 @@ foreach my $line (@disks) {
 
 	# only bother to save this if useSN is not being used
 	if ( !$useSN ) {
+		if ($verbose) {
+			print "Adding disk (useSN disabled): $disk_id\n";
+		}
 		$to_return->{data}{disks}{$disk_id} = \%IDs;
-	} elsif ( $IDs{exit} == 0 && defined($disk_id) ) {
+	} elsif ( $IDs{'json_err'} == 0 && defined($disk_id) && defined( $IDs{'serial'} ) ) {
+		if ($verbose) {
+			my $exit_info = '';
+			if ( $IDs{exit} != 0 ) {
+				$exit_info = " (smartctl exit: " . ($IDs{exit} >> 8) . ")";
+			}
+			print "Adding disk: $disk_id (serial: $IDs{serial}$exit_info)\n";
+		}
 		$to_return->{data}{disks}{$disk_id} = \%IDs;
+	} else {
+		if ($verbose) {
+			my $reason = '';
+			if ( !defined($disk_id) ) {
+				$reason = 'undefined disk_id';
+			} elsif ( !defined( $IDs{'serial'} ) ) {
+				$reason = 'no serial number';
+			} elsif ( $IDs{'json_err'} != 0 ) {
+				$reason = "JSON parse error";
+			}
+			print "Skipping disk: $name (reason: $reason)\n";
+		}
 	}
 
 	# smartctl will in some cases exit zero when it can't pull data for cciss
 	# so if we get a zero exit, but no serial then it means something errored
 	# and the device is likely dead
 	if ( $IDs{exit} == 0 && !defined( $IDs{serial} ) ) {
+		if ($verbose) {
+			print "Marking disk as unhealthy (no serial): $name\n";
+		}
 		$to_return->{data}{unhealthy}++;
 	}
 } ## end foreach my $line (@disks)
@@ -1055,6 +1117,13 @@ $compressed =~ s/\n//g;
 $compressed = $compressed . "\n";
 
 if ( !$noWrite ) {
+	if ($verbose) {
+		my @disk_keys = keys %{ $to_return->{data}{disks} };
+		print "Writing " . scalar(@disk_keys) . " disks to cache\n";
+		print "Exit non-zero: $to_return->{data}{exit_nonzero}\n";
+		print "Dev errors: $to_return->{data}{dev_error}\n";
+		print "Unhealthy: $to_return->{data}{unhealthy}\n";
+	}
 	open( my $writefh, ">", $cache ) or die "Can't open '" . $cache . "'";
 	print $writefh $toReturn;
 	close($writefh);

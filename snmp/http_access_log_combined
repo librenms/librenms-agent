@@ -573,10 +573,10 @@ foreach my $log_name ( keys( %{ $config->{access} } ) ) {
 				} elsif ( $parsed->{proto} eq 'HTTP/1.1' ) {
 					$new_entry->{'http1_1'}++;
 					$data->{totals}{'http1_1'}++;
-				} elsif ( $parsed->{proto} eq 'HTTP/2' ) {
+				} elsif ( index( $parsed->{proto}, 'HTTP/2' ) != -1 ) {
 					$new_entry->{'http2'}++;
 					$data->{totals}{'http2'}++;
-				} elsif ( $parsed->{proto} eq 'HTTP/3' ) {
+				} elsif ( index( $parsed->{proto}, 'HTTP/3' ) != -1 ) {
 					$new_entry->{'http3'}++;
 					$data->{totals}{'http3'}++;
 				}
