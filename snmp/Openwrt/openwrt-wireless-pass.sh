@@ -120,12 +120,21 @@ stats_via_ubus() {
     printf 'NOISE %s\n'   "$(printf '%s' "$_info" | jsonfilter -e '@.noise' 2>/dev/null)"
     printf 'TXPOWER %s\n' "$(printf '%s' "$_info" | jsonfilter -e '@.txpower' 2>/dev/null)"
 
-    _snr=$(printf '%s' "$_assoc" | jsonfilter -e '@.results[*].snr' 2>/dev/null)
-    printf 'ASSOC %s\n' "$(printf '%s\n' "$_snr" | awk 'NF' | wc -l | awk '{print $1}')"
+    # Associated-station count from a field that always exists per station
+    # (iwinfo's assoclist JSON has no top-level "snr").
+    printf 'ASSOC %s\n' "$(printf '%s' "$_assoc" | jsonfilter -e '@.results[*].signal' 2>/dev/null | awk 'NF' | wc -l | awk '{print $1}')"
     # iwinfo ubus rates are kbit/s -> Mbit/s.
     printf '%s' "$_assoc" | jsonfilter -e '@.results[*].rx.rate' 2>/dev/null | awk 'NF{printf "RX %d\n", $1/1000}'
     printf '%s' "$_assoc" | jsonfilter -e '@.results[*].tx.rate' 2>/dev/null | awk 'NF{printf "TX %d\n", $1/1000}'
-    printf '%s\n' "$_snr" | awk 'NF{printf "SNR %d\n", $1}'
+    # No "snr" field in the JSON: compute SNR = per-station signal - noise,
+    # pairing the two arrays by index. Skip stations whose noise floor is
+    # unavailable (0), e.g. radios that do not report survey noise.
+    { printf '%s' "$_assoc" | jsonfilter -e '@.results[*].signal' 2>/dev/null | sed 's/^/S /'
+      printf '%s' "$_assoc" | jsonfilter -e '@.results[*].noise'  2>/dev/null | sed 's/^/N /'
+    } | awk '
+        $1=="S" { s[++a]=$2 }
+        $1=="N" { n[++b]=$2 }
+        END { for (i=1; i<=a; i++) if (n[i]+0 != 0) printf "SNR %d\n", s[i]-n[i] }'
     return 0
 }
 
