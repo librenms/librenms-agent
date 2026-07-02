@@ -191,6 +191,7 @@ foreach my $line (@outputA) {
 			|| ( $Type ne 'stamp' ) )
 		)
 	{
+		my $orig_SourceID = $SourceId;
 		$SourceId =~ s/\#.*$//;
 
 		if ( !defined( $id_stats{$SourceId} ) ) {
@@ -198,22 +199,31 @@ foreach my $line (@outputA) {
 				'batch_size_avg'  => [],
 				'batch_size_max'  => [],
 				'connections'     => [],
-				'dropped'         => [],
+				'dropped'         => undef,
 				'memory_usage'    => [],
 				'msg_size_avg'    => [],
 				'msg_size_max'    => [],
-				'processed'       => [],
-				'queued'          => [],
+				'processed'       => undef,
+				'queued'          => undef,
 				'truncated_bytes' => [],
 				'truncated_count' => [],
 				'written'         => [],
 			};
 		} ## end if ( !defined( $id_stats{$SourceId} ) )
 
-		if ( defined( $id_stats{$SourceId}{$Type} ) ) {
-			push( @{ $id_stats{$SourceId}{$Type} }, $Number );
-		}
-		if ( defined( $global_stats{$Type} ) ) {
+		if (   ( $Type ne 'processed' )
+			&& ( $Type ne 'queued' )
+			&& ( $Type ne 'dropped' ) )
+		{
+			if ( defined( $id_stats{$SourceId}{$Type} ) ) {
+				push( @{ $id_stats{$SourceId}{$Type} }, $Number );
+			}
+			if ( defined( $global_stats{$Type} ) ) {
+				push( @{ $global_stats{$Type} }, $Number );
+			}
+
+		} else {
+			$id_stats{$SourceId}{$Type} = $Number;
 			push( @{ $global_stats{$Type} }, $Number );
 		}
 
@@ -243,21 +253,28 @@ foreach my $stat ( keys(%global_stats) ) {
 foreach my $id ( keys(%id_stats) ) {
 	$return_json->{'data'}{'sources'}{$id} = {};
 	foreach my $stat ( keys( %{ $id_stats{$id} } ) ) {
-		$return_json->{'data'}{'sources'}{$id}{$stat} = {
-			'min'    => undef,
-			'max'    => undef,
-			'sum'    => undef,
-			'mean'   => undef,
-			'median' => undef,
-			'mode'   => undef,
-		};
-		if ( defined( $id_stats{$id}{$stat}[0] ) ) {
-			$return_json->{'data'}{'sources'}{$id}{$stat}{'min'}    = min( @{ $id_stats{$id}{$stat} } );
-			$return_json->{'data'}{'sources'}{$id}{$stat}{'max'}    = max( @{ $id_stats{$id}{$stat} } );
-			$return_json->{'data'}{'sources'}{$id}{$stat}{'sum'}    = sum( @{ $id_stats{$id}{$stat} } );
-			$return_json->{'data'}{'sources'}{$id}{$stat}{'mean'}   = mean( @{ $id_stats{$id}{$stat} } );
-			$return_json->{'data'}{'sources'}{$id}{$stat}{'median'} = median( @{ $id_stats{$id}{$stat} } );
-			$return_json->{'data'}{'sources'}{$id}{$stat}{'mode'}   = mode( @{ $id_stats{$id}{$stat} } );
+		if (   ( $stat ne 'processed' )
+			&& ( $stat ne 'queued' )
+			&& ( $stat ne 'dropped' ) )
+		{
+			$return_json->{'data'}{'sources'}{$id}{$stat} = {
+															 'min'    => undef,
+															 'max'    => undef,
+															 'sum'    => undef,
+															 'mean'   => undef,
+															 'median' => undef,
+															 'mode'   => undef,
+														 };
+			if ( defined( $id_stats{$id}{$stat}[0] ) ) {
+				$return_json->{'data'}{'sources'}{$id}{$stat}{'min'}    = min( @{ $id_stats{$id}{$stat} } );
+				$return_json->{'data'}{'sources'}{$id}{$stat}{'max'}    = max( @{ $id_stats{$id}{$stat} } );
+				$return_json->{'data'}{'sources'}{$id}{$stat}{'sum'}    = sum( @{ $id_stats{$id}{$stat} } );
+				$return_json->{'data'}{'sources'}{$id}{$stat}{'mean'}   = mean( @{ $id_stats{$id}{$stat} } );
+				$return_json->{'data'}{'sources'}{$id}{$stat}{'median'} = median( @{ $id_stats{$id}{$stat} } );
+				$return_json->{'data'}{'sources'}{$id}{$stat}{'mode'}   = mode( @{ $id_stats{$id}{$stat} } );
+			}
+		}else {
+			$return_json->{'data'}{'sources'}{$id}{$stat}=$id_stats{$id}{$stat};
 		}
 	} ## end foreach my $stat ( keys( %{ $id_stats{$id} } ) )
 } ## end foreach my $id ( keys(%id_stats) )
