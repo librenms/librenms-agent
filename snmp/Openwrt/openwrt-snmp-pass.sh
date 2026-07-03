@@ -1,18 +1,18 @@
 #!/bin/sh
 #
-# openwrt-wireless-pass.sh
+# openwrt-snmp-pass.sh
 #
 # net-snmp pass_persist handler that serves the OpenWrt wireless subtree
-# openwrtWireless = OPENWRT-WIRELESS-MIB { openwrtMIB 1 } from a SINGLE snmpd line
+# openwrtWireless = OPENWRT-WIRELESS-MIB { openwrtObjects 10 } from a SINGLE snmpd line
 # (UCI: config pass / option miboid / option persist '1'):
 #
-#   pass_persist .1.3.6.1.4.1.60652.102.1 /usr/libexec/openwrt-wireless-pass.sh
+#   pass_persist .1.3.6.1.4.1.60652.102.1.10 /usr/libexec/openwrt-snmp-pass.sh
 #
 # Radios/VAPs are discovered live at request time (no per-interface or
 # per-metric configuration). Rows are indexed by the kernel ifIndex, so the
 # table joins onto IF-MIB ifTable/ifXTable.
 #
-# Object layout (relative to the wireless base .102.1):
+# Object layout (relative to the wireless base .102.1.10):
 #   .1.0                         openwrtWirelessInterfaceCount   (gauge)
 #   .2.0                         openwrtWirelessClientCount      (gauge, AP-side)
 #   .3.1.<col>.<ifIndex>         openwrtWirelessInterfaceTable columns:
@@ -28,15 +28,15 @@
 #
 # Modes:
 #   pass_persist (default): read PING/get/getnext on stdin (snmpd uses this).
-#   one-shot for testing:   openwrt-wireless-pass.sh -g <OID>
-#                           openwrt-wireless-pass.sh -n <OID>
+#   one-shot for testing:   openwrt-snmp-pass.sh -g <OID>
+#                           openwrt-snmp-pass.sh -n <OID>
 #
 # Testing without a device: set OPENWRT_WL_MOCK=<file> to a TSV of pre-built
 # interface records (see collect_records() for the field order); the metric
 # collectors and iwinfo are then bypassed.
 
 BASE=".1.3.6.1.4.1.60652.102"
-WL="$BASE.1"          # openwrtWireless = { openwrtMIB 1 }
+WL="$BASE.1.10"       # openwrtWireless = { openwrtObjects 10 }
 IFCOUNT_OID="$WL.1.0"
 CLIENTS_OID="$WL.2.0"
 ENTRY="$WL.3.1"
@@ -48,7 +48,7 @@ TTL="${OPENWRT_WL_TTL:-20}"
 SCRIPTDIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd || echo .)
 TAB=$(printf '\t')
 
-SNAP_FILE="/tmp/openwrt-wireless-pass.$$.snap"
+SNAP_FILE="/tmp/openwrt-snmp-pass.$$.snap"
 SNAP_TS=0
 trap 'rm -f "$SNAP_FILE"' EXIT INT TERM
 
