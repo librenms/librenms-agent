@@ -6,7 +6,7 @@
 # openwrtWireless = OPENWRT-WIRELESS-MIB { openwrtObjects 10 } from a SINGLE snmpd line
 # (UCI: config pass / option miboid / option persist '1'):
 #
-#   pass_persist .1.3.6.1.4.1.60652.102.1.10 /usr/libexec/openwrt-snmp-pass.sh
+#   pass_persist .1.3.6.1.4.1.60652.102.1.10 /usr/libexec/openwrt-snmp/openwrt-snmp-pass.sh
 #
 # Radios/VAPs are discovered live at request time (no per-interface or
 # per-metric configuration). Rows are indexed by the kernel ifIndex, so the
