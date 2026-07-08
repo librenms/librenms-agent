@@ -8,6 +8,10 @@ stdout. Designed to be wired into snmpd via:
 
     extend routinator /etc/snmp/routinator.py
 
+The output is gzip+base64-compressed. LibreNMS detects and decodes this
+automatically; it shrinks the payload over SNMP and sidesteps snmpd's mangling
+of some characters.
+
 The script is stateless: it reports current values only. Rates (bytes/sec etc.)
 are derived by LibreNMS from successive counter samples.
 
@@ -25,6 +29,8 @@ absent the built-in defaults are used; confirm the real http-listen port with
 the Routinator operator (the default 8323 is commonly changed).
 """
 
+import base64
+import gzip
 import json
 import re
 import sys
@@ -247,6 +253,13 @@ def build_data(status, cfg):
     }
 
 
+def emit(output):
+    """Serialise the envelope, gzip + base64 it, and print to stdout. LibreNMS
+    auto-detects and decodes this."""
+    text = json.dumps(output)
+    print(base64.b64encode(gzip.compress(text.encode("utf-8"))).decode("ascii"))
+
+
 def main():
     output = {"version": 1, "error": 0, "errorString": "", "data": {}}
 
@@ -255,7 +268,7 @@ def main():
     except (ValueError, OSError) as err:
         output["error"] = 1
         output["errorString"] = "config error: %s" % err
-        print(json.dumps(output))
+        emit(output)
         return
 
     # A failed fetch is itself the most important signal (Routinator's HTTP
@@ -266,7 +279,7 @@ def main():
     except Exception as err:  # noqa: BLE001 - any failure becomes the signal
         output["error"] = 1
         output["errorString"] = "fetch %s failed: %s" % (cfg["url"], err)
-        print(json.dumps(output))
+        emit(output)
         return
 
     try:
@@ -276,7 +289,7 @@ def main():
         output["errorString"] = "parse error: %s" % err
         output["data"] = {}
 
-    print(json.dumps(output))
+    emit(output)
 
 
 if __name__ == "__main__":
