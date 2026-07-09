@@ -61,6 +61,21 @@ Then set it up in SNMPD.
     # if running it via cron
     extend syslog-ng /usr/local/etc/snmp/syslog-ng
 
+=head1 DELTAS
+
+Counter type stats (processed, dropped, written, truncated_bytes,
+truncated_count, and the center_*_processed values) are returned as the change
+since the previous run rather than as the raw ever-increasing counters. The raw
+values from the previous run are stored in JSON in the file C<cache> under the
+output dir (default C</var/cache/syslog-ng.extend/cache>).
+
+If the current raw value of a counter is zero, or there is no cached previous
+value (first run), zero is returned. If the counter went backwards (a
+syslog-ng restart reset it) the current value itself is returned.
+
+Gauge type stats (memory_usage, connections, queued, msg_size_*, batch_size_*)
+are instantaneous and returned unchanged.
+
 =cut
 
 use JSON;
@@ -79,6 +94,23 @@ getopts( 'qBvho:w', \%opts );
 if ( !defined( $opts{'o'} ) ) {
 	$opts{'o'} = '/var/cache/syslog-ng.extend/';
 }
+
+# holds the raw counter values from the previous run so we can return the
+# change since then instead of the raw ever-increasing counters
+our $cache_file = $opts{'o'} . '/cache';
+our %prev;
+our %current;
+
+# stat types that are cumulative counters and should be returned as the delta
+# since the previous run; anything not listed here is treated as an
+# instantaneous gauge and passed through unchanged
+our %counter_types = map { $_ => 1 } qw(
+	processed
+	dropped
+	written
+	truncated_bytes
+	truncated_count
+);
 
 sub main::VERSION_MESSAGE {
 	print 'syslog-ng LibreNMS extend v. ' . $VERSION . "\n";
@@ -120,6 +152,42 @@ sub return_the_data {
 		write_file( $opts{'o'} . '/json', $to_return_string );
 	}
 } ## end sub return_the_data
+
+# Given a unique key for a stat line and its current raw value, records the raw
+# value for the next run and returns what should actually be reported.
+#
+# Counters are returned as the change since the previous run; gauges are passed
+# through unchanged. Special cases for counters:
+#   - a raw value of 0 means the counter was reset (syslog-ng restart) -> 0
+#   - no previous value (first run) -> 0, since there is nothing to diff against
+#   - value went backwards (reset then climbed) -> the new value itself
+sub delta_value {
+	my ( $key, $number, $is_counter ) = @_;
+
+	# always stash the raw reading so the next run can diff against it
+	$current{$key} = $number;
+
+	return $number if ( !$is_counter );
+
+	return 0 if ( $number == 0 );
+
+	return 0 if ( !defined( $prev{$key} ) );
+
+	return $number if ( $number < $prev{$key} );
+
+	return $number - $prev{$key};
+} ## end sub delta_value
+
+# load the previous run's raw values
+if ( -f $cache_file ) {
+	my $raw_cache = eval { read_file($cache_file) };
+	if ($raw_cache) {
+		my $decoded = eval { decode_json($raw_cache) };
+		if ( ref($decoded) eq 'HASH' ) {
+			%prev = %{$decoded};
+		}
+	}
+}
 
 if ( $opts{'v'} ) {
 	&main::VERSION_MESSAGE;
@@ -179,10 +247,14 @@ shift(@outputA);
 foreach my $line (@outputA) {
 	my ( $SourceName, $SourceId, $SourceInstance, $State, $Type, $Number ) = split( /\;/, $line );
 
+	# unique, stable key identifying this counter across runs; built from the
+	# raw fields before $SourceId gets its instance suffix (#N) stripped below
+	my $key = join( ';', $SourceName, $SourceId, $SourceInstance, $State, $Type );
+
 	if ( ( $SourceName eq 'center' ) && ( $SourceInstance eq 'received' ) && ( $Type eq 'processed' ) ) {
-		$return_json->{'data'}{'center_received_processed'} = $Number;
+		$return_json->{'data'}{'center_received_processed'} = delta_value( $key, $Number, 1 );
 	} elsif ( ( $SourceName eq 'center' ) && ( $SourceInstance eq 'queued' ) && ( $Type eq 'processed' ) ) {
-		$return_json->{'data'}{'center_queued_processed'} = $Number;
+		$return_json->{'data'}{'center_queued_processed'} = delta_value( $key, $Number, 1 );
 	} elsif (
 		( $SourceId ne '' )
 		&& (   ( $Type ne 'eps_last_1h' )
@@ -211,20 +283,23 @@ foreach my $line (@outputA) {
 			};
 		} ## end if ( !defined( $id_stats{$SourceId} ) )
 
+		# report the change since the previous run for counters, raw for gauges
+		my $value = delta_value( $key, $Number, $counter_types{$Type} );
+
 		if (   ( $Type ne 'processed' )
 			&& ( $Type ne 'queued' )
 			&& ( $Type ne 'dropped' ) )
 		{
 			if ( defined( $id_stats{$SourceId}{$Type} ) ) {
-				push( @{ $id_stats{$SourceId}{$Type} }, $Number );
+				push( @{ $id_stats{$SourceId}{$Type} }, $value );
 			}
 			if ( defined( $global_stats{$Type} ) ) {
-				push( @{ $global_stats{$Type} }, $Number );
+				push( @{ $global_stats{$Type} }, $value );
 			}
 
 		} else {
-			$id_stats{$SourceId}{$Type} = $Number;
-			push( @{ $global_stats{$Type} }, $Number );
+			$id_stats{$SourceId}{$Type} = $value;
+			push( @{ $global_stats{$Type} }, $value );
 		}
 
 	} ## end elsif ( ( $SourceId ne '' ) && ( ( $Type ne 'eps_last_1h'...)))
@@ -278,5 +353,12 @@ foreach my $id ( keys(%id_stats) ) {
 		}
 	} ## end foreach my $stat ( keys( %{ $id_stats{$id} } ) )
 } ## end foreach my $id ( keys(%id_stats) )
+
+# save this run's raw values so the next run can compute the change; this must
+# happen regardless of -w since the delta feature depends on it
+if ( !-d $opts{'o'} ) {
+	mkdir( $opts{'o'} );
+}
+eval { write_file( $cache_file, encode_json( \%current ) ); };
 
 return_the_data($return_json);
