@@ -173,9 +173,11 @@ sub delta_value {
 
 	return 0 if ( !defined( $prev{$key} ) );
 
-	return $number if ( $number < $prev{$key} );
+	if ( $number < $prev{$key} ) {
+		return $number / 300;
+	}
 
-	return $number - $prev{$key};
+	return ($number - $prev{$key}) / 300;
 } ## end sub delta_value
 
 # load the previous run's raw values
