@@ -252,9 +252,9 @@ foreach my $line (@outputA) {
 	my $key = join( ';', $SourceName, $SourceId, $SourceInstance, $State, $Type );
 
 	if ( ( $SourceName eq 'center' ) && ( $SourceInstance eq 'received' ) && ( $Type eq 'processed' ) ) {
-		$return_json->{'data'}{'center_received_processed'} = delta_value( $key, $Number, 1 );
+		$return_json->{'data'}{'center_received_processed'} = $Number;
 	} elsif ( ( $SourceName eq 'center' ) && ( $SourceInstance eq 'queued' ) && ( $Type eq 'processed' ) ) {
-		$return_json->{'data'}{'center_queued_processed'} = delta_value( $key, $Number, 1 );
+		$return_json->{'data'}{'center_queued_processed'} = $Number;
 	} elsif (
 		( $SourceId ne '' )
 		&& (   ( $Type ne 'eps_last_1h' )
