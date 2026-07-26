@@ -58,33 +58,25 @@ Install the depends.
 
 Then set it up in SNMPD.
 
-    # if running it via cron
-    extend syslog-ng /usr/local/etc/snmp/syslog-ng
+    extend syslog-ng /bin/cat /var/cache/syslog-ng.extend/snmp
 
-=head1 DELTAS
+Then cron.
 
-Counter type stats (processed, dropped, written, truncated_bytes,
-truncated_count, and the center_*_processed values) are returned as the change
-since the previous run rather than as the raw ever-increasing counters. The raw
-values from the previous run are stored in JSON in the file C<cache> under the
-output dir (default C</var/cache/syslog-ng.extend/cache>).
+    */5 * * * * /etc/snmp/extends/syslog-ng -w -q
 
-If the current raw value of a counter is zero, or there is no cached previous
-value (first run), zero is returned. If the counter went backwards (a
-syslog-ng restart reset it) the current value itself is returned.
-
-Gauge type stats (memory_usage, connections, queued, msg_size_*, batch_size_*)
-are instantaneous and returned unchanged.
+This can run without cron, but you will need to setup sudo to be able to call then
+the extend as what ever user SNMPD is running as. This needs to be root to call
+syslog-ng-ctl.
 
 =cut
 
-use JSON;
-use Getopt::Std;
-use MIME::Base64;
-use IO::Compress::Gzip qw(gzip $GzipError);
-use File::Slurp;
-use Statistics::Lite qw(min max sum mean median mode);
-use Pod::Usage;
+use JSON               qw( decode_json encode_json );
+use Getopt::Std        qw( getopts );
+use MIME::Base64       qw( encode_base64 );
+use IO::Compress::Gzip qw( gzip );
+use File::Slurp        qw( read_file write_file );
+use Statistics::Lite   qw( max mean median min mode sum );
+use Pod::Usage         qw( pod2usage );
 
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 
@@ -177,7 +169,7 @@ sub delta_value {
 		return $number / 300;
 	}
 
-	return ($number - $prev{$key}) / 300;
+	return ( $number - $prev{$key} ) / 300;
 } ## end sub delta_value
 
 # load the previous run's raw values
@@ -335,13 +327,13 @@ foreach my $id ( keys(%id_stats) ) {
 			&& ( $stat ne 'dropped' ) )
 		{
 			$return_json->{'data'}{'sources'}{$id}{$stat} = {
-															 'min'    => undef,
-															 'max'    => undef,
-															 'sum'    => undef,
-															 'mean'   => undef,
-															 'median' => undef,
-															 'mode'   => undef,
-														 };
+				'min'    => undef,
+				'max'    => undef,
+				'sum'    => undef,
+				'mean'   => undef,
+				'median' => undef,
+				'mode'   => undef,
+			};
 			if ( defined( $id_stats{$id}{$stat}[0] ) ) {
 				$return_json->{'data'}{'sources'}{$id}{$stat}{'min'}    = min( @{ $id_stats{$id}{$stat} } );
 				$return_json->{'data'}{'sources'}{$id}{$stat}{'max'}    = max( @{ $id_stats{$id}{$stat} } );
@@ -350,8 +342,8 @@ foreach my $id ( keys(%id_stats) ) {
 				$return_json->{'data'}{'sources'}{$id}{$stat}{'median'} = median( @{ $id_stats{$id}{$stat} } );
 				$return_json->{'data'}{'sources'}{$id}{$stat}{'mode'}   = mode( @{ $id_stats{$id}{$stat} } );
 			}
-		}else {
-			$return_json->{'data'}{'sources'}{$id}{$stat}=$id_stats{$id}{$stat};
+		} else {
+			$return_json->{'data'}{'sources'}{$id}{$stat} = $id_stats{$id}{$stat};
 		}
 	} ## end foreach my $stat ( keys( %{ $id_stats{$id} } ) )
 } ## end foreach my $id ( keys(%id_stats) )
