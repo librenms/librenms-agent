@@ -1,0 +1,358 @@
+#!/usr/bin/env perl
+
+use warnings;
+use strict;
+
+=head1 NAME
+
+syslog-ng - LibreNMS JSON extend for syslog-ng.
+
+=head1 VERSION
+
+0.0.1
+
+=cut
+
+our $VERSION = '0.0.1';
+
+=head1 SYNOPSIS
+
+syslog-ng [B<-w>] [B<-o> <output dir>] [B<-q>]
+
+=head1 SWITCHES
+
+=head2 -B
+
+Do not the print output via GZip+Base64.
+
+=head2 -o <dir>
+
+The base output dir.
+
+Defaults: /var/cache/syslog-ng.extend
+
+=head2 -w
+
+Write the results out to files.
+
+=head2 -q
+
+If -w is specified, don't print anything.
+
+=head2 -h|--help
+
+Print help info.
+
+=head2 -h|--version
+
+Print version info.
+
+=head1 INSTALL
+
+Install the depends.
+
+    # FreeBSD
+    pkg install p5-JSON-XS p5-File-Slurp p5-MIME-Base64 p5-Statistics-Lite
+    # Debian
+    apt-get install libjson-xs-perl libmime-base64-perl libfile-slurp-perl libstatistics-lite-perl
+
+Then set it up in SNMPD.
+
+    extend syslog-ng /bin/cat /var/cache/syslog-ng.extend/snmp
+
+Then cron.
+
+    */5 * * * * /etc/snmp/extends/syslog-ng -w -q
+
+This can run without cron, but you will need to setup sudo to be able to call then
+the extend as what ever user SNMPD is running as. This needs to be root to call
+syslog-ng-ctl.
+
+=cut
+
+use JSON               qw( decode_json encode_json );
+use Getopt::Std        qw( getopts );
+use MIME::Base64       qw( encode_base64 );
+use IO::Compress::Gzip qw( gzip );
+use File::Slurp        qw( read_file write_file );
+use Statistics::Lite   qw( max mean median min mode sum );
+use Pod::Usage         qw( pod2usage );
+
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
+
+#gets the options
+our %opts = ();
+getopts( 'qBvho:w', \%opts );
+if ( !defined( $opts{'o'} ) ) {
+	$opts{'o'} = '/var/cache/syslog-ng.extend/';
+}
+
+# holds the raw counter values from the previous run so we can return the
+# change since then instead of the raw ever-increasing counters
+our $cache_file = $opts{'o'} . '/cache';
+our %prev;
+our %current;
+
+# stat types that are cumulative counters and should be returned as the delta
+# since the previous run; anything not listed here is treated as an
+# instantaneous gauge and passed through unchanged
+our %counter_types = map { $_ => 1 } qw(
+	processed
+	dropped
+	written
+	truncated_bytes
+	truncated_count
+);
+
+sub main::VERSION_MESSAGE {
+	print 'syslog-ng LibreNMS extend v. ' . $VERSION . "\n";
+}
+
+sub main::HELP_MESSAGE {
+	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
+}
+
+sub return_the_data {
+	my $to_return = $_[0];
+
+	my $to_return_string = encode_json($to_return);
+
+	my $toReturnCompressed;
+	gzip \$to_return_string => \$toReturnCompressed;
+	my $compressed = encode_base64($toReturnCompressed);
+	$compressed =~ s/\n//g;
+	$compressed       = $compressed . "\n";
+	$to_return_string = $to_return_string . "\n";
+
+	my $print_it = 1;
+	if ( $opts{'w'} && $opts{'q'} ) {
+		$print_it = 0;
+	}
+	if ($print_it) {
+		if ( $opts{'B'} ) {
+			print $to_return_string;
+		} else {
+			print $compressed;
+		}
+	}
+
+	if ( $opts{'w'} ) {
+		if ( !-d $opts{'o'} ) {
+			mkdir( $opts{'o'} ) || die( 'Failed to mkdir "' . $opts{'o'} . '"' );
+		}
+		write_file( $opts{'o'} . '/snmp', $compressed );
+		write_file( $opts{'o'} . '/json', $to_return_string );
+	}
+} ## end sub return_the_data
+
+# Given a unique key for a stat line and its current raw value, records the raw
+# value for the next run and returns what should actually be reported.
+#
+# Counters are returned as the change since the previous run; gauges are passed
+# through unchanged. Special cases for counters:
+#   - a raw value of 0 means the counter was reset (syslog-ng restart) -> 0
+#   - no previous value (first run) -> 0, since there is nothing to diff against
+#   - value went backwards (reset then climbed) -> the new value itself
+sub delta_value {
+	my ( $key, $number, $is_counter ) = @_;
+
+	# always stash the raw reading so the next run can diff against it
+	$current{$key} = $number;
+
+	return $number if ( !$is_counter );
+
+	return 0 if ( $number == 0 );
+
+	return 0 if ( !defined( $prev{$key} ) );
+
+	if ( $number < $prev{$key} ) {
+		return $number / 300;
+	}
+
+	return ( $number - $prev{$key} ) / 300;
+} ## end sub delta_value
+
+# load the previous run's raw values
+if ( -f $cache_file ) {
+	my $raw_cache = eval { read_file($cache_file) };
+	if ($raw_cache) {
+		my $decoded = eval { decode_json($raw_cache) };
+		if ( ref($decoded) eq 'HASH' ) {
+			%prev = %{$decoded};
+		}
+	}
+}
+
+if ( $opts{'v'} ) {
+	&main::VERSION_MESSAGE;
+	exit 1;
+}
+
+if ( $opts{'h'} ) {
+	&main::HELP_MESSAGE;
+	exit 1;
+}
+
+my $return_json = {
+	'error'       => 0,
+	'errorString' => '',
+	'version'     => 2,
+	'data'        => {
+		'center_queued_processed'   => undef,
+		'center_received_processed' => undef,
+		'global'                    => {
+
+		},
+		'sources' => {},
+	},
+};
+
+my %global_stats = (
+	'batch_size_avg'  => [],
+	'batch_size_max'  => [],
+	'connections'     => [],
+	'dropped'         => [],
+	'memory_usage'    => [],
+	'msg_size_avg'    => [],
+	'msg_size_max'    => [],
+	'processed'       => [],
+	'queued'          => [],
+	'truncated_bytes' => [],
+	'truncated_count' => [],
+	'written'         => [],
+);
+
+my %id_stats;
+
+my $output = `syslog-ng-ctl stats 2>&1`;
+if ( $? ne 0 ) {
+	if ( !defined($output) ) {
+		$output = '';
+	}
+	$return_json->{'error'} = 'syslog-ng-ctl stats exited non-zero... ' . $output;
+	return_the_data($return_json);
+	exit 3;
+}
+
+my @outputA = split( /\n/, $output );
+# chops SourceName;SourceId;SourceInstance;State;Type;Number head off the output
+shift(@outputA);
+
+foreach my $line (@outputA) {
+	my ( $SourceName, $SourceId, $SourceInstance, $State, $Type, $Number ) = split( /\;/, $line );
+
+	# unique, stable key identifying this counter across runs; built from the
+	# raw fields before $SourceId gets its instance suffix (#N) stripped below
+	my $key = join( ';', $SourceName, $SourceId, $SourceInstance, $State, $Type );
+
+	if ( ( $SourceName eq 'center' ) && ( $SourceInstance eq 'received' ) && ( $Type eq 'processed' ) ) {
+		$return_json->{'data'}{'center_received_processed'} = $Number;
+	} elsif ( ( $SourceName eq 'center' ) && ( $SourceInstance eq 'queued' ) && ( $Type eq 'processed' ) ) {
+		$return_json->{'data'}{'center_queued_processed'} = $Number;
+	} elsif (
+		( $SourceId ne '' )
+		&& (   ( $Type ne 'eps_last_1h' )
+			|| ( $Type ne 'eps_last_24h' )
+			|| ( $Type ne 'eps_last_1h' )
+			|| ( $Type ne 'stamp' ) )
+		)
+	{
+		my $orig_SourceID = $SourceId;
+		$SourceId =~ s/\#.*$//;
+
+		if ( !defined( $id_stats{$SourceId} ) ) {
+			$id_stats{$SourceId} = {
+				'batch_size_avg'  => [],
+				'batch_size_max'  => [],
+				'connections'     => [],
+				'dropped'         => undef,
+				'memory_usage'    => [],
+				'msg_size_avg'    => [],
+				'msg_size_max'    => [],
+				'processed'       => undef,
+				'queued'          => undef,
+				'truncated_bytes' => [],
+				'truncated_count' => [],
+				'written'         => [],
+			};
+		} ## end if ( !defined( $id_stats{$SourceId} ) )
+
+		# report the change since the previous run for counters, raw for gauges
+		my $value = delta_value( $key, $Number, $counter_types{$Type} );
+
+		if (   ( $Type ne 'processed' )
+			&& ( $Type ne 'queued' )
+			&& ( $Type ne 'dropped' ) )
+		{
+			if ( defined( $id_stats{$SourceId}{$Type} ) ) {
+				push( @{ $id_stats{$SourceId}{$Type} }, $value );
+			}
+			if ( defined( $global_stats{$Type} ) ) {
+				push( @{ $global_stats{$Type} }, $value );
+			}
+
+		} else {
+			$id_stats{$SourceId}{$Type} = $value;
+			push( @{ $global_stats{$Type} }, $value );
+		}
+
+	} ## end elsif ( ( $SourceId ne '' ) && ( ( $Type ne 'eps_last_1h'...)))
+
+} ## end foreach my $line (@outputA)
+
+foreach my $stat ( keys(%global_stats) ) {
+	$return_json->{'data'}{'global'}{$stat} = {
+		'min'    => undef,
+		'max'    => undef,
+		'sum'    => undef,
+		'mean'   => undef,
+		'median' => undef,
+		'mode'   => undef,
+	};
+	if ( defined( $global_stats{$stat}[0] ) ) {
+		$return_json->{'data'}{'global'}{$stat}{'min'}    = min( @{ $global_stats{$stat} } );
+		$return_json->{'data'}{'global'}{$stat}{'max'}    = max( @{ $global_stats{$stat} } );
+		$return_json->{'data'}{'global'}{$stat}{'sum'}    = sum( @{ $global_stats{$stat} } );
+		$return_json->{'data'}{'global'}{$stat}{'mean'}   = mean( @{ $global_stats{$stat} } );
+		$return_json->{'data'}{'global'}{$stat}{'median'} = median( @{ $global_stats{$stat} } );
+		$return_json->{'data'}{'global'}{$stat}{'mode'}   = mode( @{ $global_stats{$stat} } );
+	}
+} ## end foreach my $stat ( keys(%global_stats) )
+
+foreach my $id ( keys(%id_stats) ) {
+	$return_json->{'data'}{'sources'}{$id} = {};
+	foreach my $stat ( keys( %{ $id_stats{$id} } ) ) {
+		if (   ( $stat ne 'processed' )
+			&& ( $stat ne 'queued' )
+			&& ( $stat ne 'dropped' ) )
+		{
+			$return_json->{'data'}{'sources'}{$id}{$stat} = {
+				'min'    => undef,
+				'max'    => undef,
+				'sum'    => undef,
+				'mean'   => undef,
+				'median' => undef,
+				'mode'   => undef,
+			};
+			if ( defined( $id_stats{$id}{$stat}[0] ) ) {
+				$return_json->{'data'}{'sources'}{$id}{$stat}{'min'}    = min( @{ $id_stats{$id}{$stat} } );
+				$return_json->{'data'}{'sources'}{$id}{$stat}{'max'}    = max( @{ $id_stats{$id}{$stat} } );
+				$return_json->{'data'}{'sources'}{$id}{$stat}{'sum'}    = sum( @{ $id_stats{$id}{$stat} } );
+				$return_json->{'data'}{'sources'}{$id}{$stat}{'mean'}   = mean( @{ $id_stats{$id}{$stat} } );
+				$return_json->{'data'}{'sources'}{$id}{$stat}{'median'} = median( @{ $id_stats{$id}{$stat} } );
+				$return_json->{'data'}{'sources'}{$id}{$stat}{'mode'}   = mode( @{ $id_stats{$id}{$stat} } );
+			}
+		} else {
+			$return_json->{'data'}{'sources'}{$id}{$stat} = $id_stats{$id}{$stat};
+		}
+	} ## end foreach my $stat ( keys( %{ $id_stats{$id} } ) )
+} ## end foreach my $id ( keys(%id_stats) )
+
+# save this run's raw values so the next run can compute the change; this must
+# happen regardless of -w since the delta feature depends on it
+if ( !-d $opts{'o'} ) {
+	mkdir( $opts{'o'} );
+}
+eval { write_file( $cache_file, encode_json( \%current ) ); };
+
+return_the_data($return_json);
