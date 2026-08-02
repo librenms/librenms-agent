@@ -6,7 +6,7 @@ zfs - LibreNMS JSON SNMP extend for gathering backups for ZFS
 
 =head1 VERSION
 
-0.3.0
+0.4.0
 
 =head1 DESCRIPTION
 
@@ -198,17 +198,42 @@ while ( defined( $pools[$pools_int] ) ) {
 	$iostat =~ s/\%//g;
 	$iostat =~ s/\,([0-1\.]*)x\,/,$1,/;
 	chomp($iostat);
-	my $parsed;
+
+	# Total column count varies by OpenZFS version. Versions with the
+	# device-rebuild / sequential-resilver feature (per zpool-iostat(8))
+	# add a rebuild_wait latency column right after trim_wait, *and* a
+	# rebuildq_write pend/activ pair at the very end of the -q block --
+	# both appear together, since they come from the same feature. That
+	# means the tail queue-depth block (syncq_read..trimq_write) isn't a
+	# fixed distance from either the front or the back, so a naive
+	# front-N/back-M anchor silently shifts it. Instead, branch on the
+	# two known real-world layouts (verified against actual zpool
+	# iostat -p output) and only fall back to the old layout if we see
+	# neither -- a mismatched count would rather keep the previous
+	# (possibly stale) behavior than misparse against a guess.
+	my @iostat_fields = split( /\,/, $iostat );
+	my $field_count   = scalar(@iostat_fields);
+
 	(
-		$parsed,                  $parsed,                 $parsed,                 $newPool{operations_r},
-		$newPool{operations_w},   $newPool{bandwidth_r},   $newPool{bandwidth_w},   $newPool{total_wait_r},
-		$newPool{total_wait_w},   $newPool{disk_wait_r},   $newPool{disk_wait_w},   $newPool{syncq_wait_r},
-		$newPool{syncq_wait_w},   $newPool{asyncq_wait_r}, $newPool{asyncq_wait_w}, $newPool{scrub_wait},
-		$newPool{trim_wait},      $newPool{syncq_read_p},  $newPool{syncq_read_a},  $newPool{syncq_write_p},
-		$newPool{syncq_write_a},  $newPool{asyncq_read_p}, $newPool{asyncq_read_a}, $newPool{asyncq_write_p},
-		$newPool{asyncq_write_a}, $newPool{scrubq_read_p}, $newPool{scrubq_read_a}, $newPool{trimq_write_p},
-		$newPool{trimq_write_a},
-	) = split( /\,/, $iostat );
+		undef,                    undef,                   undef,
+		$newPool{operations_r},   $newPool{operations_w},  $newPool{bandwidth_r},
+		$newPool{bandwidth_w},    $newPool{total_wait_r},  $newPool{total_wait_w},
+		$newPool{disk_wait_r},    $newPool{disk_wait_w},   $newPool{syncq_wait_r},
+		$newPool{syncq_wait_w},   $newPool{asyncq_wait_r}, $newPool{asyncq_wait_w},
+		$newPool{scrub_wait},     $newPool{trim_wait},
+	) = @iostat_fields[ 0 .. 16 ];
+
+	# 32 fields: ... trim_wait, rebuild_wait, <12 queue fields>, rebuildq_write_pend, rebuildq_write_activ
+	# 29 fields (no rebuild-queue feature): ... trim_wait, <12 queue fields>
+	my @queue_fields
+		= ( $field_count == 32 ) ? @iostat_fields[ 18 .. 29 ] : @iostat_fields[ 17 .. 28 ];
+
+	(
+		$newPool{syncq_read_p},   $newPool{syncq_read_a},  $newPool{syncq_write_p},
+		$newPool{syncq_write_a},  $newPool{asyncq_read_p}, $newPool{asyncq_read_a},
+		$newPool{asyncq_write_p}, $newPool{asyncq_write_a}, $newPool{scrubq_read_p},
+		$newPool{scrubq_read_a},  $newPool{trimq_write_p}, $newPool{trimq_write_a},
+	) = @queue_fields;
 
 	if ( $newPool{trim_wait} eq '-' ) {
 		$newPool{trim_wait} = 0;
@@ -219,6 +244,18 @@ while ( defined( $pools[$pools_int] ) ) {
 		if ( $item ne 'altroot' && $newPool{$item} eq '-' ) {
 			$newPool{$item} = 0;
 		}
+	}
+
+	# zpool iostat -p reports time values in nanoseconds (per zpool-iostat(8)),
+	# but LibreNMS graphs these wait-time stats in milliseconds. Convert here
+	# rather than leaving every wait-time graph off by a factor of 1,000,000.
+	foreach my $wait_field (
+		qw(total_wait_r total_wait_w disk_wait_r disk_wait_w
+			syncq_wait_r syncq_wait_w asyncq_wait_r asyncq_wait_w
+			scrub_wait trim_wait)
+		)
+	{
+		$newPool{$wait_field} = $newPool{$wait_field} / 1_000_000;
 	}
 
 	# get read/write/checksum info for spools
