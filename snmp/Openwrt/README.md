@@ -1,7 +1,7 @@
 # OpenWrt wireless + sensors SNMP agent
 
 These scripts expose per-radio and aggregate wireless metrics (plus lm-sensors
-temperatures) to LibreNMS through net-snmp `pass_persist` handlers. Radios and
+temperatures and fan speeds) to LibreNMS through net-snmp `pass_persist` handlers. Radios and
 VAPs are discovered live at request time, so there is no per-interface or
 per-metric snmpd configuration to maintain. See
 [Device-Notes/Openwrt.md](https://docs.librenms.org/Support/Device-Notes/#openwrt)
@@ -12,7 +12,7 @@ for the LibreNMS-side install and discovery steps.
 | Script | Purpose |
 | --- | --- |
 | `openwrt-snmp-pass.sh` | Wireless `pass_persist` handler. Serves the OpenWrt wireless subtree (OPENWRT-WIRELESS-MIB, `.1.3.6.1.4.1.60652.102.1.10`) from a single snmpd line. |
-| `lm-sensors-pass.sh` | Temperature `pass_persist` handler (LM-SENSORS-MIB emulation). |
+| `lm-sensors-pass.sh` | Temperature + fan `pass_persist` handler (LM-SENSORS-MIB emulation). Temperatures from thermal zones; fan RPM from hwmon tachometer inputs (`fan*_input`, e.g. `kmod-hwmon-pwmfan`). |
 | `wlInterfaces.sh` | Interface/label inventory. Helper used by `openwrt-snmp-pass.sh`. |
 | `wlClients.sh [iface]` | Client counts (per interface, or aggregate). Helper. |
 | `wlFrequency.sh <iface>` | Channel frequency (MHz). Helper. |
@@ -48,7 +48,7 @@ config pass
 	option persist '1'
 
 config pass
-	option miboid '.1.3.6.1.4.1.2021.13.16.2.1'
+	option miboid '.1.3.6.1.4.1.2021.13.16'
 	option prog '/usr/libexec/openwrt-snmp/lm-sensors-pass.sh'
 	option persist '1'
 ```
@@ -80,7 +80,8 @@ Restart snmpd:
 
 ## Validation
 
-From the LibreNMS host, walk the wireless subtree and the temperature table:
+From the LibreNMS host, walk the wireless subtree and the sensor tables
+(temperatures at `.13.16.2`, fans at `.13.16.3`):
 
 ```sh
 snmpwalk -v2c -c your_community_string <openwrt-host> .1.3.6.1.4.1.60652.102.1.10
