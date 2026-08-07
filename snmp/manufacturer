@@ -1,0 +1,14 @@
+#!/usr/bin/env sh
+# Detects which manufacturer.
+
+if [ -r /sys/devices/virtual/dmi/id/sys_vendor ]; then
+  DMI=$(cat /sys/devices/virtual/dmi/id/sys_vendor)
+fi
+
+if [ -n "${DMI}" ]; then
+  if [ "${DMI}" != "To Be Filled By O.E.M." ] && [ "${DMI}" != "Default string" ] && [ "${DMI}" != "Not Specified" ] && [ "${DMI}" != "None" ] ; then
+    MANUFACTURERSTR="${DMI}"
+  fi
+fi
+  
+echo "${MANUFACTURERSTR}"
