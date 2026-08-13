@@ -11,7 +11,7 @@ for the LibreNMS-side install and discovery steps.
 
 | Script | Purpose |
 | --- | --- |
-| `openwrt-snmp-pass.sh` | Wireless `pass_persist` handler. Serves the OpenWrt wireless subtree (OPENWRT-WIRELESS-MIB, `.1.3.6.1.4.1.60652.102.1.10`) from a single snmpd line. |
+| `openwrt-snmp-pass.sh` | Wireless `pass_persist` handler. Serves the OpenWrt wireless subtree (OPENWRT-WIRELESS-MIB, `.1.3.6.1.4.1.66510.1.10`) from a single snmpd line. |
 | `lm-sensors-pass.sh` | Temperature + fan `pass_persist` handler (LM-SENSORS-MIB emulation). Temperatures from thermal zones; fan RPM from hwmon tachometer inputs (`fan*_input`, e.g. `kmod-hwmon-pwmfan`). |
 | `wlInterfaces.sh` | Interface/label inventory. Helper used by `openwrt-snmp-pass.sh`. |
 | `wlClients.sh [iface]` | Client counts (per interface, or aggregate). Helper. |
@@ -43,7 +43,7 @@ Register the two handlers in `/etc/config/snmpd`:
 
 ```
 config pass
-	option miboid '.1.3.6.1.4.1.60652.102.1.10'
+	option miboid '.1.3.6.1.4.1.66510.1.10'
 	option prog '/usr/libexec/openwrt-snmp/openwrt-snmp-pass.sh'
 	option persist '1'
 
@@ -84,7 +84,7 @@ From the LibreNMS host, walk the wireless subtree and the sensor tables
 (temperatures at `.13.16.2`, fans at `.13.16.3`):
 
 ```sh
-snmpwalk -v2c -c your_community_string <openwrt-host> .1.3.6.1.4.1.60652.102.1.10
+snmpwalk -v2c -c your_community_string <openwrt-host> .1.3.6.1.4.1.66510.1.10
 snmpwalk -v2c -c your_community_string <openwrt-host> .1.3.6.1.4.1.2021.13.16
 ```
 
