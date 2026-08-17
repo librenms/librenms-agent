@@ -1,26 +1,25 @@
 #!/usr/bin/php
 <?php
 
-if (! class_exists('Memcached')) {
-    echo json_encode(array(
-        'data' => false,
-        'error' => 99,
-        'errorString' => 'php-memcached extension is not available, it must be installed and enabled.',
-        'version' => '1.1'
-    ));
+$m = new Memcached();
+$m->addServer('localhost', 11211);
+
+$stats = $m->getStats();
+
+if (!isset($stats['localhost:11211'])) {
+    echo json_encode([
+        'error' => 1,
+        'errorString' => 'Unable to retrieve memcached statistics',
+        'version' => '1.1',
+        'data' => [],
+    ], JSON_UNESCAPED_SLASHES) . "\n";
     exit;
 }
 
-$server='localhost';
-$port=11211;
-$m = new Memcached();
-$m->addServer($server, $port);
-
-echo json_encode(array(
-    // 'data' => $m->getStats(),
-    'data' => ($m->getStats())["$server:$port"],
-    'error' => $m->getLastErrorCode(),
-    'errorString' => $m->getLastErrorMessage(),
+echo json_encode([
+    'error' => 0,
+    'errorString' => '',
     'version' => '1.1',
-));
+    'data' => $stats['localhost:11211'],
+], JSON_UNESCAPED_SLASHES) . "\n";
 
