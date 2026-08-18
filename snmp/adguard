@@ -2,7 +2,8 @@
 """LibreNMS snmp extend script for AdGuard Home.
 
 Queries the AdGuard Home REST API (/control/status and /control/stats) and
-prints the results as LibreNMS application JSON (version 1).
+prints the results as LibreNMS application JSON (version 1),
+gzip+base64 encoded so snmpd does not mangle the payload.
 
 Configuration is read from a JSON file (default /etc/snmp/adguard.json):
 
@@ -32,6 +33,7 @@ Error codes:
 """
 
 import base64
+import gzip
 import json
 import ssl
 import sys
@@ -54,12 +56,13 @@ STATS_KEYS = [
 
 
 def output(data, error, error_string):
-    print(json.dumps({
+    text = json.dumps({
         "data": data,
         "error": error,
         "errorString": error_string,
         "version": VERSION,
-    }))
+    })
+    print(base64.b64encode(gzip.compress(text.encode("utf-8"))).decode("ascii"))
     sys.exit(0 if error == 0 else 1)
 
 
