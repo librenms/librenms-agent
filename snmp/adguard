@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+"""LibreNMS snmp extend script for AdGuard Home.
+
+Queries the AdGuard Home REST API (/control/status and /control/stats) and
+prints the results as LibreNMS application JSON (version 1),
+gzip+base64 encoded so snmpd does not mangle the payload.
+
+Configuration is read from a JSON file (default /etc/snmp/adguard.json):
+
+    {
+        "url": "http://127.0.0.1:3000",
+        "username": "admin",
+        "password": "secret",
+        "timeout": 5,
+        "insecure": false
+    }
+
+"url" is the base URL of the AdGuard Home web interface. "insecure" disables
+TLS certificate verification for https URLs. "timeout" applies to each of
+the two API calls, so the SNMP timeout must exceed 2 * timeout. The config
+file holds the web UI credentials, so restrict it to the user snmpd runs
+extend scripts as (root:Debian-snmp mode 0640 on Debian/Ubuntu, root-only
+0600 where snmpd runs as root).
+
+snmpd.conf entry:
+
+    extend adguard /etc/snmp/adguard
+
+Error codes:
+    1 = config file missing or invalid
+    2 = HTTP request failed
+    3 = API response was not valid JSON
+"""
+
+import base64
+import gzip
+import json
+import ssl
+import sys
+import urllib.error
+import urllib.request
+
+VERSION = 1
+CONFIG_FILE = "/etc/snmp/adguard.json"
+
+# stats keys copied into data verbatim; all are gauges over AdGuard's
+# configured stats window (24h by default)
+STATS_KEYS = [
+    "num_dns_queries",
+    "num_blocked_filtering",
+    "num_replaced_safebrowsing",
+    "num_replaced_safesearch",
+    "num_replaced_parental",
+    "avg_processing_time",
+]
+
+
+def output(data, error, error_string):
+    text = json.dumps({
+        "data": data,
+        "error": error,
+        "errorString": error_string,
+        "version": VERSION,
+    })
+    print(base64.b64encode(gzip.compress(text.encode("utf-8"))).decode("ascii"))
+    sys.exit(0 if error == 0 else 1)
+
+
+def api_get(base_url, path, auth_header, timeout, insecure):
+    request = urllib.request.Request(base_url + path)
+    request.add_header("Authorization", auth_header)
+    context = None
+    if insecure:
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+    with urllib.request.urlopen(request, timeout=timeout, context=context) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def main():
+    config_file = sys.argv[1] if len(sys.argv) > 1 else CONFIG_FILE
+
+    try:
+        with open(config_file) as handle:
+            config = json.load(handle)
+        base_url = config["url"].rstrip("/")
+        credentials = "{}:{}".format(config["username"], config["password"])
+    except (OSError, ValueError, KeyError) as error:
+        output({}, 1, "config error: {}".format(error))
+
+    auth_header = "Basic " + base64.b64encode(credentials.encode()).decode()
+    timeout = config.get("timeout", 5)
+    insecure = bool(config.get("insecure", False))
+
+    data = {}
+    try:
+        status = api_get(base_url, "/control/status", auth_header, timeout, insecure)
+        stats = api_get(base_url, "/control/stats", auth_header, timeout, insecure)
+    except urllib.error.URLError as error:
+        output({}, 2, "http error: {}".format(error))
+    except ValueError as error:
+        output({}, 3, "bad json: {}".format(error))
+
+    data["version"] = status.get("version", "")
+    data["running"] = int(bool(status.get("running", False)))
+    data["protection_enabled"] = int(bool(status.get("protection_enabled", False)))
+    for key in STATS_KEYS:
+        data[key] = stats.get(key, 0)
+
+    output(data, 0, "")
+
+
+if __name__ == "__main__":
+    main()
