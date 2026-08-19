@@ -43,6 +43,46 @@
     }
 }
 
+:foreach i in [/interface ethernet switch vlan find] do={
+    :local vlid [/interface ethernet switch vlan get $i vlan-id]
+    :local vname [/interface ethernet switch vlan get $i comment]
+    :local ports [/interface ethernet switch vlan get $i ports]
+
+    :set $vlansn ($vlansn, "$vlid,$vname")
+
+    :foreach i in [/interface vlan find where vlan-id=$vlid] do={
+        :local intname [/interface vlan get $i name]
+        :set $vname ($intname)
+    }
+
+    :foreach j in [/interface ethernet switch egress-vlan-tag find where vlan-id=$vlid] do={
+        :local tagged [/interface ethernet switch egress-vlan-tag get $j tagged-ports]
+        :foreach port in $tagged do={
+            :if ($port != "") do={
+                :set $vlanst ($vlanst, "$vlid,$port,$vname")
+            }
+        }
+    }
+
+    :foreach j in [/interface ethernet switch ingress-vlan-translation find where new-customer-vid=$vlid] do={
+        :local untagged [/interface ethernet switch ingress-vlan-translation get $j ports]
+        :foreach port in $untagged do={
+            :if ($port != "") do={
+                :local fl 0
+                :foreach tmp in $vlansu do={
+                    :local ar [:toarray $tmp]
+                    :if ((($ar->0) = $vlid) && (($ar->1) = $port)) do={
+                        :set fl 1
+                    }
+                }
+                :if ( $fl != 1 ) do={
+                    :set $vlansu ($vlansu, "$vlid,$port,$vname")
+                }
+            }
+        }
+    }
+}
+
 :foreach vl in [/interface vlan find ] do={
     :local intf [/interface vlan get $vl interface]
     :local vlid [/interface vlan get $vl vlan-id]
