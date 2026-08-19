@@ -3,7 +3,7 @@
 # Name: hddtemp2
 # Author: Jason Cheng (www.jason.tools)
 # Date: 2025-02-17
-# Version: 1.1
+# Version: 1.2
 # Purpose: This script replaces the obsolete hddtemp tool for librenms agent to monitor disk temperatures
 # License: Free Software
 
@@ -26,25 +26,28 @@ if [ "${smartctl}" != "" ]; then
         for disk in $disks; do
             # Exclude non-physical disks like RBD (RADOS Block Device)
             if [[ ! "$disk" =~ rbd ]]; then
-                # Get disk model first
-                model=$(${smartctl} -i $disk | grep 'Device Model' | cut -d':' -f2 | sed 's/^\s*//g')
-                
-                # Try different temperature attributes in order of preference
-                # First try Airflow_Temperature_Cel
-                temp_info=$(${smartctl} -A $disk | grep 'Airflow_Temperature_Cel' | awk '{print $10}')
+                # Check if the disk is a valid device
+                if ${smartctl} -i "$disk" > /dev/null 2>&1; then
+                    # Get disk model first
+                    model=$(${smartctl} -i $disk | grep 'Device Model' | cut -d':' -f2 | tr -d '[:space:]$')
 
-                # If not found, try Temperature_Celsius
-                if [ -z "$temp_info" ]; then
-                    temp_info=$(${smartctl} -A $disk | grep 'Temperature_Celsius' | awk '{print $10}')
+                    # Try different temperature attributes in order of preference
+                    # First try Airflow_Temperature_Cel
+                    temp_info=$(${smartctl} -A $disk | grep 'Airflow_Temperature_Cel' | awk '{print $10}')
+
+                    # If not found, try Temperature_Celsius
+                    if [ -z "$temp_info" ]; then
+                        temp_info=$(${smartctl} -A $disk | grep 'Temperature_Celsius' | awk '{print $10}')
+                    fi
+
+                    # If still not found, try Drive_Temperature
+                    if [ -z "$temp_info" ]; then
+                        temp_info=$(${smartctl} -A $disk | grep 'Drive_Temperature' | awk '{print $4}')
+                    fi
+
+                    # Format output regardless of which temperature was found
+                    output="${output}|${disk}|${model}|${temp_info}|C|"
                 fi
-
-                # If still not found, try Drive_Temperature
-                if [ -z "$temp_info" ]; then
-                    temp_info=$(${smartctl} -A $disk | grep 'Drive_Temperature' | awk '{print $4}')
-                fi
-
-                # Format output regardless of which temperature was found
-                output="${output}|${disk}|${model}|${temp_info}|C|"
             fi
         done
         # Clean output, keep only printable characters
