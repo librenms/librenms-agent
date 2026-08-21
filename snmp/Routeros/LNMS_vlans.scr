@@ -7,6 +7,11 @@
 :global vlansu [:toarray ""]
 :global vlansn [:toarray ""]
 
+:local hasswvlan true
+:do {
+    :put [/interface ethernet switch vlan print count-only]
+} on-error={ :set hasswvlan false }
+
 :foreach i in [/interface bridge vlan find] do={
     :local intf [/interface bridge vlan get $i bridge]
     :local vlid [/interface bridge vlan get $i vlan-ids]
@@ -33,52 +38,12 @@
         :local fl 0
         :foreach tmp in $vlansu do={
             :local ar [:toarray $tmp]
-            :if ((($ar->0) = $vlid) && (($ar->1) = $iu))  do={
+            :if ((($ar->0) = $vlid) && (($ar->1) = $iu)) do={
                 :set fl 1
             }
         }
         :if ( $fl != 1 ) do={
             :set $vlansu ($vlansu, "$vlid,$iu,$vname")
-        }
-    }
-}
-
-:foreach i in [/interface ethernet switch vlan find] do={
-    :local vlid [/interface ethernet switch vlan get $i vlan-id]
-    :local vname [/interface ethernet switch vlan get $i comment]
-    :local ports [/interface ethernet switch vlan get $i ports]
-
-    :set $vlansn ($vlansn, "$vlid,$vname")
-
-    :foreach i in [/interface vlan find where vlan-id=$vlid] do={
-        :local intname [/interface vlan get $i name]
-        :set $vname ($intname)
-    }
-
-    :foreach j in [/interface ethernet switch egress-vlan-tag find where vlan-id=$vlid] do={
-        :local tagged [/interface ethernet switch egress-vlan-tag get $j tagged-ports]
-        :foreach port in $tagged do={
-            :if ($port != "") do={
-                :set $vlanst ($vlanst, "$vlid,$port,$vname")
-            }
-        }
-    }
-
-    :foreach j in [/interface ethernet switch ingress-vlan-translation find where new-customer-vid=$vlid] do={
-        :local untagged [/interface ethernet switch ingress-vlan-translation get $j ports]
-        :foreach port in $untagged do={
-            :if ($port != "") do={
-                :local fl 0
-                :foreach tmp in $vlansu do={
-                    :local ar [:toarray $tmp]
-                    :if ((($ar->0) = $vlid) && (($ar->1) = $port)) do={
-                        :set fl 1
-                    }
-                }
-                :if ( $fl != 1 ) do={
-                    :set $vlansu ($vlansu, "$vlid,$port,$vname")
-                }
-            }
         }
     }
 }
@@ -89,6 +54,8 @@
     :local vname [/interface vlan get $vl name]
     :local fl 0
 
+    :set $vlansn ($vlansn, "$vlid,$vname")
+
     :foreach tmp in $vlanst do={
         :local ar [:toarray $tmp]
         :if ((($ar->0) = $vlid) && (($ar->1) = $intf)) do={
@@ -97,6 +64,61 @@
     }
     :if ( $fl != 1 ) do={
         :set $vlanst ($vlanst, "$vlid,$intf,$vname")
+    }
+
+    :foreach u in [/interface bridge port find where bridge=$intf and pvid=$vlid] do={
+        :local iu [/interface bridge port get $u interface]
+        :local fl 0
+        :foreach tmp in $vlansu do={
+            :local ar [:toarray $tmp]
+            :if ((($ar->0) = $vlid) && (($ar->1) = $iu)) do={
+                :set fl 1
+            }
+        }
+        :if ( $fl != 1 ) do={
+            :set $vlansu ($vlansu, "$vlid,$iu,$vname")
+        }
+    }
+}
+
+:if ($hasswvlan) do={
+    :foreach i in [/interface ethernet switch vlan find] do={
+        :local vlid [/interface ethernet switch vlan get $i vlan-id]
+        :local vname [/interface ethernet switch vlan get $i comment]
+
+        :set $vlansn ($vlansn, "$vlid,$vname")
+
+        :foreach i in [/interface vlan find where vlan-id=$vlid] do={
+            :local intname [/interface vlan get $i name]
+            :set $vname ($intname)
+        }
+
+        :foreach j in [/interface ethernet switch egress-vlan-tag find where vlan-id=$vlid] do={
+            :local tagged [/interface ethernet switch egress-vlan-tag get $j tagged-ports]
+            :foreach port in $tagged do={
+                :if ($port != "") do={
+                    :set $vlanst ($vlanst, "$vlid,$port,$vname")
+                }
+            }
+        }
+
+        :foreach j in [/interface ethernet switch ingress-vlan-translation find where new-customer-vid=$vlid] do={
+            :local untagged [/interface ethernet switch ingress-vlan-translation get $j ports]
+            :foreach port in $untagged do={
+                :if ($port != "") do={
+                    :local fl 0
+                    :foreach tmp in $vlansu do={
+                        :local ar [:toarray $tmp]
+                        :if ((($ar->0) = $vlid) && (($ar->1) = $port)) do={
+                            :set fl 1
+                        }
+                    }
+                    :if ( $fl != 1 ) do={
+                        :set $vlansu ($vlansu, "$vlid,$port,$vname")
+                    }
+                }
+            }
+        }
     }
 }
 
