@@ -89,6 +89,78 @@ sub main::HELP_MESSAGE {
 	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
 }
 
+# Known top-level label spans from `zpool iostat -l -q`'s two-line
+# column header, mirroring OpenZFS's own iostat_top_labels table in
+# cmd/zpool/zpool_main.c -- keyed by the label's *name*, never its
+# position, so a future OpenZFS reordering or inserting a *known*
+# group elsewhere never breaks this. A genuinely new, never-before-
+# seen top label defaults to span 1 rather than dying.
+my %iostat_top_label_span = (
+	capacity        => 2, operations   => 2, bandwidth      => 2,
+	total_wait      => 2, disk_wait    => 2, syncq_wait     => 2,
+	asyncq_wait     => 2, scrub        => 1, trim           => 1,
+	rebuild         => 1, syncq_read   => 2, syncq_write    => 2,
+	asyncq_read     => 2, asyncq_write => 2, scrubq_read    => 2,
+	trimq_write     => 2, rebuildq_write => 2,
+);
+
+# Parse `zpool iostat -l -q -p`'s (no -H) three-line column header --
+# top labels spanning multiple columns (e.g. "syncq_read" over
+# "pend"/"activ"), the per-column sub-labels, and the dashes separator
+# row -- into a list of unique combined field names ("syncq_read_pend")
+# and their exact [start, end) character ranges in the data row.
+#
+# The dashes are the one thing trusted positionally: each run of '-'
+# is exactly one column's real printed width, unambiguous since no
+# value in this output ever contains a run of '-' itself. Top labels
+# are read in on-the-page order (reliable even when position isn't)
+# and expanded by their known span -- this is what actually survives
+# a future OpenZFS version adding, removing, or reordering columns,
+# since nothing here assumes a fixed column count or fixed position.
+sub parse_iostat_header {
+	my ( $top_line, $bottom_line, $dash_line ) = @_;
+
+	my @col_ranges;
+	while ( $dash_line =~ /(-+)/g ) {
+		push @col_ranges, [ $-[1], $+[1] ];
+	}
+
+	my @bottom;
+	foreach my $r (@col_ranges) {
+		my $s = substr( $bottom_line, $r->[0], $r->[1] - $r->[0] );
+		$s =~ s/^\s+|\s+$//g;
+		push @bottom, $s;
+	}
+
+	# The leading column ("pool") has no top label at all -- it comes
+	# before every top-level group.
+	my @top_tokens;
+	while ( $top_line =~ /(\S+)/g ) {
+		push @top_tokens, $1;
+	}
+	my @top_for_col = ('');
+	foreach my $t (@top_tokens) {
+		my $span = $iostat_top_label_span{$t} // 1;
+		push @top_for_col, ($t) x $span;
+	}
+
+	if ( scalar(@top_for_col) != scalar(@col_ranges) ) {
+
+		# A genuinely new top-level label whose real on-the-wire span
+		# isn't 1 and isn't yet in %iostat_top_label_span would land
+		# here -- fall back to treating every column as its own
+		# unnamed field rather than misaligning everything after it.
+		return ( [ map { "field_$_" } 0 .. $#col_ranges ], \@col_ranges );
+	}
+
+	my @combined;
+	foreach my $i ( 0 .. $#col_ranges ) {
+		push @combined, ( $top_for_col[$i] eq '' ? $bottom[$i] : $top_for_col[$i] . '_' . $bottom[$i] );
+	}
+
+	return ( \@combined, \@col_ranges );
+}
+
 #this will be dumped to json at the end
 my %tojson;
 
@@ -122,8 +194,19 @@ if ($help) {
 }
 
 #process each pool and shove them into JSON
-my $zpool_output = `/sbin/zpool list -pH`;
-my @pools        = split( /\n/, $zpool_output );
+#
+# -H is dropped deliberately: it suppresses the header row entirely,
+# which is why field position used to have to be guessed at rather
+# than read. Without it, zpool prints one real header line before the
+# data -- read the real column names from it once, so a future zpool
+# version adding/removing/reordering a property here is handled
+# automatically instead of silently misaligning everything after it.
+my $zpool_output    = `/sbin/zpool list -p`;
+my @pool_lines       = split( /\n/, $zpool_output );
+my $pool_header_line = shift(@pool_lines);
+$pool_header_line =~ s/^\s+|\s+$//g;
+my @pool_field_names = map { lc($_) } split( /\s+/, $pool_header_line );
+my @pools            = @pool_lines;
 my $pools_int    = 0;
 $tojson{online}          = 0;
 $tojson{degraded}        = 0;
@@ -149,11 +232,7 @@ while ( defined( $pools[$pools_int] ) ) {
 	$pool =~ s/\%//g;
 	$pool =~ s/\,([0-1\.]*)x\,/,$1,/;
 
-	(
-		$newPool{name},    $newPool{size},     $newPool{alloc}, $newPool{free},
-		$newPool{ckpoint}, $newPool{expandsz}, $newPool{frag},  $newPool{cap},
-		$newPool{dedup},   $newPool{health},   $newPool{altroot}
-	) = split( /\,/, $pool );
+	@newPool{@pool_field_names} = split( /\,/, $pool );
 
 	if ( $opts{s} ) {
 		$newPool{status} = `zpool status $newPool{name}`;
@@ -191,49 +270,56 @@ while ( defined( $pools[$pools_int] ) ) {
 		$newPool{expandsz} = 0;
 	}
 
-	my $iostat = `zpool iostat -y -l -q -p -H $newPool{name} 2 1`;
-	chomp($iostat);
-	$iostat =~ s/\t+/,/g;
-	$iostat =~ s/\,\-\,\-\,/\,0\,0\,/g;
-	$iostat =~ s/\%//g;
-	$iostat =~ s/\,([0-1\.]*)x\,/,$1,/;
-	chomp($iostat);
+	# -H is dropped here too, for the same reason as the pool-list
+	# fetch above: without it, zpool prints a real two-line column
+	# header (top labels spanning multiple columns, e.g. "syncq_read"
+	# over "pend"/"activ", plus a per-column sub-label line) before a
+	# dashes separator and the data row. parse_iostat_header() turns
+	# that into a name -> position map every run, so a future OpenZFS
+	# version adding, removing, or reordering columns (like the
+	# rebuild_wait / rebuildq_write pair that motivated this fix in the
+	# first place) is handled automatically instead of silently
+	# misaligning every field after the change point.
+	my $iostat_output = `zpool iostat -y -l -q -p $newPool{name} 2 1`;
+	my @iostat_lines  = split( /\n/, $iostat_output );
+	my ( $iostat_top_line, $iostat_bottom_line, $iostat_dash_line, $iostat_data_line ) = @iostat_lines;
 
-	# Total column count varies by OpenZFS version. Versions with the
-	# device-rebuild / sequential-resilver feature (per zpool-iostat(8))
-	# add a rebuild_wait latency column right after trim_wait, *and* a
-	# rebuildq_write pend/activ pair at the very end of the -q block --
-	# both appear together, since they come from the same feature. That
-	# means the tail queue-depth block (syncq_read..trimq_write) isn't a
-	# fixed distance from either the front or the back, so a naive
-	# front-N/back-M anchor silently shifts it. Instead, branch on the
-	# two known real-world layouts (verified against actual zpool
-	# iostat -p output) and only fall back to the old layout if we see
-	# neither -- a mismatched count would rather keep the previous
-	# (possibly stale) behavior than misparse against a guess.
-	my @iostat_fields = split( /\,/, $iostat );
-	my $field_count   = scalar(@iostat_fields);
+	my ( $iostat_field_names, $iostat_field_ranges ) = parse_iostat_header( $iostat_top_line, $iostat_bottom_line, $iostat_dash_line );
 
-	(
-		undef,                    undef,                   undef,
-		$newPool{operations_r},   $newPool{operations_w},  $newPool{bandwidth_r},
-		$newPool{bandwidth_w},    $newPool{total_wait_r},  $newPool{total_wait_w},
-		$newPool{disk_wait_r},    $newPool{disk_wait_w},   $newPool{syncq_wait_r},
-		$newPool{syncq_wait_w},   $newPool{asyncq_wait_r}, $newPool{asyncq_wait_w},
-		$newPool{scrub_wait},     $newPool{trim_wait},
-	) = @iostat_fields[ 0 .. 16 ];
+	my %iostat_raw;
+	foreach my $i ( 0 .. $#$iostat_field_names ) {
+		my ( $s, $e ) = @{ $iostat_field_ranges->[$i] };
+		my $v = substr( $iostat_data_line, $s, $e - $s );
+		$v =~ s/^\s+|\s+$//g;
+		$iostat_raw{ $iostat_field_names->[$i] } = $v;
+	}
 
-	# 32 fields: ... trim_wait, rebuild_wait, <12 queue fields>, rebuildq_write_pend, rebuildq_write_activ
-	# 29 fields (no rebuild-queue feature): ... trim_wait, <12 queue fields>
-	my @queue_fields
-		= ( $field_count == 32 ) ? @iostat_fields[ 18 .. 29 ] : @iostat_fields[ 17 .. 28 ];
+	# The script's own internal field names, aliased from the real
+	# on-the-wire combined names above -- keyed by name, not position,
+	# so this table only needs a new entry if a future OpenZFS version
+	# adds a genuinely new statistic this script wants to track, never
+	# because something merely moved.
+	my %iostat_field_alias = (
+		operations_read    => 'operations_r',   operations_write   => 'operations_w',
+		bandwidth_read     => 'bandwidth_r',    bandwidth_write    => 'bandwidth_w',
+		total_wait_read    => 'total_wait_r',   total_wait_write   => 'total_wait_w',
+		disk_wait_read     => 'disk_wait_r',    disk_wait_write    => 'disk_wait_w',
+		syncq_wait_read    => 'syncq_wait_r',   syncq_wait_write   => 'syncq_wait_w',
+		asyncq_wait_read   => 'asyncq_wait_r',  asyncq_wait_write  => 'asyncq_wait_w',
+		scrub_wait         => 'scrub_wait',     trim_wait          => 'trim_wait',
+		syncq_read_pend    => 'syncq_read_p',   syncq_read_activ   => 'syncq_read_a',
+		syncq_write_pend   => 'syncq_write_p',  syncq_write_activ  => 'syncq_write_a',
+		asyncq_read_pend   => 'asyncq_read_p',  asyncq_read_activ  => 'asyncq_read_a',
+		asyncq_write_pend  => 'asyncq_write_p', asyncq_write_activ => 'asyncq_write_a',
+		scrubq_read_pend   => 'scrubq_read_p',  scrubq_read_activ  => 'scrubq_read_a',
+		trimq_write_pend   => 'trimq_write_p',  trimq_write_activ  => 'trimq_write_a',
+	);
 
-	(
-		$newPool{syncq_read_p},   $newPool{syncq_read_a},  $newPool{syncq_write_p},
-		$newPool{syncq_write_a},  $newPool{asyncq_read_p}, $newPool{asyncq_read_a},
-		$newPool{asyncq_write_p}, $newPool{asyncq_write_a}, $newPool{scrubq_read_p},
-		$newPool{scrubq_read_a},  $newPool{trimq_write_p}, $newPool{trimq_write_a},
-	) = @queue_fields;
+	foreach my $wire_name ( keys %iostat_field_alias ) {
+		if ( defined( $iostat_raw{$wire_name} ) ) {
+			$newPool{ $iostat_field_alias{$wire_name} } = $iostat_raw{$wire_name};
+		}
+	}
 
 	if ( $newPool{trim_wait} eq '-' ) {
 		$newPool{trim_wait} = 0;
