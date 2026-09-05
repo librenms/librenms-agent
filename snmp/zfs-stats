@@ -2,7 +2,7 @@
 
 =head1 NAME
 
-zfs - LibreNMS JSON SNMP extend for gathering backups for ZFS
+zfs-stats - LibreNMS JSON SNMP extend for gathering backups for ZFS
 
 =head1 VERSION
 
@@ -11,6 +11,21 @@ zfs - LibreNMS JSON SNMP extend for gathering backups for ZFS
 =head1 DESCRIPTION
 
 For more information, see L<https://docs.librenms.org/Extensions/Applications/#zfs>.
+
+=head1 WHY "zfs-stats" AND NOT "zfs"
+
+This script is deliberately not installed under the filename C<zfs>.
+LibreNMS's usual extend-script convention names the on-disk file the
+same as the repo filename, which would put a file literally called
+C<zfs> on C<$PATH> (e.g. C</usr/local/bin/zfs> or C</etc/snmp/zfs>).
+On any host where that directory precedes C</sbin>/C</usr/sbin> in
+C<$PATH> -- common for C</usr/local/bin> -- running C<zfs list> or
+C<zfs set> at a shell would silently execute this monitoring script
+instead of the real OpenZFS C<zfs> binary. Naming the on-disk file
+C<zfs-stats> avoids that collision. This is purely about the filename
+on disk -- the SNMP-visible extend name configured in C<snmpd.conf>
+(see L</SNMPD SETUP EXAMPLES>) is unrelated and does not need to
+change.
 
 =head1 SWITCHES
 
@@ -29,7 +44,12 @@ in the return.
 
 =head1 SNMPD SETUP EXAMPLES
 
-    extend zfs /etc/snmp/zfs
+The extend name (C<zfs> below) is just a label LibreNMS uses
+internally -- it can stay C<zfs> regardless of the script's on-disk
+filename. Only the path needs to point at wherever C<zfs-stats> is
+actually installed.
+
+    extend zfs /etc/snmp/zfs-stats
 
 =head1 REQUIREMENTS
 
