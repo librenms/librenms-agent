@@ -977,22 +977,22 @@ foreach my $line (@disks) {
 		if (   defined( $a_output->{'temperature'} )
 			&& ( ref( $a_output->{'temperature'} ) eq 'HASH' )
 			&& defined( $a_output->{'temperature'}{'drive_trip'} )
-			&& ( ref( $a_output->{'temperature'}{'drive_drip'} ) eq '' ) )
+			&& ( ref( $a_output->{'temperature'}{'drive_trip'} ) eq '' ) )
 		{
 			$IDs{'temp_limit'} = $a_output->{'temperature'}{'drive_trip'};
 		}
 
 		# figure out what to use for the max temp, if there is one
 		if ( defined( $IDs{'190'} )
-			&& !defined( $IDs{'194'} && looks_like_number( $IDs{'190'} ) ) )
+			&& looks_like_number( $IDs{'190'} ) && !defined( $IDs{'194'} ) )
 		{
 			$IDs{max_temp} = $IDs{'190'};
 		} elsif ( !defined( $IDs{'190'} )
-			&& defined( $IDs{'194'} && looks_like_number( $IDs{'194'} ) ) )
+			&& defined( $IDs{'194'} ) && looks_like_number( $IDs{'194'} ) )
 		{
 			$IDs{max_temp} = $IDs{'194'};
 		} elsif ( defined( $IDs{'190'} )
-			&& defined( $IDs{'194'} && looks_like_number( $IDs{'190'} ) && looks_like_number( $IDs{'194'} ) ) )
+			&& defined( $IDs{'194'} ) && looks_like_number( $IDs{'190'} ) && looks_like_number( $IDs{'194'} ) )
 		{
 			if ( $IDs{'190'} > $IDs{'194'} ) {
 				$IDs{'max_temp'} = $IDs{'190'};
