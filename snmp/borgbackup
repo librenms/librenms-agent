@@ -1,6 +1,5 @@
 #!/usr/bin/env perl
-
-#Copyright (c) 2023, Zane C. Bowers-Hadley
+#Copyright (c) 2026, Zane C. Bowers-Hadley
 #All rights reserved.
 #
 #Redistribution and use in source and binary forms, with or without modification,
@@ -29,15 +28,11 @@ borgbackup - LibreNMS JSON SNMP extend for gathering backups for borg
 
 =head1 VERSION
 
-0.0.1
+0.1.0
 
 =head1 SYNOPSIS
 
-borgbackup [B<-c> <config file>] [B<-o> <output dir>]
-
-borgbackup [B<--help>|B<-h>]
-
-borgbackup [B<--version>|B<-v>]
+borgbackup [-c|--config <config>] [-o|--output <output dir>] [-u|--update] [-p|--pretty] [-Z|--compress] [-v|--verbose] [-V|--version] [-h|--help] [-m|--manual]
 
 =head1 DESCRIPTION
 
@@ -62,30 +57,58 @@ For SNMPD generally going to be setup like this.
 
 Then the extend is set to be ran via cron.
 
-    */5 * * * * /etc/snmp/extends/borgbackup
+    */5 * * * * /etc/snmp/extends/borgbackup -u -Z
+
+=head1 USAGE
+
+When called without flags, it reads from the cache file if it exists.
+Use -u to update the cache, or -u -v for verbose updates.
+
+    /etc/snmp/extends/borgbackup -u -v
 
 =head1 FLAGS
 
-=head2 -c <config file>
+=head2 -c|--config <config file>
 
 The config file to use for the extend.
 
 Default :: /usr/local/etc/borgbackup_extend.ini
 
-=head2 -o <output dir>
+=head2 -o|--output <output dir>
 
 The output directory write the pretty JSON file to and the file to use
 for the SNMP extend.
 
 Default :: /var/cache/borgbackup_extend
 
+=head2 -u|--update
+
+Update mode. When called from snmpd, it reads from the cache file instead
+of running borg commands directly.
+
+=head2 -p|--pretty
+
+Pretty print the JSON output.
+
+=head2 -Z|--compress
+
+GZip+Base64 compress the results.
+
+=head2 -v|--verbose
+
+Verbose output. Print status info to STDERR.
+
+=head2 -V|--version
+
+Print version and exit.
+
 =head2 -h|--help
 
 Print help info.
 
-=head2 -v|--version
+=head2 -m|--manual
 
-Print version info.
+Print full manual page using L<Pod::Usage>.
 
 =head1 CONFIG
 
@@ -99,10 +122,32 @@ The config file is a ini file and handled by L<Coonfig::Tiny>.
         - Default :: undef
 
     - passphrase :: Passphrase for the borg backup repo.
+            If not set, will try without passphrase.
         - Default :: undef
 
     - passcommand :: Passcommand for the borg backup repo.
+            If not set, will try without passcommand.
         - Default :: undef
+
+    - timeout :: Timeout in seconds for borg info command per repo.
+            Use 0 to disable timeout.
+        - Default :: 300
+
+    - cache_dir :: BORG_CACHE_DIR environment variable for borg cache location.
+        - Default :: undef
+
+    - env_file :: Path to an environment file to load (shell format: KEY=value).
+        - Default :: undef
+
+    - repo :: Can be a local path or remote SSH URL.
+
+        Local path: /path/to/repo
+
+        Restic-style SSH: user@host:/path/to/repo
+
+        Standard SSH URL: ssh://user@host/path/to/repo
+
+        Default :: undef
 
 For single repos all those variables are in the root section of the config,
 so lets the repo is at '/backup/borg' with a passphrase of '1234abc'.
@@ -126,6 +171,29 @@ of 'pass show backup' it would be like below.
 
 If 'passphrase' and 'passcommand' are both specified, then passcommand is used.
 
+For remote repos, set env_file in the config to load BORG_PASSPHRASE or
+BORG_PASSCOMMAND, or set other environment variables like SSH_AUTH_SOCK.
+
+Example with env file:
+
+    mode=multi
+    env_file=/etc/borgbackup.env
+
+    [server2]
+    repo=eideen_borg:/volume2/borg-backup/server2/
+
+    [server3]
+    repo=ssh://backup@server3/volume1/borg
+
+And the env file (/etc/borgbackup.env):
+
+    # Borg authentication
+    BORG_PASSCOMMAND=pass show borg/server2
+
+    # SSH setup
+    SSH_AUTH_SOCK=/run/user/1000/gnupg/S.gpg-agent.ssh
+    BORG_RSH=ssh -i /root/.ssh/borg_key
+
 =head1 JSON RETURN
 
 The return is a LibreNMS JSON style SNMP extend as defined at
@@ -146,7 +214,7 @@ Totaled info is in the hash .totals.
     - .totals.locked_for :: Longest time any repo has been locked.
         - Type :: seconds
 
-    - .totals.time_since_last_modified :: Largest time - mtime for the repo directory
+    - .totals.time_since_last_modified :: Largest time since last archive was created
         - Type :: seconds
 
     - .total.total_chunks :: Total number of checks between all repos.
@@ -177,7 +245,7 @@ Each repo then has it's own hash under .repo .
             locked. If it is not locked this is undef.
         - Type :: seconds
 
-    - .repo.$repo.time_since_last_modified :: time - mtime for the repo directory
+    - .repo.$repo.time_since_last_modified :: time since last archive was created
         - Type :: seconds
 
     - .repo.$repo.total_chunks :: Total number of checks for the repo.
@@ -204,36 +272,197 @@ use strict;
 use warnings;
 use Config::Tiny;
 use JSON;
-use Getopt::Long;
+use Getopt::Long qw( GetOptions :config no_ignore_case );
 use File::Slurp;
 use File::Path qw(make_path);
 use MIME::Base64;
 use IO::Compress::Gzip qw(gzip $GzipError);
 use String::ShellQuote;
 use Pod::Usage;
+use Time::Local;
+use POSIX qw(strftime);
 
 our $output_dir = '/var/cache/borgbackup_extend';
 my $config_file = '/usr/local/etc/borgbackup_extend.ini';
-my $version;
-my $help;
-GetOptions(
-	'c=s'   => \$config_file,
-	'o=s'   => \$output_dir,
-	v       => \$version,
-	version => \$version,
-	h       => \$help,
-	help    => \$help,
+my $verbose     = 0;
+my $pretty      = 0;
+my $compress    = 0;
+my $update      = 0;
+my $default_timeout = 300;
+
+sub VERSION_MESSAGE {
+	print "borgbackup SNMP extend 0.1.0\n";
+}
+
+sub HELP_MESSAGE {
+	print "borgbackup SNMP extend 0.1.0\n\n";
+	print "Usage: borgbackup [options]\n\n";
+	print "Options:\n";
+	print "  -c, --config <file>   Config file (default: $config_file)\n";
+	print "  -o, --output <dir>    Output directory (default: $output_dir)\n";
+	print "  -u, --update          Update mode - regenerate cache from borg repos\n";
+	print "  -p, --pretty          Pretty print JSON output\n";
+	print "  -Z, --compress        GZip+Base64 compress the cache file\n";
+	print "  -v, --verbose         Verbose output to STDERR\n";
+	print "  -V, --version         Print version and exit\n";
+	print "  -h, --help            Print this help message\n";
+	print "  -m, --manual          Print full manual page\n";
+	print "\n";
+}
+
+# ANSI farger
+my %COLOR = (
+    reset  => "\e[0m",
+    blue   => "\e[94m",
+    green  => "\e[92m",
+    yellow => "\e[93m",
+    red    => "\e[91m",
 );
 
-if ($version) {
-	pod2usage( -exitval => 255, -verbose => 99, -sections => qw(VERSION), -output => \*STDOUT, );
+## logging og utils
+#####################################
+# Default nivå (5 = info)
+my $VERBOSE = 0;
+my $QUIET   = 0;
+my $DEBUG   = 0;
+my $LOG_LEVEL;
+
+sub _date {
+    return scalar localtime();
 }
 
-if ($help) {
-	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
+sub _log {
+    my ($level, $color, @msg) = @_;
+
+    # Quiet = kun warn(4) og opp (lavere tall = mer alvorlig)
+    if ($QUIET) {
+        return if $level > 4;
+    } else {
+        # Normal filtrering
+        return if $level > $LOG_LEVEL;
+    }
+
+    my $prefix = _date() . ": ";
+    my $text   = join(" ", @msg);
+    my $output = $prefix . $text . "\n";
+
+    if ($color) {
+        $output = $COLOR{$color} . $output . $COLOR{reset};
+    }
+
+    # STDERR for warn og mer alvorlig
+    if ($level <= 4) {
+        print STDERR $output;
+    } else {
+        print STDOUT $output;
+    }
 }
 
-# save the return
+sub log_debug	 { _log(8, 'blue',   "DEBUG:", @_); }
+sub log_verbose  { _log(7, 'blue',   "VERBOSE:", @_); }
+sub log_notice   { _log(6, 'green',  @_); }
+sub log_info     { _log(5, undef,    @_); }
+sub log_warn     { _log(4, 'yellow', @_); }
+sub log_error    { _log(3, 'red',    @_); }
+sub log_alert    { _log(2, 'red',    "ALERT:", @_); }
+sub log_critical { _log(1, 'red',    "CRITICAL:", @_); }
+
+
+#####################################
+sub read_env_file {
+	my ($file) = @_;
+	
+	if ( !-f $file ) {
+		die "Environment file not found: $file\n";
+	}
+	
+	open my $fh, '<', $file or die "Cannot open env file $file: $!\n";
+	while ( my $line = <$fh> ) {
+		chomp $line;
+		next if $line =~ /^\s*$/;
+		next if $line =~ /^\s*#/;
+		$line =~ s/^export\s+//;
+		if ( $line =~ /^([^=]+)=(.*)$/ ) {
+			my $key   = $1;
+			my $value = $2;
+			$key =~ s/^\s+|\s+$//g;
+			$value =~ s/^\s+|\s+$//g;
+			$ENV{$key} = $value;
+			log_verbose("ENV: Loaded env: $key");
+		}
+	}
+	close $fh;
+}
+
+sub is_remote_repo {
+	my ($repo) = @_;
+	return 0 if !defined($repo);
+	return 1 if $repo =~ m{^ssh://}i;
+	my $has_colon = index($repo, ':');
+	return 1 if $has_colon > 0 && substr($repo, 0, 1) ne '/';
+	return 0;
+}
+
+sub get_repo_lock_file {
+	my ($repo) = @_;
+	return undef if is_remote_repo($repo);
+	return $repo . '/lock.exclusive';
+}
+
+GetOptions(
+	'c|config=s'      => \$config_file,
+	'o|output=s'      => \$output_dir,
+	'p|pretty'        => \$pretty,
+	'Z|compress'      => \$compress,
+	'u|update'        => \$update,
+	'V|version'       => sub { VERSION_MESSAGE(); exit 0; },
+	'h|help'          => sub { HELP_MESSAGE(); exit 0; },
+	'm|manual'        => sub { pod2usage(-verbose => 2) },
+    'v|verbose' 	  => \$VERBOSE,
+    'q|quiet'   	  => \$QUIET,
+    'd|debug'   	  => \$DEBUG,
+) or die "Error in command line arguments\n";
+
+if ( $compress && !$update ) {
+	die "Cannot use -Z|--compress without -u (update mode)\n";
+}
+
+if ( $pretty && !$update ) {
+	die "Cannot use -p|--pretty without -u (update mode)\n";
+}
+
+if ( !$update ) {
+	if ( -f $output_dir . '/extend_return' ) {
+		my $old = read_file( $output_dir . '/extend_return' );
+		print $old;
+		exit 0;
+	} else {
+		die "Cache file not found. Run with -u to update cache.\n";
+	}
+}
+
+# Ensure only one (or none) is set
+if ( ($VERBOSE ? 1 : 0) + ($QUIET ? 1 : 0) > 1 ) {
+    die "You cannot use both --verbose and --quiet at the same time\n";
+}
+
+# Set LOG_LEVEL
+if ($VERBOSE) {
+    $LOG_LEVEL = 7;   # everything
+}
+elsif ($DEBUG) {
+	$LOG_LEVEL = 8;   # debug and above
+}
+elsif ($QUIET) {
+    $LOG_LEVEL = 4;   # warn and above
+}
+else {
+    $LOG_LEVEL = 5;   # default (info)
+}
+
+log_info("MAIN: Starting borgbackup in update mode");
+
+#######################################
 sub finish {
 	my (%opts) = @_;
 
@@ -244,30 +473,43 @@ sub finish {
 	}
 
 	my $j = JSON->new;
+	$j->allow_nonref(1);
+	if ( $opts{pretty} ) {
+		$j->pretty(1);
+		$j->canonical(1);
+	}
 
 	my $return_string = $j->encode( $opts{to_return} );
 
-	my $compressed_string;
-	gzip \$return_string => \$compressed_string;
-	my $compressed = encode_base64($compressed_string);
-	$compressed =~ s/\n//g;
-	$compressed = $compressed . "\n";
-	if ( length($compressed) > length($return_string) ) {
-		write_file( $output_dir . '/extend_return', $return_string );
+	if ($compress) {
+		my $compressed_string;
+		gzip \$return_string => \$compressed_string;
+		my $compressed = encode_base64($compressed_string);
+		$compressed =~ s/\n//g;
+		$compressed = $compressed . "\n";
+		if ( length($compressed) > length($return_string) ) {
+			log_verbose("OUTPUT: Writing uncompressed extend_return to: $output_dir/extend_return");
+			write_file( $output_dir . '/extend_return', $return_string );
+		} else {
+			log_verbose("OUTPUT: Writing compressed extend_return to: $output_dir/extend_return");
+			write_file( $output_dir . '/extend_return', $compressed );
+		}
 	} else {
-		write_file( $output_dir . '/extend_return', $compressed );
+		log_verbose("OUTPUT: Writing extend_return to: $output_dir/extend_return");
+		write_file( $output_dir . '/extend_return', $return_string );
 	}
 
-	$j->pretty(1);
-	$j->canonical(1);
-	$return_string = $j->encode( $opts{to_return} );
-
-	write_file( $output_dir . '/pretty', $return_string );
-
-	print $return_string;
+		log_verbose("OUTPUT: Writing pretty JSON to: $output_dir/pretty");
+	
+	my $j_pretty = JSON->new;
+	$j_pretty->allow_nonref(1);
+	$j_pretty->pretty(1);
+	$j_pretty->canonical(1);
+	my $pretty_string = $j_pretty->encode( $opts{to_return} );
+	write_file( $output_dir . '/pretty', $pretty_string );
 
 	exit $opts{to_return}->{error};
-} ## end sub finish
+}
 
 my $to_return = {
 	data => {
@@ -291,7 +533,8 @@ my $to_return = {
 	errorString => '',
 };
 
-# attempt to read in the config
+log_verbose("CONFIG: Config file: $config_file");
+
 my $config;
 eval {
 	my $raw_config = read_file($config_file);
@@ -300,58 +543,95 @@ eval {
 if ($@) {
 	$to_return->{error}       = 1;
 	$to_return->{errorString} = 'Failed reading config file "' . $config_file . '"... ' . $@;
-	finish( to_return => $to_return );
+	finish( to_return => $to_return, pretty => $pretty );
+}
+
+if ( defined( $config->{_}{env_file} ) && $config->{_}{env_file} ne '' ) {
+	my $config_env_file = $config->{_}{env_file};
+	log_verbose("CONFIG: Loading global env file: $config_env_file");
+	read_env_file($config_env_file);
 }
 
 if ( !defined( $config->{_}{mode} ) ) {
 	$config->{_}{mode} = 'single';
+	log_verbose("CONFIG: Mode not set, defaulting to 'single'");
 } elsif ( $config->{_}{mode} ne 'single' && $config->{_}{mode} ne 'multi' ) {
 	$to_return->{error}       = 2;
 	$to_return->{errorString} = '"' . $config->{_}{mode} . '" mode is not set to single or multi';
-	finish( to_return => $to_return );
+	finish( to_return => $to_return, pretty => $pretty );
 }
 
-# get a list of repos to use
+$to_return->{data}{mode} = $config->{_}{mode};
+log_verbose("CONFIG: Mode set to '" . $config->{_}{mode} . "'");
+
 my @repos;
+
+# For single mode, we just use the root section of the config and add a fake repo called 'single' to make the rest of the code easier. For multi, we look for all sections that aren't '_' or 'env_file' and treat those as repos.
+###############################################################################
 if ( $config->{_}{mode} eq 'single' ) {
-	# if single, just create a single repo
 	push( @repos, 'single' );
 	$config->{single} = {};
+	log_verbose("CONFIG: Single mode, using root section config");
 
-	# make sure we have passcommand or passphrase with passphrase being used as the default
-	if ( !defined( $config->{_}{passcommand} ) && !defined( $config->{_}{passphrase} ) ) {
-		$to_return->{error}       = 3;
-		$to_return->{errorString} = 'Neither passcommand or passphrase defined';
-		finish( to_return => $to_return );
-	} elsif ( $config->{_}{passphrase} ) {
+	if ( defined( $config->{_}{passphrase} ) ) {
 		$config->{single}{passphrase} = $config->{_}{passphrase};
-	} elsif ( $config->{_}{passcommand} ) {
+		log_verbose("CONFIG: Using passphrase from root section");
+	} elsif ( defined( $config->{_}{passcommand} ) ) {
 		$config->{single}{passcommand} = $config->{_}{passcommand};
+		log_verbose("CONFIG: Using passcommand from root section");
+	} else {
+		log_verbose("CONFIG: No passphrase/passcommand, will try without");
 	}
 
-	# make sure have a repo specified
+	if ( defined( $config->{_}{cache_dir} ) ) {
+		$config->{single}{cache_dir} = $config->{_}{cache_dir};
+		log_verbose("CONFIG: Using cache_dir from root section");
+	}
+
 	if ( !defined( $config->{_}{repo} ) ) {
 		$to_return->{error}       = 4;
 		$to_return->{errorString} = 'repo is not defined';
-		finish( to_return => $to_return );
+		finish( to_return => $to_return, pretty => $pretty );
 	}
 	$config->{single}{repo} = $config->{_}{repo};
+	log_verbose("CONFIG: Repo path: " . $config->{_}{repo});
 
+#### Multi mode, we look for all sections that aren't '_' or 'env_file' and treat those as repos.
 } else {
-	# we don't want _ as that is the root of the ini file
-	@repos = grep( !/^\_$/, keys( %{$config} ) );
+	@repos = grep( !/^\_$/ && !/^env_file$/, keys( %{$config} ) );
+	log_verbose("CONFIG: Multi mode, found " . scalar(@repos) . " repos: " . join(', ', @repos));
 }
 
-my @totals
-	= ( 'total_chunks', 'total_csize', 'total_size', 'total_unique_chunks', 'unique_csize', 'unique_size', 'locked' );
-my @stats = ( 'total_chunks', 'total_csize', 'total_size', 'total_unique_chunks', 'unique_csize', 'unique_size' );
+my @totals = ( 'total_chunks', 'total_csize', 'total_size', 'total_unique_chunks', 'unique_csize', 'unique_size', 'locked' );
+my @stats  = ( 'total_chunks', 'total_csize', 'total_size', 'total_unique_chunks', 'unique_csize', 'unique_size' );
+
+log_verbose("MAIN: Processing " . scalar(@repos) . " repos...");
 
 foreach my $repo (@repos) {
-	my $process = 1;
+	log_verbose($repo, "Starting processing");
 
-	# unset borg pass bits
 	delete( $ENV{BORG_PASSPHRASE} );
 	delete( $ENV{BORG_PASSCOMMAND} );
+	delete( $ENV{BORG_REPO} );
+
+	if ( defined( $config->{$repo}{env_file} ) && $config->{$repo}{env_file} ne '' ) {
+		my $repo_env_file = $config->{$repo}{env_file};
+		log_verbose($repo, "Loading env file: $repo_env_file");
+		read_env_file($repo_env_file);
+	}
+
+	my $repo_path = $config->{$repo}{repo};
+	if ( !defined($repo_path) || $repo_path eq '' ) {
+		$repo_path = $ENV{BORG_REPO};
+		if (defined($repo_path) && $repo_path ne '') {
+			log_verbose($repo, "Using BORG_REPO from env: $repo_path");
+		}
+	}
+
+	if ( !defined($repo_path) || $repo_path eq '' ) {
+		log_verbose($repo, "Skipping - no repo defined");
+		next;
+	}
 
 	my $repo_info = {
 		total_chunks             => 0,
@@ -366,81 +646,150 @@ foreach my $repo (@repos) {
 		locked_for               => undef,
 	};
 
-	if ( !defined( $config->{$repo}{passcommand} ) && !defined( $config->{$repo}{passphrase} ) ) {
-		$to_return->{error} = 3;
-		$to_return->{errorString}
-			= $to_return->{errorString} . "\n" . 'Neither passcommand or passphrase defined for ' . $repo;
-		$process = 0;
+	log_verbose($repo, "Repo path: " . $repo_path);
+
+	log_verbose($repo, "BORG_REPO env: " . (defined($ENV{BORG_REPO}) ? $ENV{BORG_REPO} : 'undef'));
+	log_verbose($repo, "BORG_PASSPHRASE env: " . (defined($ENV{BORG_PASSPHRASE}) ? $ENV{BORG_PASSPHRASE} : 'undef'));
+	log_verbose($repo, "BORG_CACHE_DIR env: " . (defined($ENV{BORG_CACHE_DIR}) ? $ENV{BORG_CACHE_DIR} : 'undef'));
+
+	my $timeout = $config->{$repo}{timeout} || $default_timeout;
+
+	if ( defined( $config->{$repo}{passcommand} ) ) {
+		$ENV{BORG_PASSCOMMAND} = $config->{$repo}{passcommand};
+		log_verbose($repo, "Auth: using passcommand");
+	} elsif ( defined( $config->{$repo}{passphrase} ) ) {
+		$ENV{BORG_PASSPHRASE} = $config->{$repo}{passphrase};
+		log_verbose($repo, "Auth: using passphrase");
+	} elsif ( defined( $ENV{BORG_PASSCOMMAND} ) && $ENV{BORG_PASSCOMMAND} ne '' ) {
+		log_verbose($repo, "Auth: using BORG_PASSCOMMAND from env");
+	} elsif ( defined( $ENV{BORG_PASSPHRASE} ) && $ENV{BORG_PASSPHRASE} ne '' ) {
+		log_verbose($repo, "Auth: using BORG_PASSPHRASE from env");
+	} else {
+		log_verbose($repo, "Auth: none configured, trying without");
 	}
 
-	if ( !defined( $config->{$repo}{repo} ) ) {
-		$to_return->{error}       = 4;
-		$to_return->{errorString} = $to_return->{errorString} . "\n" . 'repo is not defined for ' . $repo;
-		$process                  = 0;
+	if ( defined( $config->{$repo}{cache_dir} ) ) {
+		$ENV{BORG_CACHE_DIR} = $config->{$repo}{cache_dir};
+		log_verbose($repo, "Cache dir: $ENV{BORG_CACHE_DIR}");
+	} elsif ( defined( $ENV{BORG_CACHE_DIR} ) && $ENV{BORG_CACHE_DIR} ne '' ) {
+		log_verbose($repo, "Cache dir: using BORG_CACHE_DIR from env");
 	}
 
-	if ($process) {
-		my ( $dev, $ino, $mode, $nlink, $uid, $gid, $rdev, $size, $atime, $mtime, $ctime, $blksize, $blocks )
-			= stat( $config->{$repo}{repo} . '/nonce' );
+	log_verbose($repo, "Timeout: " . ($timeout > 0 ? $timeout . " seconds" : "disabled"));
+	my $command = 'borg info ' . shell_quote($repo_path) . ' --json 2>&1';
+	if ($timeout > 0) {
+		$command = 'timeout ' . $timeout . ' ' . $command;
+	}
+	log_verbose($repo, "Command: $command");
+	log_debug($repo, "Environment for command: " . join(', ', map { "$_=" . (defined($ENV{$_}) ? $ENV{$_} : 'undef') } sort keys %ENV));
+	my $start_time = time;
+	my $output_raw = `$command`;
+	my $elapsed = time - $start_time;
+	log_verbose($repo, "Runtime: $elapsed seconds");
+	log_debug($repo, "borg output: $output_raw");
 
-		my $time_diff = time - $mtime;
-		$repo_info->{time_since_last_modified} = $time_diff;
-
-		# if we don't have a largest time diff or if it is larger than then
-		# the old one save the time diff
-		if ( !defined( $to_return->{data}{totals}{time_since_last_modified} )
-			|| $to_return->{data}{totals}{time_since_last_modified} < $time_diff )
-		{
-			$to_return->{data}{totals}{time_since_last_modified} = $time_diff;
+	my $info;
+	eval { $info = decode_json($output_raw); };
+	if ($@) {
+		my $error = $@;
+		if ( !defined( $config->{$repo}{passcommand} ) && !defined( $config->{$repo}{passphrase} ) ) {
+			delete $ENV{BORG_PASSPHRASE};
+			delete $ENV{BORG_PASSCOMMAND};
+			$output_raw = `$command`;
+			$elapsed = time - $start_time;
+			log_verbose($repo, "No passphrase configured, retrying without...");
+			log_verbose($repo, "Runtime: $elapsed seconds");
+			eval { $info = decode_json($output_raw); };
 		}
-
-		if ( defined( $config->{$repo}{passcommand} ) ) {
-			$ENV{BORG_PASSCOMMAND} = $config->{$repo}{passcommand};
-		} else {
-			$ENV{BORG_PASSPHRASE} = $config->{$repo}{passphrase};
-		}
-
-		my $command    = 'borg info ' . shell_quote( $config->{$repo}{repo} ) . ' --json 2>&1';
-		my $output_raw = `$command`;
-
-		my $info;
-		eval { $info = decode_json($output_raw); };
 		if ($@) {
-			my $error = $@;
+			$error = $@;
 			if ( $output_raw =~ /lock.*lock\.exclusive/ ) {
 				$repo_info->{locked} = 1;
-
-				my $lock_file = $config->{$repo}{repo} . '/lock.exclusive';
-				( $dev, $ino, $mode, $nlink, $uid, $gid, $rdev, $size, $atime, $mtime, $ctime, $blksize, $blocks )
-					= stat($lock_file);
-				$repo_info->{locked_for} = time - $ctime;
+				my $lock_file = get_repo_lock_file($repo_path);
+				if ( defined($lock_file) && -e $lock_file ) {
+					log_verbose($repo, "Repo is locked, checking: $lock_file");
+					my ( $lock_dev, $lock_ino, $lock_mode, $lock_nlink, $lock_uid, $lock_gid, $lock_rdev, $lock_size, $lock_atime, $lock_mtime, $lock_ctime, $lock_blksize, $lock_blocks ) = stat($lock_file);
+					$repo_info->{locked_for} = time - $lock_ctime;
+					log_verbose($repo, "Repo is locked for " . $repo_info->{locked_for} . " seconds");
+				} elsif ( is_remote_repo($repo_path) ) {
+					log_verbose($repo, "Repo is locked (remote repo, cannot determine lock time)");
+					$repo_info->{locked_for} = undef;
+				} else {
+					log_verbose($repo, "Repo is locked, lock file not found locally");
+					$repo_info->{locked_for} = undef;
+				}
 			} else {
 				$repo_info->{error} = $error;
+				log_error($repo, "ERROR: $error");
 			}
-		} else {
-			if ( defined( $info->{cache} ) && defined( $info->{cache}{stats} ) ) {
-				for my $stat (@stats) {
-					$repo_info->{$stat} = $info->{cache}{stats}{$stat};
+		}
+	} else {
+		if ( defined( $info->{cache} ) && defined( $info->{cache}{stats} ) ) {
+			for my $stat (@stats) {
+				$repo_info->{$stat} = $info->{cache}{stats}{$stat} + 0;
+			}
+			log_verbose($repo, "Stats: total_size=" . $repo_info->{total_size} . ", total_csize=" . $repo_info->{total_csize});
+		}
+	}
+
+	if ( !defined( $repo_info->{error} ) && !$repo_info->{locked} ) {
+		my $list_cmd = 'borg list ' . shell_quote($repo_path) . ' --json --last 1 2>&1';
+		if ($timeout > 0) {
+			$list_cmd = 'timeout ' . $timeout . ' ' . $list_cmd;
+		}
+		# Execute the borg list command and measure execution time
+		my $list_start = time;
+		
+		my $list_output = `$list_cmd`;
+		my $list_elapsed = time - $list_start;
+		log_verbose($repo, "List Runtime: $list_elapsed seconds");
+
+		my $list_info;
+		eval { $list_info = decode_json($list_output); };
+		if (!$@ && defined($list_info->{archives}) && scalar(@{$list_info->{archives}}) > 0) {
+			my $archive = $list_info->{archives}[0];
+			my $archive_time = $archive->{time};
+			if ($archive_time =~ /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/) {
+				my $archive_timestamp = timelocal($6, $5, $4, $3, $2-1, $1-1900);
+				my $time_diff = time - $archive_timestamp;
+				$repo_info->{time_since_last_modified} = $time_diff;
+				log_verbose($repo, "Last archive: $archive_time");
+				log_verbose($repo, "Time since last modified: $time_diff seconds");
+				if ( !defined( $to_return->{data}{totals}{time_since_last_modified} )
+					|| $to_return->{data}{totals}{time_since_last_modified} < $time_diff )
+				{
+					$to_return->{data}{totals}{time_since_last_modified} = $time_diff;
 				}
 			}
+		} else {
+			log_warn($repo, "Could not get archive list, skipping time_since_last_modified");
 		}
+	} else {
+		log_error($repo, "Repo has error or is locked, skipping time_since_last_modified");
+	}
 
-		for my $total (@totals) {
-			$to_return->{data}{totals}{$total} = $to_return->{data}{totals}{$total} + $repo_info->{$total};
-		}
+	for my $total (@totals) {
+		$to_return->{data}{totals}{$total} = $to_return->{data}{totals}{$total} + $repo_info->{$total};
+	}
 
-		if ( defined( $repo_info->{error} ) ) {
-			$to_return->{data}{totals}{errored}++;
-		}
+	if ( defined( $repo_info->{error} ) ) {
+		$to_return->{data}{totals}{errored}++;
+	}
 
-		if ( !defined( $to_return->{data}{totals}{locked_for} )
-			|| $to_return->{data}{totals}{locked_for} < $repo_info->{locked_for} )
-		{
-			$to_return->{data}{totals}{locked_for} = $repo_info->{locked_for};
-		}
-	} ## end if ($process)
+	if ( !defined( $to_return->{data}{totals}{locked_for} )
+		|| ( defined($repo_info->{locked_for}) && $to_return->{data}{totals}{locked_for} < $repo_info->{locked_for} ) )
+	{
+		$to_return->{data}{totals}{locked_for} = $repo_info->{locked_for};
+	}
 
 	$to_return->{data}{repos}{$repo} = $repo_info;
-} ## end foreach my $repo (@repos)
+	log_info($repo, "Finished processing");
+}
 
-finish( to_return => $to_return );
+log_verbose("MAIN: Totals:");
+log_verbose("MAIN:   errored: " . $to_return->{data}{totals}{errored});
+log_verbose("MAIN:   locked: " . $to_return->{data}{totals}{locked});
+log_verbose("MAIN:   total_size: " . $to_return->{data}{totals}{total_size});
+log_verbose("MAIN:   total_csize: " . $to_return->{data}{totals}{total_csize});
+
+finish( to_return => $to_return, pretty => $pretty );
