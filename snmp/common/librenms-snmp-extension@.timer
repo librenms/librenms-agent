@@ -1,0 +1,14 @@
+# SNMP common extension cache.
+[Unit]
+Description=Run LibreNMS SNMP extension cache refresh: %i
+Documentation=https://github.com/librenms/librenms-agent/tree/master/snmp/common
+Documentation=https://github.com/librenms/librenms-agent/tree/master/snmp/%i
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

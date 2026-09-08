@@ -1,0 +1,1312 @@
+#!/usr/bin/env python3
+# (c) 2026, LibreNMS
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# Self-contained net-snmp pass_persist agent for MDADM-MIB
+#
+# Collects Linux software RAID status directly from sysfs and mdadm(8),
+# and serves all MDADM-MIB objects via the SNMP pass_persist protocol.
+# No cache file, cron job, or systemd timer is needed.
+#
+# snmpd.conf example:
+#   pass_persist .1.3.6.1.4.1.60652.101 /usr/local/lib/snmpd/mdadm
+#
+# Data is refreshed in-process at most once per --ttl seconds (default 60).
+#
+# OID structure (MDADM-MIB, enterprise 1.3.6.1.4.1.60652.101):
+#   .1.1.*               metadata scalars
+#   .1.2/.1.3            array-meta  RowCount / LastChange
+#   .1.4.1.<c>.<a>       array meta table (22 cols)
+#   .1.5/.1.6            array-health RowCount / LastChange
+#   .1.7.1.<c>.<a>       array health table (19 cols)
+#   .1.8/.1.9            array-sync  RowCount / LastChange
+#   .1.10.1.<c>.<a>      array sync table (10 cols)
+#   .1.11/.1.12          device-meta  RowCount / LastChange
+#   .1.13.1.<c>.<a>.<m>  device meta table (11 cols, dual-indexed)
+#   .1.14/.1.15          device-health RowCount / LastChange
+#   .1.16.1.<c>.<a>.<m>  device health table (10 cols, dual-indexed)
+
+import argparse
+import bisect
+import json
+import logging
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from typing import Optional
+
+# --------------------------------------------------------------------------
+# Versioning and logging
+# --------------------------------------------------------------------------
+
+VERSION = 3
+
+VERBOSE = 15
+NOTICE  = 25
+logging.addLevelName(VERBOSE, "VERBOSE")
+logging.addLevelName(NOTICE,  "NOTICE")
+
+
+def _verbose(self, message, *args, **kws):
+    if self.isEnabledFor(VERBOSE):
+        self._log(VERBOSE, message, args, **kws)
+
+
+def _notice(self, message, *args, **kws):
+    if self.isEnabledFor(NOTICE):
+        self._log(NOTICE, message, args, **kws)
+
+
+logging.Logger.verbose = _verbose
+logging.Logger.notice  = _notice
+
+LOGGER = logging.getLogger("mdadm")
+
+# --------------------------------------------------------------------------
+# SNMP constants
+# --------------------------------------------------------------------------
+
+BASE_OID  = (1, 3, 6, 1, 4, 1, 60652, 101)
+CACHE_TTL = 60
+
+UINT64_MAX = 18446744073709551615   # sentinel for "none" sysfs values
+UINT32_MAX = 4294967295             # sentinel for unassigned slot
+
+# --------------------------------------------------------------------------
+# Collection error codes (served in-band via mdadmError / mdadmErrorString)
+#
+# This is a pass_persist agent: snmpd keeps the process resident, so a process
+# exit code never reaches LibreNMS - it would just respawn us. Instead these
+# codes are published as the mdadmError scalar (.1.1.3) and drive what the
+# agent serves:
+#
+#   * "cleanup" codes  -> serve empty tables, so LibreNMS prunes stale sensors
+#   * "skip"    codes  -> preserve the last good data, only flag the error
+#                         (transient: sensors are kept)
+#
+# EXIT_OUTPUT_WRITE_FAILURE (4) from the one-shot script convention has no
+# analogue here - there is no output file in pass_persist mode - so it is
+# intentionally omitted.
+# --------------------------------------------------------------------------
+
+EXIT_SUCCESS               = 0   # all arrays collected cleanly
+EXIT_DEPENDENCY_MISSING    = 1   # mdadm binary not in $PATH        (cleanup)
+EXIT_NO_ARRAYS             = 2   # auto-discovery found no arrays   (cleanup)
+EXIT_PERMISSION_DENIED     = 3   # /sys/block unreadable            (skip)
+EXIT_CONFIG_ERROR          = 5   # configured device missing name   (skip)
+EXIT_PARTIAL_FAILURE       = 6   # some arrays had read errors      (data served)
+EXIT_NO_CONFIGURED_DEVICES = 7   # configured devices, none in sysfs(cleanup)
+
+# Codes that mean "no usable data" - serve empty tables so LibreNMS removes
+# any sensors and DB records left from a previous run.
+_CLEANUP_CODES = frozenset((
+    EXIT_DEPENDENCY_MISSING,
+    EXIT_NO_ARRAYS,
+    EXIT_NO_CONFIGURED_DEVICES,
+))
+
+
+class CollectionError(Exception):
+    """A collection failure that maps to an mdadmError code."""
+
+    def __init__(self, code: int, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+# --------------------------------------------------------------------------
+# Textual Convention enum maps (MDADM-MIB)
+# --------------------------------------------------------------------------
+
+_RAID_LEVEL = {
+    "linear": 1, "raid0": 2, "raid1": 3, "raid4": 4,
+    "raid5": 5, "raid6": 6, "raid10": 10,
+}
+
+_ARRAY_STATE = {
+    "clear": 1, "inactive": 2, "suspended": 3, "readonly": 4,
+    "read-auto": 5, "clean": 6, "active": 7,
+    "write-pending": 8, "active-idle": 9, "degraded": 10, "failed": 11,
+}
+
+_SYNC_ACTION = {
+    "idle": 0, "resync": 1, "recover": 2, "check": 3,
+    "repair": 4, "reshape": 5,
+}
+
+_DEVICE_ROLE = {
+    "unknown": 0, "active": 1, "spare": 2, "faulty": 3,
+    "missing": 4, "write-mostly": 5, "writemostly": 5, "replacement": 6,
+    "failed": 3,
+}
+
+_CONSISTENCY_POLICY = {
+    "resync": 1, "journal": 2, "ppl": 3, "none": 4, "bitmap": 5,
+}
+
+# ==========================================================================
+# Part 1 - Data collection (sysfs + mdadm commands)
+# ==========================================================================
+
+def _run(argv):
+    LOGGER.debug("run: %s", " ".join(argv))
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True)
+    except FileNotFoundError:
+        return 127, "", "command not found", None
+    LOGGER.debug("rc=%s", proc.returncode)
+    if proc.stdout:
+        LOGGER.debug("stdout: %s", proc.stdout[:500])
+    if proc.stderr:
+        LOGGER.debug("stderr: %s", proc.stderr[:200])
+    return proc.returncode, (proc.stdout or ""), (proc.stderr or ""), proc
+
+
+# Actionable message surfaced (via mdadmErrorString) when the agent can run
+# neither `sudo mdadm --detail` nor `sudo mdadm -E`. Arrays are still served
+# from sysfs, so this is a partial - not fatal - condition.
+_SUDO_DENIED_MSG = ("sudo mdadm access denied - install the sudoers rule "
+                    "(see sudoers.d-mdadm); array/device enrichment skipped")
+
+# stderr fragments that mean "sudo refused", as opposed to a genuine mdadm error.
+_SUDO_DENIED_MARKERS = (
+    "a password is required",
+    "is not allowed to execute",
+    "no tty present",
+    "a terminal is required",
+    "may not run sudo",
+    "command not allowed",
+)
+
+
+def _is_sudo_denied(rc: int, stderr: str) -> bool:
+    """True when a `sudo` invocation failed because access was refused (or the
+    sudo binary is absent), rather than because the wrapped command errored."""
+    if rc == 0:
+        return False
+    s = (stderr or "").lower()
+    if "command not found" in s:        # sudo binary itself is missing
+        return True
+    return "sudo:" in s or any(m in s for m in _SUDO_DENIED_MARKERS)
+
+
+def _read_file(path: str) -> Optional[str]:
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return None  # expected for optional sysfs nodes - not worth logging
+    except (PermissionError, OSError) as exc:
+        LOGGER.warning("read error %s: %s", path, exc)
+        return None
+
+
+def _maybe_get(path: str) -> str:
+    v = _read_file(path)
+    return "none" if v is None or v == "none" else v
+
+
+def _maybe_get_int(path: str, default: int = 0) -> int:
+    v = _read_file(path)
+    if v is None or v == "none":
+        return default
+    try:
+        return int(v)
+    except ValueError:
+        return default
+
+
+def _maybe_get_float(path: str, default: float = 0.0) -> float:
+    v = _read_file(path)
+    if v is None or v == "none":
+        return default
+    try:
+        return float(v)
+    except ValueError:
+        return default
+
+
+def _maybe_get_int64_or_none(path: str) -> Optional[int]:
+    v = _read_file(path)
+    if v is None or v == "none":
+        return None
+    try:
+        iv = int(v)
+        return None if iv == UINT64_MAX else iv
+    except ValueError:
+        return None
+
+
+def _uuid_normalize(s: str) -> str:
+    return s.strip().replace(" ", "-").replace(":", "-")
+
+
+def _parse_bool(value: str) -> Optional[bool]:
+    v = value.strip().lower()
+    if v in ("true", "yes", "1", "on"):
+        return True
+    if v in ("false", "no", "0", "off"):
+        return False
+    return None
+
+
+def _get_udev_info(device_name: str) -> dict:
+    rc, stdout, _, _ = _run([
+        "udevadm", "info", "--query=property",
+        "--property=ID_SERIAL_SHORT,ID_MODEL",
+        f"/dev/{device_name}",
+    ])
+    if rc != 0 or not stdout:
+        LOGGER.debug("udevadm: no info for %s (rc=%s)", device_name, rc)
+        return {}
+    result = {}
+    for line in stdout.splitlines():
+        if "=" in line:
+            key, _, val = line.partition("=")
+            if key == "ID_SERIAL_SHORT":
+                result["id_serial_short"] = val.strip()
+            elif key == "ID_MODEL":
+                result["id_model"] = val.strip()
+    LOGGER.debug("udevadm %s: model=%r serial=%r",
+                 device_name, result.get("id_model"), result.get("id_serial_short"))
+    return result
+
+
+def _discover_arrays(config_devices=None):
+    if config_devices:
+        found = []
+        for dev in config_devices:
+            if isinstance(dev, dict):
+                name = dev.get("name")
+                if not name:
+                    raise CollectionError(
+                        EXIT_CONFIG_ERROR,
+                        "configured device entry is missing the 'name' field")
+            else:
+                name = str(dev)
+            if os.path.isdir(f"/sys/block/{name}/md"):
+                found.append(name)
+            else:
+                LOGGER.warning("configured device %s not found in sysfs", name)
+        if not found:
+            raise CollectionError(
+                EXIT_NO_CONFIGURED_DEVICES,
+                "configured devices listed but none exist in sysfs")
+        LOGGER.debug("discover (config): %s", found)
+        return sorted(found)
+
+    arrays = []
+    try:
+        entries = os.listdir("/sys/block")
+    except (PermissionError, OSError) as exc:
+        raise CollectionError(
+            EXIT_PERMISSION_DENIED, f"/sys/block is unreadable: {exc}")
+    for entry in entries:
+        if os.path.isdir(f"/sys/block/{entry}/md"):
+            arrays.append(entry)
+    if not arrays:
+        raise CollectionError(EXIT_NO_ARRAYS, "no mdadm arrays found in sysfs")
+    LOGGER.debug("discover (auto): %s", sorted(arrays))
+    return sorted(arrays)
+
+
+def _read_sysfs_array(md_name: str) -> dict:
+    LOGGER.debug("reading sysfs for %s", md_name)
+    base   = f"/sys/block/{md_name}/md"
+    bm     = f"{base}/bitmap"
+    size_s = _maybe_get_int(f"/sys/block/{md_name}/size")
+    result = {
+        "name":               md_name,
+        "uuid":               _maybe_get(f"{base}/uuid"),
+        "level":              _maybe_get(f"{base}/level"),
+        "array_state":        _maybe_get(f"{base}/array_state"),
+        "sync_action":        _maybe_get(f"{base}/sync_action"),
+        "last_sync_action":   _maybe_get(f"{base}/last_sync_action"),
+        "sync_completed_raw": _maybe_get(f"{base}/sync_completed"),
+        "sync_speed_raw":     _maybe_get(f"{base}/sync_speed"),
+        "sync_speed_min_raw": _maybe_get(f"{base}/sync_speed_min"),
+        "sync_speed_max_raw": _maybe_get(f"{base}/sync_speed_max"),
+        "sync_min":           _maybe_get(f"{base}/sync_min"),
+        "sync_max":           _maybe_get(f"{base}/sync_max"),
+        "raid_disks":         _maybe_get_int(f"{base}/raid_disks"),
+        "degraded":           _maybe_get_int(f"{base}/degraded"),
+        "mismatch_cnt":       _maybe_get_int(f"{base}/mismatch_cnt"),
+        "metadata_version":   _maybe_get(f"{base}/metadata_version"),
+        "consistency_policy": _maybe_get(f"{base}/consistency_policy"),
+        "component_size":     _maybe_get_int(f"{base}/component_size"),
+        "chunk_size":         _maybe_get_int(f"{base}/chunk_size"),
+        "layout":             _maybe_get_int(f"{base}/layout"),
+        "safe_mode_delay":    _maybe_get_float(f"{base}/safe_mode_delay"),
+        "bitmap_type":        _maybe_get(f"{base}/bitmap_type"),
+        "size_blocks":        size_s,
+        "size_bytes":         size_s * 512 if size_s else 0,
+        "bitmap": {
+            "location":        _maybe_get(f"{bm}/location"),
+            "chunksize":       _maybe_get_int(f"{bm}/chunksize"),
+            "time_base":       _maybe_get_int(f"{bm}/time_base"),
+            "backlog":         _maybe_get_int(f"{bm}/backlog"),
+            "max_backlog_used":_maybe_get_int(f"{bm}/max_backlog_used"),
+            "metadata":        _maybe_get(f"{bm}/metadata"),
+            "space":           _maybe_get_int(f"{bm}/space"),
+            "can_clear":       _maybe_get(f"{bm}/can_clear"),
+        },
+    }
+    LOGGER.debug("%s sysfs: level=%s state=%s degraded=%s raid_disks=%s size_bytes=%s",
+                 md_name, result["level"], result["array_state"],
+                 result["degraded"], result["raid_disks"], result["size_bytes"])
+    return result
+
+
+def _read_sysfs_queue(md_name: str) -> dict:
+    base = f"/sys/block/{md_name}/queue"
+    return {
+        "logical_block_size": _maybe_get_int(f"{base}/logical_block_size"),
+        "physical_block_size":_maybe_get_int(f"{base}/physical_block_size"),
+        "hw_sector_size":     _maybe_get_int(f"{base}/hw_sector_size"),
+        "max_sectors_kb":     _maybe_get_int(f"{base}/max_sectors_kb"),
+        "rotational":         bool(_maybe_get_int(f"{base}/rotational")),
+        "write_cache":        _maybe_get(f"{base}/write_cache"),
+    }
+
+
+def _read_sysfs_devices(md_name: str) -> dict:
+    base    = f"/sys/block/{md_name}/md"
+    devices = {}
+    try:
+        entries = os.listdir(base)
+    except (PermissionError, OSError) as exc:
+        LOGGER.debug("listdir %s failed: %s", base, exc)
+        return devices
+
+    for entry in entries:
+        if not entry.startswith("dev-"):
+            continue
+        dev_name = entry[4:]
+        dev_base = os.path.join(base, entry)
+        state_raw  = _read_file(f"{dev_base}/state") or ""
+        state_flags = [s.strip() for s in state_raw.split(",") if s.strip()]
+        slot_raw   = _read_file(f"{dev_base}/slot") or ""
+        slot = int(slot_raw) if slot_raw and slot_raw != "none" else None
+        size_kib = _maybe_get_int(f"{dev_base}/size")
+        devices[entry] = {
+            "device_name":           dev_name,
+            "slot":                  slot,
+            "state":                 state_raw.replace(",", " ").strip() or "unknown",
+            "state_flags":           state_flags,
+            "errors":                _maybe_get_int(f"{dev_base}/errors"),
+            "size_blocks":           size_kib,
+            "size_bytes":            size_kib * 1024,
+            "offset_blocks":         _maybe_get_int(f"{dev_base}/offset"),
+            "recovery_start_blocks": _maybe_get_int64_or_none(f"{dev_base}/recovery_start"),
+            "is_missing":            False,
+            "udev":                  _get_udev_info(dev_name),
+        }
+        LOGGER.debug("%s device %s: slot=%s state=%s errors=%s size_bytes=%s",
+                     md_name, dev_name, slot, state_raw or "unknown",
+                     devices[entry]["errors"], devices[entry]["size_bytes"])
+    return devices
+
+
+def _normalize_sync_completed(raw: str, action: str, degraded: int) -> float:
+    if "/" in raw:
+        try:
+            done, total = raw.split("/", 1)
+            total_f = float(total)
+            return round(100.0 * float(done) / total_f, 2) if total_f > 0 else 0.0
+        except (ValueError, ZeroDivisionError):
+            return 0.0
+    if raw == "none":
+        return 100.0 if action == "idle" and degraded == 0 else 0.0
+    try:
+        val = float(raw)
+        return 100.0 if val == 0 and action == "idle" and degraded == 0 else round(val, 2)
+    except ValueError:
+        return 0.0
+
+
+def _sync_done_total_bytes(raw: str):
+    if "/" not in raw:
+        return 0, 0
+    try:
+        done_s, total_s = raw.split("/", 1)
+        return int(done_s.strip()) * 512, int(total_s.strip()) * 512
+    except (ValueError, IndexError):
+        return 0, 0
+
+
+def _normalize_sync_speed(raw: str) -> int:
+    if not raw or raw == "none":
+        return 0
+    m = re.match(r"^\s*(\d+)", raw)
+    if m:
+        return int(m.group(1)) * 1024
+    try:
+        return int(float(raw))
+    except ValueError:
+        return 0
+
+
+def _parse_mdadm_detail(md_name: str):
+    """Returns (data, error_message). On success error_message is None; on
+    failure data is None and error_message describes why (sudo denial is
+    reported with an actionable, host-wide message)."""
+    LOGGER.debug("running mdadm --detail /dev/%s", md_name)
+    rc, stdout, stderr, _ = _run(["sudo", "-n", "mdadm", "--detail", f"/dev/{md_name}"])
+    if rc != 0:
+        if _is_sudo_denied(rc, stderr):
+            LOGGER.warning("sudo mdadm --detail denied for %s: %s",
+                           md_name, stderr.strip()[:200])
+            return None, _SUDO_DENIED_MSG
+        LOGGER.warning("mdadm --detail failed for %s: %s", md_name, stderr[:200])
+        return None, "mdadm --detail failed"
+
+    data: dict = {
+        "uuid": None, "array_name": None, "raid_level": None,
+        "active_devices": None, "working_devices": None,
+        "failed_devices": None, "spare_devices": None,
+        "state": None, "read_errors": [],
+    }
+
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line or ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        key, value = key.strip(), value.strip()
+        if key == "Name":
+            nv = value.split("(")[0].strip()
+            data["array_name"] = nv.split(":", 1)[-1].strip() if ":" in nv else nv
+        elif key == "Raid Level":
+            data["raid_level"] = value
+        elif key == "State":
+            data["state"] = value
+        elif key == "UUID":
+            data["uuid"] = _uuid_normalize(value)
+        elif key == "Active Devices":
+            try: data["active_devices"] = int(value)
+            except ValueError: pass
+        elif key == "Working Devices":
+            try: data["working_devices"] = int(value)
+            except ValueError: pass
+        elif key == "Failed Devices":
+            try: data["failed_devices"] = int(value)
+            except ValueError: pass
+        elif key == "Spare Devices":
+            try: data["spare_devices"] = int(value)
+            except ValueError: pass
+
+    LOGGER.debug("mdadm --detail %s: state=%r active=%s working=%s failed=%s spare=%s",
+                 md_name, data["state"], data["active_devices"], data["working_devices"],
+                 data["failed_devices"], data["spare_devices"])
+    return data, None
+
+
+def _parse_mdadm_examine(member_path: str):
+    """Returns (data, sudo_denied). data is None when no superblock is readable;
+    sudo_denied is True specifically when sudo refused the call."""
+    LOGGER.debug("running mdadm -E %s", member_path)
+    rc, stdout, stderr, _ = _run(["sudo", "-n", "mdadm", "-E", member_path])
+    if rc != 0:
+        denied = _is_sudo_denied(rc, stderr)
+        LOGGER.debug("mdadm -E %s: rc=%s denied=%s (no superblock or permission denied)",
+                     member_path, rc, denied)
+        return None, denied
+    data: dict = {"device_uuid": None, "events": None}
+    for line in stdout.splitlines():
+        if ":" not in line:
+            continue
+        key, _, value = line.strip().partition(":")
+        key, value = key.strip(), value.strip()
+        if key == "Device UUID":
+            data["device_uuid"] = _uuid_normalize(value)
+        elif key == "Events":
+            try: data["events"] = int(value)
+            except ValueError: pass
+    LOGGER.debug("mdadm -E %s: device_uuid=%r events=%s",
+                 member_path, data["device_uuid"], data["events"])
+    return data, False
+
+
+def _collect_uris(md_name: str) -> list:
+    uris = [f"/dev/{md_name}"]
+    target = os.path.realpath(f"/dev/{md_name}")
+    by_id = "/dev/disk/by-id"
+    try:
+        for entry in sorted(os.listdir(by_id)):
+            link = os.path.join(by_id, entry)
+            try:
+                if os.path.realpath(link) == target:
+                    uris.append(link)
+            except OSError:
+                pass
+    except OSError:
+        pass
+    LOGGER.debug("%s uris: %s", md_name, uris)
+    return uris
+
+
+def _read_array_usage(md_name: str) -> dict:
+    expected = {f"/dev/{md_name}", os.path.realpath(f"/dev/{md_name}")}
+    mounts, swaps = [], []
+    try:
+        with open("/proc/mounts") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 2 and os.path.realpath(parts[0]) in expected:
+                    mounts.append(parts[1])
+    except OSError:
+        pass
+    try:
+        with open("/proc/swaps") as f:
+            for i, line in enumerate(f):
+                if i == 0:
+                    continue
+                parts = line.split()
+                if parts and os.path.realpath(parts[0]) in expected:
+                    swaps.append(parts[0])
+    except OSError:
+        pass
+    mounts = sorted(set(mounts))
+    swaps  = sorted(set(swaps))
+    LOGGER.debug("%s usage: mounts=%s swaps=%s", md_name, mounts, swaps)
+    return {
+        "mount": {"is_mounted": bool(mounts), "mount_points": mounts},
+        "swap":  {"is_enabled": bool(swaps),  "devices": swaps},
+    }
+
+
+def _derive_device_role(dev_entry: dict) -> str:
+    flags = set(dev_entry.get("state_flags", []))
+    if dev_entry.get("is_missing"):
+        role = "missing"
+    elif "faulty" in flags or "blocked" in flags:
+        role = "faulty"
+    elif "spare" in flags:
+        role = "spare"
+    elif "in_sync" in flags:
+        role = "active"
+    else:
+        state = (dev_entry.get("state") or "").lower()
+        role = "active" if "active" in state or "sync" in state else "unknown"
+    LOGGER.debug("device %s: flags=%s -> role=%s",
+                 dev_entry.get("device_name", "?"), flags, role)
+    return role
+
+
+def _collect_arrays(config_devices=None) -> dict:
+    arrays = {}
+    sudo_denied = False   # host-wide: once sudo refuses, skip further attempts
+    for md_name in _discover_arrays(config_devices=config_devices):
+        LOGGER.notice("processing array %s", md_name)
+
+        sysfs   = _read_sysfs_array(md_name)
+        sysdevs = _read_sysfs_devices(md_name)
+        usage   = _read_array_usage(md_name)
+        queue   = _read_sysfs_queue(md_name)
+        if sudo_denied:
+            detail, detail_err = None, _SUDO_DENIED_MSG
+        else:
+            detail, detail_err = _parse_mdadm_detail(md_name)
+            if detail_err is _SUDO_DENIED_MSG:
+                sudo_denied = True
+
+        sync_done, sync_total = _sync_done_total_bytes(sysfs.get("sync_completed_raw", "none"))
+        bitmap = sysfs.get("bitmap", {}).copy()
+        cc = bitmap.get("can_clear")
+        parsed_cc = _parse_bool(cc) if isinstance(cc, str) else None
+        if parsed_cc is not None:
+            bitmap["can_clear"] = parsed_cc
+
+        chunk = sysfs.get("chunk_size") or 0
+
+        arr = {
+            "name":               md_name,
+            "array_name":         None,
+            "uuid":               sysfs.get("uuid", "none"),
+            "raid_level":         sysfs.get("level", "none"),
+            "state":              sysfs.get("array_state", "unknown"),
+            "degraded":           sysfs.get("degraded", 0),
+            "raid_disks":         sysfs.get("raid_disks", 0),
+            "active_devices":     0,
+            "working_devices":    0,
+            "failed_devices":     0,
+            "spare_devices":      0,
+            "size_bytes":         sysfs.get("size_bytes", 0),
+            "array_size_blocks":  sysfs.get("size_blocks", 0),
+            "metadata_version":   sysfs.get("metadata_version", "unknown"),
+            "consistency_policy": sysfs.get("consistency_policy", "unknown"),
+            "mismatch_cnt":       sysfs.get("mismatch_cnt", 0),
+            "chunk_size":         chunk,
+            "layout":             sysfs.get("layout", 0),
+            "safe_mode_delay_sec":sysfs.get("safe_mode_delay", 0.0),
+            "bitmap_type":        sysfs.get("bitmap_type"),
+            "bitmap":             bitmap,
+            "sync": {
+                "action":       sysfs.get("sync_action", "idle"),
+                "last_action":  sysfs.get("last_sync_action", "idle"),
+                "completed_pct":_normalize_sync_completed(
+                    sysfs.get("sync_completed_raw", "none"),
+                    sysfs.get("sync_action", "idle"),
+                    sysfs.get("degraded", 0)),
+                "done_bytes":   sync_done,
+                "total_bytes":  sync_total,
+                "speed_bps":    _normalize_sync_speed(sysfs.get("sync_speed_raw", "none")),
+                "speed_min_bps":_normalize_sync_speed(sysfs.get("sync_speed_min_raw", "none")),
+                "speed_max_bps":_normalize_sync_speed(sysfs.get("sync_speed_max_raw", "none")),
+                "min":          sysfs.get("sync_min", "0"),
+                "max":          sysfs.get("sync_max", "max"),
+            },
+            "read_errors": [],
+            "queue":  queue,
+            "usage":  usage,
+            "uris":   _collect_uris(md_name),
+        }
+
+        if detail:
+            if detail.get("uuid"):        arr["uuid"]            = detail["uuid"]
+            if detail.get("array_name"):  arr["array_name"]      = detail["array_name"]
+            if detail.get("raid_level"):  arr["raid_level"]      = detail["raid_level"]
+            if detail.get("active_devices")  is not None: arr["active_devices"]  = detail["active_devices"]
+            if detail.get("working_devices") is not None: arr["working_devices"] = detail["working_devices"]
+            if detail.get("failed_devices")  is not None: arr["failed_devices"]  = detail["failed_devices"]
+            if detail.get("spare_devices")   is not None: arr["spare_devices"]   = detail["spare_devices"]
+            if detail.get("state") and arr["state"] == "unknown":
+                arr["state"] = detail["state"]
+        elif detail_err:
+            arr["read_errors"].append(detail_err)
+
+        # Derive device counts from sysfs if mdadm --detail didn't supply them
+        if arr["active_devices"] == 0 and arr["working_devices"] == 0 and sysdevs:
+            for dv in sysdevs.values():
+                flags = set(dv.get("state_flags", []))
+                if "faulty" in flags or "blocked" in flags:
+                    arr["failed_devices"] += 1
+                elif "spare" in flags:
+                    arr["spare_devices"] += 1
+                elif "in_sync" in flags or "active" in (dv.get("state") or "").lower():
+                    arr["active_devices"] += 1
+            arr["working_devices"] = arr["active_devices"] + arr["spare_devices"]
+            LOGGER.debug("%s: derived device counts from sysfs: active=%d working=%d spare=%d failed=%d",
+                         md_name, arr["active_devices"], arr["working_devices"],
+                         arr["spare_devices"], arr["failed_devices"])
+
+        # Build devices section
+        devices = {}
+        for dev_key, dv in sysdevs.items():
+            entry = {
+                "device_name":           dv["device_name"],
+                "slot":                  dv.get("slot"),
+                "state":                 dv.get("state", "unknown"),
+                "state_flags":           dv.get("state_flags", []),
+                "errors":                dv.get("errors", 0),
+                "size_blocks":           dv.get("size_blocks"),
+                "size_bytes":            dv.get("size_bytes"),
+                "offset_blocks":         dv.get("offset_blocks"),
+                "recovery_start_blocks": dv.get("recovery_start_blocks"),
+                "is_missing":            dv.get("is_missing", False),
+                "id_serial_short":       None,
+                "id_model":              None,
+                "device_uuid":           None,
+                "events":                None,
+                "read_errors":           [],
+            }
+            entry["device_role"] = _derive_device_role(entry)
+            udev = dv.get("udev", {})
+            entry["id_serial_short"] = udev.get("id_serial_short")
+            entry["id_model"]        = udev.get("id_model")
+
+            # Enrich with mdadm -E (superblock info), unless sudo already refused
+            if not sudo_denied:
+                examine, denied = _parse_mdadm_examine(f"/dev/{dv['device_name']}")
+                if denied:
+                    sudo_denied = True
+                    if _SUDO_DENIED_MSG not in arr["read_errors"]:
+                        arr["read_errors"].append(_SUDO_DENIED_MSG)
+                elif examine:
+                    if examine.get("device_uuid"): entry["device_uuid"] = examine["device_uuid"]
+                    if examine.get("events") is not None: entry["events"] = examine["events"]
+
+            devices[dev_key] = entry
+
+        uuid = arr.get("uuid", "none")
+        if not uuid or uuid == "none":
+            uuid = md_name
+        arrays[uuid] = {"array": arr, "devices": devices}
+
+    return arrays
+
+
+def _build_counters(arrays: dict) -> dict:
+    counters = {
+        "arrays":          len(arrays),
+        "devices_total":   sum(len(v["devices"]) for v in arrays.values()),
+        "degraded_arrays": sum(1 for v in arrays.values() if v["array"].get("degraded", 0) > 0),
+        "arrays_syncing":  sum(
+            1 for v in arrays.values()
+            if v["array"].get("sync", {}).get("action", "idle") not in ("idle", "check")
+        ),
+    }
+    LOGGER.debug("counters: %s", counters)
+    return counters
+
+
+def _classify_partial(arrays: dict) -> tuple:
+    """Scan collected arrays for non-fatal read errors.
+
+    Returns (EXIT_PARTIAL_FAILURE, message) when any array or member device
+    recorded a read error - the data is still served - otherwise
+    (EXIT_SUCCESS, "")."""
+    msgs = []
+    seen = set()
+
+    def _add(msg):
+        if msg not in seen:
+            seen.add(msg)
+            msgs.append(msg)
+
+    # Host-wide sudo denial is reported once, not once per array.
+    if any(_SUDO_DENIED_MSG in a.get("array", {}).get("read_errors", [])
+           for a in arrays.values()):
+        _add(_SUDO_DENIED_MSG)
+
+    for uuid, adata in arrays.items():
+        arr  = adata.get("array", {})
+        name = arr.get("name", uuid)
+        for err in arr.get("read_errors", []):
+            if err is _SUDO_DENIED_MSG:
+                continue
+            _add(f"{name}: {err}")
+        for dkey, dev in adata.get("devices", {}).items():
+            for err in dev.get("read_errors", []):
+                _add(f"{name}/{dev.get('device_name', dkey)}: {err}")
+    if msgs:
+        summary = "; ".join(msgs[:5])
+        if len(msgs) > 5:
+            summary += f"; (+{len(msgs) - 5} more)"
+        return EXIT_PARTIAL_FAILURE, summary
+    return EXIT_SUCCESS, ""
+
+# ==========================================================================
+# Part 2 - SNMP type helpers
+# ==========================================================================
+
+def _truthvalue(b) -> tuple:
+    return ("integer", "1" if b else "2")
+
+def _gauge(v) -> tuple:
+    return ("gauge", str(int(v) if v is not None else 0))
+
+def _counter64(v) -> tuple:
+    return ("counter64", str(int(v) if v is not None else 0))
+
+def _string(v) -> tuple:
+    return ("string", "" if v is None else str(v))
+
+def _integer(v) -> tuple:
+    return ("integer", str(int(v) if v is not None else 0))
+
+def _datetimeval(dt: datetime) -> tuple:
+    # DisplayString ISO 8601 - pass_persist string type is reliable for text.
+    # hex-string OctetString for DateAndTime TC is silently dropped by some
+    # net-snmp versions before the value reaches the requesting client.
+    return ("string", dt.isoformat())
+
+def _map(table: dict, s) -> int:
+    return table.get(str(s).lower().strip(), 0)
+
+def _fnv1a_32(data: bytes) -> int:
+    """32-bit FNV-1a hash of a byte string; always returns a value in 1..4294967294."""
+    h = 0x811c9dc5
+    for b in data:
+        h ^= b
+        h = (h * 0x01000193) & 0xFFFFFFFF
+    return h or 1  # 0 is not a valid table index
+
+
+def _probe_index(seed: int, used: set) -> int:
+    """Linear-probe for a free slot starting from seed."""
+    idx = seed or 1
+    while idx in used:
+        idx = (idx % (UINT32_MAX - 1)) + 1
+    return idx
+
+
+def _map_bitmap_type(arr: dict) -> int:
+    bitmap = arr.get("bitmap", {})
+    if not bitmap or bitmap.get("location", "none") == "none":
+        return 0
+    raw = str(arr.get("bitmap_type", "")).lower()
+    if "llbitmap" in raw:
+        return 3
+    return 2 if str(bitmap.get("metadata", "")).lower() == "external" else 1
+
+# RAID levels with no parity/copy layout concept -> notApplicable(255)
+_LAYOUT_NA = 255
+_LAYOUT_LESS_LEVELS = {"linear", "raid0", "raid1"}
+
+
+def _map_layout(arr: dict) -> int:
+    level = str(arr.get("raid_level", "")).lower().strip()
+    if level in _LAYOUT_LESS_LEVELS:
+        return _LAYOUT_NA
+    return int(arr.get("layout", 0) or 0)
+
+
+def _sync_sector(val) -> int:
+    if val is None:
+        return UINT64_MAX
+    s = str(val).strip().lower()
+    if s in ("max", "none", ""):
+        return UINT64_MAX
+    try:
+        return int(s)
+    except ValueError:
+        return UINT64_MAX
+
+def _dev_flags(dev: dict) -> set:
+    raw = dev.get("state_flags", [])
+    if isinstance(raw, str):
+        return {f.strip() for f in raw.split(",") if f.strip()}
+    return set(raw)
+
+# ==========================================================================
+# Part 3 - OID table
+# ==========================================================================
+
+def _full(suffix: tuple) -> tuple:
+    return BASE_OID + suffix
+
+def _oid_str(full: tuple) -> str:
+    return "." + ".".join(str(x) for x in full)
+
+def _parse_oid(s: str) -> tuple:
+    s = s.strip().lstrip(".")
+    if not s:
+        return ()
+    try:
+        return tuple(int(x) for x in s.split("."))
+    except ValueError:
+        return ()
+
+
+class _State:
+    oid_keys:   list
+    oid_map:    dict
+    last_load:  float
+    ttl:        int
+    checksums:  dict   # table key -> hash() int
+    timestamps: dict   # table key -> ISO 8601 string
+    config_devices: Optional[list]   # None = auto-discover all md arrays
+
+    def __init__(self):
+        self.oid_keys   = []
+        self.oid_map    = {}
+        self.last_load  = 0.0
+        self.ttl        = CACHE_TTL
+        self.checksums  = {}
+        self.timestamps = {}
+        self.config_devices = None
+
+
+_st = _State()
+
+
+_TABLE_PREFIXES = {
+    "array_meta":    _full((1, 4, 1)),
+    "array_health":  _full((1, 7, 1)),
+    "array_sync":    _full((1, 10, 1)),
+    "device_meta":   _full((1, 13, 1)),
+    "device_health": _full((1, 16, 1)),
+}
+
+
+def _table_fingerprint(entries: list, prefix: tuple) -> int:
+    plen = len(prefix)
+    parts = sorted(
+        f"{typ}\x00{val}"
+        for oid, typ, val in entries if oid[:plen] == prefix
+    )
+    return _fnv1a_32("\x01".join(parts).encode("utf-8", errors="replace"))
+
+
+def _build(arrays: dict, counters: dict, ts: datetime,
+           error_code: int = EXIT_SUCCESS, error_string: str = "") -> None:
+    entries = []
+
+    def add(suffix, typ, val):
+        entries.append((_full(suffix), typ, val))
+
+    n_arrays  = counters.get("arrays", 0)
+    n_devices = counters.get("devices_total", 0)
+    ts_iso    = ts.isoformat()
+
+    # ---- Metadata scalars (.1.1.*) ----
+    # SNMP scalars are instantiated with a .0 suffix (e.g. mdadmVersion.0)
+    add((1,1,1,0), *_datetimeval(ts))        # mdadmLastUpdated - always current
+    add((1,1,2,0), *_gauge(VERSION))
+    add((1,1,3,0), *_gauge(error_code))      # mdadmError
+    add((1,1,4,0), *_string(error_string))   # mdadmErrorString
+    add((1,1,5,0), *_gauge(n_arrays))
+    add((1,1,6,0), *_gauge(counters.get("degraded_arrays", 0)))
+    add((1,1,7,0), *_gauge(counters.get("arrays_syncing", 0)))
+    add((1,1,8,0), *_gauge(n_devices))
+
+    # ---- Table-level RowCount scalars (LastChange filled in after fingerprinting) ----
+    add((1,2,0),  *_gauge(n_arrays))
+    add((1,5,0),  *_gauge(n_arrays))
+    add((1,8,0),  *_gauge(n_arrays))
+    add((1,11,0), *_gauge(n_devices))
+    add((1,14,0), *_gauge(n_devices))
+
+    # Sort arrays by kernel name (md0, md1 …) for stable 1-based indices
+    sorted_arrays = sorted(
+        arrays.items(),
+        key=lambda kv: kv[1].get("array", {}).get("name", kv[0]),
+    )
+
+    used_a_idx: set = set()
+    for uuid, adata in sorted_arrays:
+        arr    = adata.get("array", {})
+        devs_r = adata.get("devices", {})
+        a_idx  = _probe_index(_fnv1a_32(uuid.encode("utf-8", errors="replace")), used_a_idx)
+        used_a_idx.add(a_idx)
+        bitmap = arr.get("bitmap", {})
+        sync   = arr.get("sync", {})
+        mount  = arr.get("usage", {}).get("mount", {})
+        swap   = arr.get("usage", {}).get("swap", {})
+        queue  = arr.get("queue", {})
+
+        # Sort devices: slotted first, spares after
+        def _dev_sort(kv):
+            try:    return (0, int(kv[1].get("slot", UINT32_MAX)))
+            except: return (1, kv[0])
+
+        devs = sorted(devs_r.items(), key=_dev_sort)
+
+        # --- Array meta table  .1.4.1.<col>.<a> ---
+        T = (1, 4, 1)
+        add(T+(2,  a_idx), *_string(arr.get("uuid", uuid)))
+        add(T+(3,  a_idx), *_string(arr.get("array_name") or arr.get("name", "")))
+        add(T+(4,  a_idx), *_integer(_map(_RAID_LEVEL, arr.get("raid_level", ""))))
+        add(T+(5,  a_idx), *_string(arr.get("metadata_version", "")))
+        add(T+(6,  a_idx), *_integer(_map(_CONSISTENCY_POLICY, arr.get("consistency_policy", ""))))
+        add(T+(7,  a_idx), *_integer(_map_layout(arr)))
+        add(T+(8,  a_idx), *_gauge(arr.get("raid_disks", 0)))
+        add(T+(9,  a_idx), *_counter64(arr.get("size_bytes", 0)))
+        add(T+(10, a_idx), *_counter64(arr.get("array_size_blocks", 0)))
+        comp = arr.get("component_size_blocks",
+                       arr.get("size_bytes", 0) // 1024 if arr.get("size_bytes") else 0)
+        add(T+(11, a_idx), *_counter64(comp))
+        add(T+(12, a_idx), *_gauge(arr.get("chunk_size", 0)))
+        add(T+(13, a_idx), *_integer(_map_bitmap_type(arr)))
+        add(T+(14, a_idx), *_string(bitmap.get("location", "none")))
+        add(T+(15, a_idx), *_gauge(bitmap.get("chunksize", 0)))
+        add(T+(16, a_idx), *_string(bitmap.get("metadata", "")))
+        add(T+(17, a_idx), *_gauge(queue.get("logical_block_size", 0)))
+        add(T+(18, a_idx), *_counter64(_sync_sector(arr.get("resync_start"))))
+        add(T+(19, a_idx), *_counter64(_sync_sector(arr.get("reshape_position"))))
+        add(T+(20, a_idx), *_gauge(bitmap.get("time_base", 0)))
+        short_name = arr.get("name", "")
+        add(T+(21, a_idx), *_string(short_name))
+        add(T+(22, a_idx), *_string(" ".join(arr.get("uris", [f"/dev/{short_name}"] if short_name else []))))
+
+        # --- Array health table  .1.7.1.<col>.<a> ---
+        H = (1, 7, 1)
+        add(H+(1,  a_idx), *_integer(_map(_ARRAY_STATE, arr.get("state", ""))))
+        add(H+(2,  a_idx), *_gauge(arr.get("degraded", 0)))
+        add(H+(3,  a_idx), *_gauge(arr.get("active_devices", 0)))
+        add(H+(4,  a_idx), *_gauge(arr.get("working_devices", 0)))
+        add(H+(5,  a_idx), *_gauge(arr.get("spare_devices", 0)))
+        add(H+(6,  a_idx), *_gauge(arr.get("failed_devices", 0)))
+        add(H+(7,  a_idx), *_gauge(arr.get("mismatch_cnt", 0)))
+        add(H+(8,  a_idx), *_gauge(int(float(arr.get("safe_mode_delay_sec", 0)) * 1000)))
+        add(H+(9,  a_idx), *_truthvalue(mount.get("is_mounted", False)))
+        add(H+(10, a_idx), *_string(" ".join(mount.get("mount_points", []))))
+        add(H+(11, a_idx), *_truthvalue(swap.get("is_enabled", False)))
+        add(H+(12, a_idx), *_gauge(bitmap.get("backlog", 0)))
+        add(H+(13, a_idx), *_gauge(bitmap.get("max_backlog_used", 0)))
+        add(H+(14, a_idx), *_truthvalue(bitmap.get("can_clear", True)))
+        add(H+(15, a_idx), *_counter64(arr.get("suspend_lo", 0)))
+        add(H+(16, a_idx), *_counter64(arr.get("suspend_hi", 0)))
+        add(H+(17, a_idx), *_gauge(arr.get("stripe_cache_size", 0)))
+        add(H+(18, a_idx), *_gauge(arr.get("strip_cache_active", arr.get("stripe_cache_active", 0))))
+        jm = 1 if str(arr.get("journal_mode", "")).lower() == "write-back" else 0
+        add(H+(19, a_idx), *_integer(jm))
+
+        # --- Array sync table  .1.10.1.<col>.<a> ---
+        S = (1, 10, 1)
+        add(S+(1,  a_idx), *_integer(_map(_SYNC_ACTION, sync.get("action", "idle"))))
+        add(S+(2,  a_idx), *_integer(_map(_SYNC_ACTION, sync.get("last_action", "idle"))))
+        add(S+(3,  a_idx), *_gauge(int(float(sync.get("completed_pct", 0)) * 100)))
+        add(S+(4,  a_idx), *_counter64(sync.get("done_bytes", 0)))
+        add(S+(5,  a_idx), *_counter64(sync.get("total_bytes", 0)))
+        add(S+(6,  a_idx), *_counter64(sync.get("speed_bps", 0)))
+        add(S+(7,  a_idx), *_counter64(sync.get("speed_min_bps", 0)))
+        add(S+(8,  a_idx), *_counter64(sync.get("speed_max_bps", 0)))
+        add(S+(9,  a_idx), *_counter64(_sync_sector(sync.get("min", 0))))
+        add(S+(10, a_idx), *_counter64(_sync_sector(sync.get("max", "max"))))
+
+        # --- Per-device rows ---
+        used_m_idx: set = set()
+        for dev_key, dev in devs:
+            serial   = dev.get("id_serial_short") or ""
+            model    = dev.get("id_model") or ""
+            seed_str = f"{serial}|{model}" if (serial or model) else dev.get("device_name", dev_key)
+            m_idx    = _probe_index(_fnv1a_32(seed_str.encode("utf-8", errors="replace")), used_m_idx)
+            used_m_idx.add(m_idx)
+            fl = _dev_flags(dev)
+
+            slot_raw = dev.get("slot")
+            try:    slot_val = int(slot_raw)
+            except: slot_val = UINT32_MAX
+
+            rstart = _sync_sector(dev.get("recovery_start_blocks"))
+
+            # Device meta table  .1.13.1.<col>.<a>.<m>
+            DM = (1, 13, 1)
+            add(DM+(2,  a_idx, m_idx), *_string(dev.get("device_name", "")))
+            add(DM+(3,  a_idx, m_idx), *_string(dev.get("device_uuid", "")))
+            add(DM+(4,  a_idx, m_idx), *_gauge(slot_val))
+            add(DM+(5,  a_idx, m_idx), *_integer(_map(_DEVICE_ROLE, dev.get("device_role", ""))))
+            add(DM+(6,  a_idx, m_idx), *_string(dev.get("id_model", "")))
+            add(DM+(7,  a_idx, m_idx), *_string(dev.get("id_serial_short", "")))
+            add(DM+(8,  a_idx, m_idx), *_counter64(dev.get("size_bytes", 0)))
+            add(DM+(9,  a_idx, m_idx), *_counter64(dev.get("offset_blocks", 0)))
+            add(DM+(10, a_idx, m_idx), *_counter64(dev.get("ppl_sector", 0)))
+            add(DM+(11, a_idx, m_idx), *_counter64(dev.get("ppl_size", 0)))
+
+            # Device health table  .1.16.1.<col>.<a>.<m>
+            DH = (1, 16, 1)
+            add(DH+(1,  a_idx, m_idx), *_string(dev.get("state", "")))
+            add(DH+(2,  a_idx, m_idx), *_truthvalue(dev.get("is_missing", False)))
+            add(DH+(3,  a_idx, m_idx), *_gauge(dev.get("errors", 0)))
+            add(DH+(4,  a_idx, m_idx), *_gauge(dev.get("events", 0)))
+            add(DH+(5,  a_idx, m_idx), *_counter64(rstart))
+            add(DH+(6,  a_idx, m_idx), *_gauge(dev.get("bad_block_count", 0)))
+            add(DH+(7,  a_idx, m_idx), *_gauge(dev.get("unack_bad_block_count", 0)))
+
+    # ---- Fingerprint each table; advance LastChange only on actual change ----
+    _LC_MAP = {
+        "array_meta":    (1, 3, 0),
+        "array_health":  (1, 6, 0),
+        "array_sync":    (1, 9, 0),
+        "device_meta":   (1, 12, 0),
+        "device_health": (1, 15, 0),
+    }
+    for tname, lc_suffix in _LC_MAP.items():
+        fp = _table_fingerprint(entries, _TABLE_PREFIXES[tname])
+        if fp != _st.checksums.get(tname):
+            _st.checksums[tname]  = fp
+            _st.timestamps[tname] = ts_iso
+            LOGGER.notice("table %s changed (fingerprint %08x)", tname, fp & 0xFFFFFFFF)
+        lc_iso = _st.timestamps.get(tname, ts_iso)
+        add(lc_suffix, "string", lc_iso)
+
+    entries.sort(key=lambda e: e[0])
+    _st.oid_keys = [e[0] for e in entries]
+    _st.oid_map  = {e[0]: (e[1], e[2]) for e in entries}
+    LOGGER.debug("OID table built: %d entries", len(entries))
+
+
+def _set_error_scalar(code: int, message: str) -> None:
+    """Patch only the mdadmError / mdadmErrorString scalars on the existing
+    OID map, leaving the last good table data in place."""
+    _st.oid_map[_full((1, 1, 3, 0))] = _gauge(code)
+    _st.oid_map[_full((1, 1, 4, 0))] = _string(message)
+
+
+def _handle_collection_error(exc: CollectionError, ts: datetime) -> None:
+    LOGGER.error("collection error %d: %s", exc.code, exc.message)
+    if exc.code in _CLEANUP_CODES:
+        # No usable data - serve empty tables so LibreNMS prunes stale sensors.
+        _build({}, _build_counters({}), ts, exc.code, exc.message)
+    elif _st.oid_keys:
+        # Transient - keep the last good data, just surface the error in-band.
+        _set_error_scalar(exc.code, exc.message)
+    else:
+        # Nothing to preserve yet; serve empty tables carrying the error.
+        _build({}, _build_counters({}), ts, exc.code, exc.message)
+
+
+def _refresh() -> None:
+    now = time.monotonic()
+    if _st.oid_keys and now - _st.last_load < _st.ttl:
+        LOGGER.debug("cache hit (age=%.1fs ttl=%ds)", now - _st.last_load, _st.ttl)
+        return
+    LOGGER.notice("refreshing data (age=%.1fs ttl=%ds)",
+                  now - _st.last_load if _st.last_load else 0, _st.ttl)
+    ts       = datetime.now(timezone.utc)
+    counters = {}
+    try:
+        if shutil.which("mdadm") is None:
+            raise CollectionError(
+                EXIT_DEPENDENCY_MISSING, "mdadm binary not found in $PATH")
+        arrays   = _collect_arrays(config_devices=_st.config_devices)
+        counters = _build_counters(arrays)
+        err_code, err_msg = _classify_partial(arrays)
+        _build(arrays, counters, ts, err_code, err_msg)
+    except CollectionError as exc:
+        _handle_collection_error(exc, ts)
+    except Exception as exc:
+        # Unexpected failure: treat as transient so we don't wipe sensors on a
+        # one-off bug. Preserve last good data if we have any.
+        LOGGER.error("unexpected collection failure: %s", exc)
+        if _st.oid_keys:
+            _set_error_scalar(EXIT_PARTIAL_FAILURE,
+                              f"unexpected collection failure: {exc}")
+        else:
+            _build({}, _build_counters({}), ts,
+                   EXIT_PARTIAL_FAILURE, f"unexpected collection failure: {exc}")
+    _st.last_load = now
+    LOGGER.notice("refresh complete in %.2fs: %d arrays, %d devices",
+                  time.monotonic() - now,
+                  counters.get("arrays", 0),
+                  counters.get("devices_total", 0))
+
+# ==========================================================================
+# Part 4 - pass_persist protocol
+# ==========================================================================
+
+def _respond(full: tuple) -> None:
+    entry = _st.oid_map.get(full)
+    if entry is None:
+        print("NONE", flush=True)
+        return
+    typ, val = entry
+    print(_oid_str(full), flush=True)
+    print(typ,            flush=True)
+    print(val,            flush=True)
+
+
+def _handle_get(oid_str: str) -> None:
+    tup = _parse_oid(oid_str)
+    if tup in _st.oid_map:
+        LOGGER.debug("GET %s -> found", oid_str)
+        _respond(tup)
+    else:
+        LOGGER.debug("GET %s -> NONE", oid_str)
+        print("NONE", flush=True)
+
+
+def _handle_getnext(oid_str: str) -> None:
+    tup = _parse_oid(oid_str)
+    idx = bisect.bisect_right(_st.oid_keys, tup)
+    if idx >= len(_st.oid_keys):
+        LOGGER.debug("GETNEXT %s -> NONE (end of table)", oid_str)
+        print("NONE", flush=True)
+        return
+    LOGGER.debug("GETNEXT %s -> %s", oid_str, _oid_str(_st.oid_keys[idx]))
+    _respond(_st.oid_keys[idx])
+
+
+def _load_config(path: str) -> dict:
+    if not path or not os.path.isfile(path):
+        return {}
+    try:
+        import yaml
+        with open(path) as f:
+            data = yaml.safe_load(f) or {}
+        if not isinstance(data, dict):
+            return {}
+        return data
+    except ImportError:
+        # PyYAML unavailable - fall back to a minimal key=value parser
+        cfg: dict = {}
+        try:
+            with open(path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or line.startswith("---"):
+                        continue
+                    if ":" in line:
+                        k, _, v = line.partition(":")
+                        cfg[k.strip()] = v.strip()
+        except OSError:
+            pass
+        return cfg
+    except Exception as exc:
+        print(f"WARNING: could not read config {path}: {exc}", file=sys.stderr)
+        return {}
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(
+        description="MDADM-MIB pass_persist agent")
+    ap.add_argument("--config", metavar="PATH",
+                    default="/etc/snmp/extension/mdadm.yaml",
+                    help="YAML config file (default: %(default)s)")
+    ap.add_argument("--ttl", type=int, default=None, metavar="SEC",
+                    help=f"data refresh interval in seconds (default: {CACHE_TTL})")
+    ap.add_argument("--log-level", default=None,
+                    choices=["DEBUG", "VERBOSE", "INFO", "NOTICE", "WARNING", "ERROR"],
+                    help="logging verbosity (overrides config file)")
+    ap.add_argument("--log-file", metavar="PATH", default=None,
+                    help="log file path (overrides config file)")
+    args = ap.parse_args()
+
+    cfg = _load_config(args.config)
+
+    # CLI args take precedence over config file; config file over built-in defaults
+    ttl       = args.ttl       or int(cfg.get("ttl", CACHE_TTL))
+    log_level = args.log_level or str(cfg.get("log_level", "WARNING")).upper()
+
+    script_dir = os.path.dirname(os.path.realpath(__file__))
+    log_path   = args.log_file or cfg.get("log_file") or os.path.join(script_dir, "mdadm.log")
+
+    _st.ttl = ttl
+
+    # Empty / missing list -> None means auto-discover all md arrays.
+    devices = cfg.get("devices")
+    _st.config_devices = devices if devices else None
+
+    level = {"VERBOSE": VERBOSE, "NOTICE": NOTICE}.get(log_level,
+             getattr(logging, log_level, logging.WARNING))
+
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        handlers=[logging.FileHandler(log_path)],
+    )
+    LOGGER.debug("config=%s log_level=%s log_file=%s ttl=%ds",
+                 args.config, log_level, log_path, ttl)
+
+    _refresh()
+
+    for line in sys.stdin:
+        cmd = line.rstrip("\r\n")
+        if cmd == "PING":
+            print("PONG", flush=True)
+        elif cmd in ("get", "getnext"):
+            try:
+                oid = next(sys.stdin).rstrip("\r\n")
+            except StopIteration:
+                break
+            _refresh()
+            if not _st.oid_keys:
+                print("NONE", flush=True)
+                continue
+            if cmd == "get":
+                _handle_get(oid)
+            else:
+                _handle_getnext(oid)
+        else:
+            print("NONE", flush=True)
+
+
+if __name__ == "__main__":
+    main()
