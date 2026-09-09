@@ -615,6 +615,14 @@ foreach my $item (@l2_keys) {
 $tojson{l2_errors}       = $tojson{l2_writes_error} + $tojson{l2_cksum_bad} + $tojson{l2_io_error};
 $tojson{l2_access_total} = $tojson{l2_hits} + $tojson{l2_misses};
 
+# LibreNMS core (includes/polling/applications/zfs.inc.php) looks up these
+# two fields under abbreviated names that don't match the real kernel ARC
+# stat names used above -- alias them alongside the full names rather than
+# renaming, so this script's own output stays self-describing while also
+# satisfying core's mismatched expectation.
+$tojson{l2_bufc_d_asize} = $tojson{l2_bufc_data_asize}     if defined $tojson{l2_bufc_data_asize};
+$tojson{l2_bufc_m_asize} = $tojson{l2_bufc_metadata_asize} if defined $tojson{l2_bufc_metadata_asize};
+
 ##
 ## print the results
 ##
