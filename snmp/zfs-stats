@@ -623,6 +623,14 @@ $tojson{l2_access_total} = $tojson{l2_hits} + $tojson{l2_misses};
 $tojson{l2_bufc_d_asize} = $tojson{l2_bufc_data_asize}     if defined $tojson{l2_bufc_data_asize};
 $tojson{l2_bufc_m_asize} = $tojson{l2_bufc_metadata_asize} if defined $tojson{l2_bufc_metadata_asize};
 
+# Core also expects this pre-computed ratio, which nothing above ever
+# derives. Depends on the two aliases just above existing first. A host
+# with L2ARC but genuinely zero cached metadata (or vice versa) is a real
+# case, not hypothetical, so this must not divide by zero.
+$tojson{l2_d_to_m_ratio} = ( $tojson{l2_bufc_m_asize} // 0 ) != 0
+	? $tojson{l2_bufc_d_asize} / $tojson{l2_bufc_m_asize}
+	: 0;
+
 ##
 ## print the results
 ##
