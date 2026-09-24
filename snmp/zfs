@@ -191,7 +191,7 @@ while ( defined( $pools[$pools_int] ) ) {
 		$newPool{expandsz} = 0;
 	}
 
-	my $iostat = `zpool iostat -l -q -p -H $newPool{name}`;
+	my $iostat = `zpool iostat -y -l -q -p -H $newPool{name} 2 1`;
 	chomp($iostat);
 	$iostat =~ s/\t+/,/g;
 	$iostat =~ s/\,\-\,\-\,/\,0\,0\,/g;
