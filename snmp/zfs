@@ -381,9 +381,14 @@ my $demand_data_total   = $demand_data_hits + $demand_data_misses;
 my $prefetch_data_total = $prefetch_data_hits + $prefetch_data_misses;
 my $real_hits           = $mfu_hits + $mru_hits;
 
-my $cache_hit_percent  = $arc_hits / $arc_accesses_total * 100;
-my $cache_miss_percent = $arc_misses / $arc_accesses_total * 100;
-my $actual_hit_percent = $real_hits / $arc_accesses_total * 100;
+my $cache_hit_percent  = 0;
+my $cache_miss_percent = 0;
+my $actual_hit_percent = 0;
+if ( $arc_accesses_total != 0 ) {
+	$cache_hit_percent  = $arc_hits / $arc_accesses_total * 100;
+	$cache_miss_percent = $arc_misses / $arc_accesses_total * 100;
+	$actual_hit_percent = $real_hits / $arc_accesses_total * 100;
+}
 
 my $data_demand_percent = 0;
 if ( $demand_data_total != 0 ) {
@@ -395,27 +400,41 @@ if ( $prefetch_data_total != 0 ) {
 	$data_prefetch_percent = $prefetch_data_hits / $prefetch_data_total * 100;
 }
 
-my $anon_hits_percent;
-if ( $anon_hits != 0 ) {
+my $anon_hits_percent = 0;
+if ( $arc_hits != 0 ) {
 	$anon_hits_percent = $anon_hits / $arc_hits * 100;
-} else {
-	$anon_hits_percent = 0;
 }
 
-my $mru_percent       = $mru_hits / $arc_hits * 100;
-my $mfu_percent       = $mfu_hits / $arc_hits * 100;
-my $mru_ghost_percent = $mru_ghost_hits / $arc_hits * 100;
-my $mfu_ghost_percent = $mfu_ghost_hits / $arc_hits * 100;
+my $mru_percent                    = 0;
+my $mfu_percent                    = 0;
+my $mru_ghost_percent              = 0;
+my $mfu_ghost_percent              = 0;
+my $demand_hits_percent            = 0;
+my $prefetch_hits_percent          = 0;
+my $metadata_hits_percent          = 0;
+my $prefetch_metadata_hits_percent = 0;
+if ( $arc_hits != 0 ) {
+	$mru_percent       = $mru_hits / $arc_hits * 100;
+	$mfu_percent       = $mfu_hits / $arc_hits * 100;
+	$mru_ghost_percent = $mru_ghost_hits / $arc_hits * 100;
+	$mfu_ghost_percent = $mfu_ghost_hits / $arc_hits * 100;
 
-my $demand_hits_percent            = $demand_data_hits / $arc_hits * 100;
-my $prefetch_hits_percent          = $prefetch_data_hits / $arc_hits * 100;
-my $metadata_hits_percent          = $demand_metadata_hits / $arc_hits * 100;
-my $prefetch_metadata_hits_percent = $prefetch_metadata_hits / $arc_hits * 100;
+	$demand_hits_percent            = $demand_data_hits / $arc_hits * 100;
+	$prefetch_hits_percent          = $prefetch_data_hits / $arc_hits * 100;
+	$metadata_hits_percent          = $demand_metadata_hits / $arc_hits * 100;
+	$prefetch_metadata_hits_percent = $prefetch_metadata_hits / $arc_hits * 100;
+}
 
-my $demand_misses_percent            = $demand_data_misses / $arc_misses * 100;
-my $prefetch_misses_percent          = $prefetch_data_misses / $arc_misses * 100;
-my $metadata_misses_percent          = $demand_metadata_misses / $arc_misses * 100;
-my $prefetch_metadata_misses_percent = $prefetch_metadata_misses / $arc_misses * 100;
+my $demand_misses_percent            = 0;
+my $prefetch_misses_percent          = 0;
+my $metadata_misses_percent          = 0;
+my $prefetch_metadata_misses_percent = 0;
+if ( $arc_misses != 0 ) {
+	$demand_misses_percent            = $demand_data_misses / $arc_misses * 100;
+	$prefetch_misses_percent          = $prefetch_data_misses / $arc_misses * 100;
+	$metadata_misses_percent          = $demand_metadata_misses / $arc_misses * 100;
+	$prefetch_metadata_misses_percent = $prefetch_metadata_misses / $arc_misses * 100;
+}
 
 # ARC misc. efficient stats
 $tojson{arc_hits}           = $arc_hits;
