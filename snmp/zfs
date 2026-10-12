@@ -6,7 +6,7 @@ zfs - LibreNMS JSON SNMP extend for gathering backups for ZFS
 
 =head1 VERSION
 
-0.3.0
+0.4.0
 
 =head1 DESCRIPTION
 
@@ -27,9 +27,32 @@ Gzip the output and convert to Base64.
 Include the full information for `zpool status $pool` for each pool
 in the return.
 
+=head2 -o <file>
+
+The file to write the output to when -w is used.
+
+Defaults: /var/cache/zfs.extend
+
+=head2 -w
+
+Write the output out to the file specified by -o.
+
+=head2 -q
+
+If -w is specified, don't print anything.
+
 =head1 SNMPD SETUP EXAMPLES
 
-    extend zfs /etc/snmp/zfs
+Each pool is sampled over a live two second `zpool iostat` interval, so a run
+takes roughly two seconds per pool. On a host with more than a pool or two
+that is long enough for the extend to time out, so the output is written to a
+file via cron and SNMPD reads that instead of running this directly.
+
+    extend zfs /bin/cat /var/cache/zfs.extend
+
+Then the extend is set to be ran via cron.
+
+    */5 * * * * /etc/snmp/zfs -w -q
 
 =head1 REQUIREMENTS
 
@@ -97,6 +120,9 @@ my %opts;
 my $opts_p;
 my $opts_b;
 my $opts_s;
+my $opts_w;
+my $opts_q;
+my $opts_o;
 my $version;
 my $help;
 #getopts( 'pbs', \%opts );
@@ -104,6 +130,9 @@ GetOptions(
 	p       => \$opts_p,
 	b       => \$opts_b,
 	s       => \$opts_s,
+	w       => \$opts_w,
+	q       => \$opts_q,
+	'o=s'   => \$opts_o,
 	v       => \$version,
 	version => \$version,
 	h       => \$help,
@@ -112,6 +141,13 @@ GetOptions(
 $opts{p} = $opts_p;
 $opts{b} = $opts_b;
 $opts{s} = $opts_s;
+$opts{w} = $opts_w;
+$opts{q} = $opts_q;
+$opts{o} = $opts_o;
+
+if ( !defined( $opts{o} ) ) {
+	$opts{o} = '/var/cache/zfs.extend';
+}
 
 if ($version) {
 	pod2usage( -exitval => 255, -verbose => 99, -sections => qw(VERSION), -output => \*STDOUT, );
@@ -191,7 +227,7 @@ while ( defined( $pools[$pools_int] ) ) {
 		$newPool{expandsz} = 0;
 	}
 
-	my $iostat = `zpool iostat -l -q -p -H $newPool{name}`;
+	my $iostat = `zpool iostat -y -l -q -p -H $newPool{name} 2 1`;
 	chomp($iostat);
 	$iostat =~ s/\t+/,/g;
 	$iostat =~ s/\,\-\,\-\,/\,0\,0\,/g;
@@ -509,23 +545,31 @@ if ( $opts{p} && !$opts{b} ) {
 
 my $return_string = $j->encode( \%head_hash );
 
-if ( !$opts{p} && !$opts{b} ) {
-	print $return_string. "\n";
-	exit 0;
-} elsif ( !$opts{b} ) {
-	print $return_string;
-	exit 0;
+my $output = $return_string . "\n";
+if ( $opts{p} && !$opts{b} ) {
+	$output = $return_string;
 }
 
-my $compressed_string;
-gzip \$return_string => \$compressed_string;
-my $compressed = encode_base64($compressed_string);
-$compressed =~ s/\n//g;
-$compressed = $compressed . "\n";
-if ( length($compressed) > length($return_string) ) {
-	print $return_string. "\n";
-} else {
-	print $compressed;
+if ( $opts{b} ) {
+	my $compressed_string;
+	gzip \$return_string => \$compressed_string;
+	my $compressed = encode_base64($compressed_string);
+	$compressed =~ s/\n//g;
+	$compressed = $compressed . "\n";
+	if ( length($compressed) <= length($return_string) ) {
+		$output = $compressed;
+	}
+} ## end if ( $opts{b} )
+
+if ( $opts{w} ) {
+	my $tmp_file = $opts{o} . '.tmp.' . $$;
+	write_file( $tmp_file, $output );
+	rename( $tmp_file, $opts{o} )
+		|| die( 'Failed to rename "' . $tmp_file . '" to "' . $opts{o} . '"' );
+}
+
+if ( !$opts{w} || !$opts{q} ) {
+	print $output;
 }
 
 exit 0;
