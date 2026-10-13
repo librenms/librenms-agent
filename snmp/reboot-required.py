@@ -3,10 +3,10 @@
 # LibreNMS reboot-required SNMP extend script.
 #
 # Detects whether the host needs a reboot to apply a pending kernel or
-# library update, across multiple distro families. Emits the standard
+# library update, across multiple platforms. Emits the standard
 # LibreNMS JSON app-extend envelope, with "reboot" (1 or 0) in "data".
 #
-# On an unsupported distro, or when the expected detection tool is
+# On an unsupported platform, or when the expected detection tool is
 # missing, "error" is set non-zero so LibreNMS surfaces a poll error
 # instead of silently reporting "no reboot needed".
 
@@ -21,6 +21,7 @@ DEBIAN_LIKE = {"debian", "ubuntu"}
 RHEL_LIKE = {"rhel", "fedora", "centos", "rocky", "almalinux", "amzn"}
 SUSE_LIKE = {"suse"}
 ARCH_LIKE = {"arch"}
+FREEBSD_LIKE = {"freebsd"}
 
 
 def parse_os_release():
@@ -75,7 +76,25 @@ def check_reboot_required():
         reboot = 0 if os.path.isdir("/usr/lib/modules/" + current_kernel) else 1
         return reboot, 0, ""
 
-    return None, 1, "unsupported distro"
+    if ids & FREEBSD_LIKE or os.uname().sysname == "FreeBSD":
+        # uname -r is the running kernel, freebsd-version -k the installed
+        # one. They differ while a kernel update awaits a reboot.
+        if shutil.which("freebsd-version") is None:
+            return None, 1, "freebsd-version not found"
+        result = subprocess.run(
+            ["freebsd-version", "-k"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        if result.returncode != 0:
+            return None, 1, "freebsd-version failed"
+        installed = result.stdout.strip()
+        if not installed:
+            return None, 1, "freebsd-version returned no output"
+        return (0 if installed == os.uname().release else 1), 0, ""
+
+    return None, 1, "unsupported platform"
 
 
 def main():
