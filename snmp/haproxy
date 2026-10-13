@@ -1,0 +1,284 @@
+#!/usr/bin/env perl
+
+#Copyright (c) 2026, Zane C. Bowers-Hadley
+#All rights reserved.
+#
+#Redistribution and use in source and binary forms, with or without modification,
+#are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+#THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+#WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+#IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+#DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+#LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+#THE POSSIBILITY OF SUCH DAMAGE.
+
+use warnings;
+use strict;
+
+=head1 NAME
+
+haproxy - LibreNMS JSON style SNMP extend for monitoring HAProxy
+
+=head1 VERSION
+
+0.0.1
+
+=cut
+
+our $VERSION = '0.0.1';
+
+=head1 SYNOPSIS
+
+haproxy [B<-u> <url>] [B<-t> <timeout>] [B<-b>] [B<-o> <output file> [B<-q>]]
+
+=head1 SNMPD CONFIG
+
+Add this to snmpd.conf as below and restart snmpd.
+
+    extend haproxy /etc/snmp/extends/haproxy -b
+
+Or if using cron...
+
+    # cron
+    */5 * * * * root /etc/snmp/extends/haproxy -b -q -o /var/cache/haproxy.json.snmp
+
+    # snmpd.conf
+    extend haproxy /bin/cat /var/cache/haproxy.json.snmp
+
+=head1 HAPROXY CONFIG
+
+The CSV stats page needs to be enabled. Something like below will work
+with the default URL.
+
+    frontend stats
+        bind 127.0.0.1:80
+        stats enable
+        stats uri /stats
+        stats refresh 10s
+
+=head1 FLAGS
+
+=head2 -u <url>
+
+The URL to fetch the HAProxy CSV stats from.
+
+If HTTP basic auth is needed, include the credentials inline in the URL.
+
+    http://user:pass@127.0.0.1/stats;csv
+
+Default: http://127.0.0.1/stats;csv
+
+=head2 -t <timeout>
+
+Timeout in seconds for the HTTP request.
+
+Default: 1
+
+=head2 -b
+
+Use gzip+base64 LibreNMS style compression.
+
+=head2 -o <output file>
+
+Also write the output to this file. The write is atomic.
+
+=head2 -q
+
+Do not print to stdout. Requires -o.
+
+=head1 OUTPUT
+
+The data section is keyed by proxy name and then service name, with each
+of those containing the CSV columns for that row. Empty values are null.
+
+    {
+      "data": {
+        "http_in": {
+          "FRONTEND": {
+            "scur": 0,
+            "status": "OPEN",
+            "qcur": null,
+            ...
+          }
+        }
+      },
+      "error": 0,
+      "errorString": "",
+      "version": 1
+    }
+
+=head1 INSTALL
+
+FreeBSD...
+
+    pkg install p5-JSON p5-MIME-Base64 p5-File-Slurp p5-libwww p5-LWP-Protocol-https p5-Text-CSV
+
+Debian...
+
+    apt-get install libjson-perl libmime-base64-perl libfile-slurp-perl libwww-perl liblwp-protocol-https-perl libtext-csv-perl
+
+=cut
+
+use Getopt::Std;
+use JSON;
+use MIME::Base64;
+use IO::Compress::Gzip qw(gzip $GzipError);
+use File::Slurp;
+use LWP::UserAgent;
+use URI;
+use URI::Escape;
+use Text::CSV;
+use Pod::Usage;
+
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
+
+sub main::VERSION_MESSAGE {
+	print 'haproxy LibreNMS extend v. ' . $VERSION . "\n";
+}
+
+sub main::HELP_MESSAGE {
+	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
+}
+
+#gets the options
+my %opts;
+getopts( 'u:t:bo:q', \%opts );
+
+if ( !defined( $opts{u} ) ) {
+	$opts{u} = 'http://127.0.0.1/stats;csv';
+}
+
+if ( !defined( $opts{t} ) ) {
+	$opts{t} = 1;
+} elsif ( $opts{t} !~ /^[0-9]*\.?[0-9]+$/ ) {
+	die( '-t, "' . $opts{t} . '", is not a number' );
+}
+
+if ( $opts{q} && !defined( $opts{o} ) ) {
+	die('-q requires -o');
+}
+
+# initiate what will be returned
+my $to_return = {
+	error       => 0,
+	errorString => '',
+	version     => 1,
+	data        => {},
+};
+
+eval {
+	# pull basic auth creds out of the URL if present
+	my $uri = URI->new( $opts{u} );
+	my ( $user, $pass );
+	if ( $uri->can('userinfo') && defined( $uri->userinfo ) ) {
+		( $user, $pass ) = split( /:/, $uri->userinfo, 2 );
+		$user = uri_unescape($user);
+		$pass = defined($pass) ? uri_unescape($pass) : '';
+		$uri->userinfo(undef);
+	}
+
+	my $ua = LWP::UserAgent->new( timeout => $opts{t} );
+	$ua->agent( 'LibreNMS haproxy extend/' . $VERSION );
+
+	my $request = HTTP::Request->new( GET => $uri );
+	if ( defined($user) ) {
+		$request->authorization_basic( $user, $pass );
+	}
+
+	# the URL used in errors has the creds removed so they do not get leaked
+	my $response = $ua->request($request);
+	if ( !$response->is_success ) {
+		die( 'Fetching "' . $uri . '" failed... ' . $response->status_line );
+	}
+
+	my @lines = split( /\r?\n/, $response->decoded_content );
+
+	my $header = shift(@lines);
+	if ( !defined($header) || $header !~ s/^\#\s*// ) {
+		die( 'The returned content from "' . $uri . '" does not appear to be HAProxy CSV stats' );
+	}
+
+	my $csv = Text::CSV->new( { binary => 1 } );
+
+	if ( !$csv->parse($header) ) {
+		die( 'Failed to parse the CSV header... ' . $csv->error_diag );
+	}
+	my @columns = $csv->fields;
+
+	foreach my $line (@lines) {
+		if ( $line =~ /^\s*$/ ) {
+			next;
+		}
+
+		if ( !$csv->parse($line) ) {
+			die( 'Failed to parse CSV line "' . $line . '"... ' . $csv->error_diag );
+		}
+		my @fields = $csv->fields;
+
+		my %row;
+		my $int = 0;
+		while ( defined( $columns[$int] ) ) {
+			my $column = $columns[$int];
+			# skip the trailing empty column and the "-" separator column
+			if ( $column ne '' && $column ne '-' ) {
+				my $value = $fields[$int];
+				if ( !defined($value) || $value eq '' ) {
+					$value = undef;
+				} elsif ( $value =~ /^-?[0-9]+(\.[0-9]+)?$/ ) {
+					$value = $value + 0;
+				}
+				$row{$column} = $value;
+			}
+			$int++;
+		} ## end while ( defined( $columns[$int] ) )
+
+		my $pxname = delete( $row{pxname} );
+		my $svname = delete( $row{svname} );
+		if ( !defined($pxname) || !defined($svname) ) {
+			die( 'CSV line "' . $line . '" is missing pxname or svname' );
+		}
+
+		$to_return->{data}{$pxname}{$svname} = \%row;
+	} ## end foreach my $line (@lines)
+};
+if ($@) {
+	$to_return->{error}       = 1;
+	$to_return->{errorString} = $@;
+	$to_return->{errorString} =~ s/ at \S+ line \d+\.$//;
+	$to_return->{errorString} =~ s/\s+$//;
+	$to_return->{data} = {};
+}
+
+my $output = JSON->new->canonical(1)->encode($to_return) . "\n";
+
+if ( $opts{b} ) {
+	my $compressed_string;
+	gzip \$output => \$compressed_string or die("gzip failed... $GzipError");
+	my $compressed = encode_base64($compressed_string);
+	$compressed =~ s/\n//g;
+	$compressed = $compressed . "\n";
+	if ( length($compressed) < length($output) ) {
+		$output = $compressed;
+	}
+} ## end if ( $opts{b} )
+
+if ( defined( $opts{o} ) ) {
+	write_file( $opts{o}, { atomic => 1 }, $output );
+}
+
+if ( !$opts{q} ) {
+	print $output;
+}
+
+exit 0;
