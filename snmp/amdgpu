@@ -1,0 +1,319 @@
+#!/bin/sh
+################################################################
+# Instructions:                                                #
+# 1. copy this script to /etc/snmp/ and make it executable:    #
+#    chmod +x amdgpu                                           #
+# 2. edit your snmpd.conf to include this line:                #
+#    pass_persist .1.3.6.1.4.1.60652.101 /etc/snmp/amdgpu      #
+# 3. restart snmpd on the host                                 #
+################################################################
+#
+# Serves LIBRENMS-AMDGPU-MIB: the power and clock of the AMD GPUs in a host,
+# which cannot reach SNMP on their own. The net-snmp lmSensors module maps only
+# the temperature, fan and voltage features of libsensors, so watts and hertz
+# are given no index at all. Temperature and voltages keep arriving through
+# LM-SENSORS-MIB as before; this script adds only what is missing.
+#
+# One row per card, one column per metric:
+#
+#   .1.3.6.1.4.1.60652.101.1.1.<column>.<index>
+#
+#   column 2  amdGpuProductName   string  name from the libdrm ids table
+#   column 3  amdGpuPower         gauge   power1_input, microwatts
+#   column 4  amdGpuPowerAverage  gauge   power1_average, microwatts
+#   column 5  amdGpuClock         gauge   freq1_input, hertz
+#
+# The index is the PCI address of the card, which SMI encodes as the length of
+# the string followed by one sub-identifier per character, so the clock of the
+# card at 0000:c7:00.0 answers at
+#
+#   .1.3.6.1.4.1.60652.101.1.1.5.12.48.48.48.48.58.99.55.58.48.48.46.48
+#
+# The address indexes the table rather than a row number because a stored OID
+# has to keep meaning the same card: a row number moves as soon as a card is
+# added, removed or unbound from the driver, and every reading after it would
+# then be filed under its neighbour until the next discovery run.
+#
+# An attribute the card does not publish has no cell at all, and its OID answers
+# noSuchInstance. On APUs power1_average is not always readable - the SMU may
+# decline it while idle - so this is the ordinary case, not a rare one.
+#
+# Values are passed on in the units sysfs reports them in - microwatts for the
+# two power readings, hertz for the clock - and are scaled by the poller. Hertz
+# is why the columns are gauges: a boost clock of 2.7 GHz does not fit into a
+# signed 32-bit integer.
+#
+# Cards are walked through the PCI driver directory rather than through hwmonN,
+# because hwmon numbering is not stable across reboots while PCI slot addressing
+# is.
+#
+# The product name is looked up in the libdrm ids table by device and revision;
+# when the table is absent or does not know the card, the row carries no name
+# and the PCI address in its index identifies it. To use a different table, pass
+# AMDGPU_IDS through the pass_persist line:
+#
+#   pass_persist .1.3.6.1.4.1.60652.101 /usr/bin/env AMDGPU_IDS=/path/amdgpu.ids /etc/snmp/amdgpu
+
+PATH=$PATH:/usr/bin:/bin
+
+# Byte order, so that PCI addresses sort the way their OIDs walk.
+LC_ALL=C
+export LC_ALL
+
+AMDGPU_IDS=${AMDGPU_IDS:-/usr/share/libdrm/amdgpu.ids}
+
+ENTRY_OID=".1.3.6.1.4.1.60652.101.1.1"
+
+# The column carrying the name from the libdrm ids table.
+PRODUCT_NAME_COLUMN=2
+
+# The hwmon attributes to publish, one "<column> <attribute>" pair per line and
+# in column order. A metric added here needs a column of its own in the MIB -
+# the OID says which metric it is, so nothing downstream counts - and a value
+# that is never empty: an empty cell would answer in two lines where snmpd
+# expects three, leaving every reply after it one request behind.
+VALUE_COLUMNS='3 power1_input
+4 power1_average
+5 freq1_input'
+
+# How long one collection answers further requests, in seconds. It is not there
+# to spare the sysfs reads, which are cheap: it keeps a walk reading one moment
+# of the card rather than a slightly later moment with every cell.
+CACHE_TTL=10
+
+# ---------------------------------------------------------------
+# Reading the cards
+# ---------------------------------------------------------------
+
+# The hwmon directory of a card. A second one would only repeat the same
+# readings, so the first is the card's.
+card_hwmon() {
+	for _hwmon in "$1"/hwmon/hwmon*; do
+		if [ -d "$_hwmon" ]; then
+			printf '%s\n' "$_hwmon"
+			return
+		fi
+	done
+}
+
+# The name the libdrm ids table gives a card, or nothing when the table is
+# absent or does not list it. Device and revision are hex with a 0x prefix; the
+# ids table holds them bare and upper case, revision padded to two digits.
+card_product() {
+	[ -r "$AMDGPU_IDS" ] || return
+
+	_did=$(cut -c3- "$1/device" 2>/dev/null | tr 'a-f' 'A-F')
+	_rev=$(cut -c3- "$1/revision" 2>/dev/null | tr 'a-f' 'A-F')
+	[ -n "$_did" ] && [ -n "$_rev" ] || return
+
+	awk -F',[ \t]*' -v d="$_did" -v r="$_rev" \
+		'$1 == d && $2 == r { print $3; exit }' \
+		"$AMDGPU_IDS" 2>/dev/null
+}
+
+# The sub-identifiers that index one row: the length of the PCI address
+# followed by one sub-identifier per character, as SMI encodes a string index.
+row_index() {
+	awk -v address="$1" 'BEGIN {
+		for (byte = 32; byte < 127; byte++) {
+			code[sprintf("%c", byte)] = byte
+		}
+		printf ".%d", length(address)
+		for (i = 1; i <= length(address); i++) {
+			printf ".%d", code[substr(address, i, 1)]
+		}
+	}'
+}
+
+# One line per card that has a hwmon node - "<index> <hwmon directory> <name>" -
+# in the order their rows walk. Shorter addresses sort first because the index
+# encoding puts the length of the address before its characters.
+collect_rows() {
+	_cards=$(
+		for _card in /sys/bus/pci/drivers/amdgpu/*:*:*.*; do
+			[ -d "$_card" ] || continue
+			_address=${_card##*/}
+			printf '%s %s\n' "${#_address}" "$_card"
+		done | sort -k1,1n -k2,2 | cut -d' ' -f2
+	)
+	[ -n "$_cards" ] || return
+
+	printf '%s\n' "$_cards" | while read -r _card; do
+		_hwmon=$(card_hwmon "$_card")
+		[ -n "$_hwmon" ] || continue
+
+		printf '%s %s %s\n' \
+			"$(row_index "${_card##*/}")" "$_hwmon" "$(card_product "$_card")"
+	done
+}
+
+# Every readable cell as "<OID> <type> <value>", in the order a walk visits
+# them: column by column, and within a column row by row. Neither an OID nor a
+# type can hold a space, so read hands the rest of the line - the value, spaces
+# and all - to its last variable.
+collect_table() {
+	_rows=$(collect_rows)
+	[ -n "$_rows" ] || return
+
+	printf '%s\n' "$_rows" | while read -r _index _hwmon _product; do
+		[ -n "$_product" ] || continue
+		printf '%s.%s%s string %s\n' \
+			"$ENTRY_OID" "$PRODUCT_NAME_COLUMN" "$_index" "$_product"
+	done
+
+	printf '%s\n' "$VALUE_COLUMNS" | while read -r _column _attribute; do
+		printf '%s\n' "$_rows" | while read -r _index _hwmon _product; do
+			_value=$(cat "$_hwmon/$_attribute" 2>/dev/null)
+
+			# An attribute the card does not publish, or one the driver
+			# answers with an error, leaves its cell out rather than
+			# standing in for it with a number nobody measured.
+			case $_value in
+			'' | *[!0-9]*) continue ;;
+			esac
+
+			printf '%s.%s%s gauge %s\n' \
+				"$ENTRY_OID" "$_column" "$_index" "$_value"
+		done
+	done
+}
+
+# The collected table, and the moment it was collected. The moment is empty
+# until there is a collection, and empty again if date ever fails: only a
+# moment that was taken is aged. Zero would not do - an age measured from it
+# reads as fresh, and the table would stay empty for the life of the process.
+gpu_table=''
+gpu_table_taken=''
+
+collect_table_if_stale() {
+	_now=$(date +%s)
+
+	if [ -n "$gpu_table_taken" ]; then
+		_age=$((_now - gpu_table_taken))
+
+		# A negative age means the clock was set back under us.
+		# Collecting again costs one pass; trusting it would serve the
+		# same readings as fresh for as long as the step lasted, and a
+		# flat graph does not look wrong.
+		[ "$_age" -ge 0 ] && [ "$_age" -lt "$CACHE_TTL" ] && return
+	fi
+
+	gpu_table=$(collect_table)
+	gpu_table_taken=$_now
+}
+
+# ---------------------------------------------------------------
+# Finding the cell a request asks for
+# ---------------------------------------------------------------
+
+# True when the first OID sorts before the second the way SNMP orders them: by
+# sub-identifier, numerically, and a prefix before everything that extends it.
+# String order will not do - .10 follows .9 as an OID but precedes it as text.
+oid_precedes() {
+	_left=${1#.}
+	_right=${2#.}
+
+	while [ -n "$_left" ] && [ -n "$_right" ]; do
+		_left_head=${_left%%.*}
+		_right_head=${_right%%.*}
+
+		[ "$_left_head" -lt "$_right_head" ] && return 0
+		[ "$_left_head" -gt "$_right_head" ] && return 1
+
+		case $_left in
+		*.*) _left=${_left#*.} ;;
+		*) _left='' ;;
+		esac
+		case $_right in
+		*.*) _right=${_right#*.} ;;
+		*) _right='' ;;
+		esac
+	done
+
+	# Every shared sub-identifier matched and one OID ran out first.
+	[ -z "$_left" ] && [ -n "$_right" ]
+}
+
+# The cell standing at exactly this OID, as the three lines snmpd expects, or
+# nothing.
+cell_at() {
+	printf '%s\n' "$gpu_table" | while read -r _oid _type _value; do
+		if [ "$_oid" = "$1" ]; then
+			printf '%s\n%s\n%s\n' "$_oid" "$_type" "$_value"
+			break
+		fi
+	done
+}
+
+# The first cell whose OID sorts after this one, or nothing once the walk has
+# left the table. The table is already in walk order, so the first cell that
+# sorts after the request is the answer, wherever the request pointed - before
+# the table, at a column with no rows, or at a gap where a card publishes no
+# such attribute.
+cell_after() {
+	# snmpd asks in numeric OIDs; anything else names no cell.
+	case $1 in
+	*[!0-9.]*) return ;;
+	esac
+
+	printf '%s\n' "$gpu_table" | while read -r _oid _type _value; do
+		if oid_precedes "$1" "$_oid"; then
+			printf '%s\n%s\n%s\n' "$_oid" "$_type" "$_value"
+			break
+		fi
+	done
+}
+
+# Hand a found cell to snmpd, or tell it there is none.
+answer() {
+	if [ -n "$1" ]; then
+		printf '%s\n' "$1"
+	else
+		echo "NONE"
+	fi
+}
+
+# ---------------------------------------------------------------
+# Main loop - the pass_persist protocol
+#
+# Reads commands from stdin:
+#   PING              -> PONG
+#   get\n<OID>        -> OID, type and value, or NONE
+#   getnext\n<OID>    -> the next OID, type and value, or NONE
+#   set\n<OID>\n<...> -> not-writable
+# ---------------------------------------------------------------
+
+while read -r command; do
+	case $command in
+	PING)
+		echo "PONG"
+		;;
+	get | getnext)
+		read -r oid || break
+		# snmpd sends a leading dot, and a hand test may not.
+		case $oid in
+		.*) ;;
+		*) oid=".$oid" ;;
+		esac
+
+		collect_table_if_stale
+
+		if [ "$command" = "get" ]; then
+			answer "$(cell_at "$oid")"
+		else
+			answer "$(cell_after "$oid")"
+		fi
+		;;
+	set)
+		# Read-only, but both lines of the request are consumed all the
+		# same: left in the pipe, they would be read as the commands
+		# that follow and every later answer would be one request late.
+		read -r _ || break
+		read -r _ || break
+		echo "not-writable"
+		;;
+	*)
+		echo "NONE"
+		;;
+	esac
+done
