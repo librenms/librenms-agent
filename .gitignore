@@ -1,0 +1,14 @@
+# Ignore all dotfiles #
+#######################
+.*
+!/.gitignore
+!/.git-blame-ignore-revs
+!/.editorconfig
+!/.php_cs
+!/.github/
+!/.mention-bot
+!/.env.example
+
+# Others #
+##########
+__pycache__

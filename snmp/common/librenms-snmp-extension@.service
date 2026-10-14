@@ -1,0 +1,17 @@
+# SNMP common extension cache.
+[Unit]
+Description=LibreNMS SNMP extension cache: %i
+Documentation=https://github.com/librenms/librenms-agent/tree/master/snmp/common
+Documentation=https://github.com/librenms/librenms-agent/tree/master/snmp/%i
+
+[Service]
+Type=oneshot
+SyslogIdentifier=librenms-snmp-extension-%i
+RuntimeDirectory=snmp/extension
+RuntimeDirectoryMode=0755
+ExecStart=/usr/local/lib/snmpd/%i --config /etc/snmp/extension/%i.yaml --output /run/snmp/extension/%i.json
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/run/snmp/extension
