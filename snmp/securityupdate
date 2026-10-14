@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+################################################################
+# copy this script to /etc/snmp/ and make it executable:       #
+# chmod +x /etc/snmp/securityupdate                                  #
+# ------------------------------------------------------------ #
+# edit your snmpd.conf and include:                            #
+# extend securityupdate /etc/snmp/securityupdate                           #
+#--------------------------------------------------------------#
+# restart snmpd and activate the app for desired host          #
+#--------------------------------------------------------------#
+# please make sure you have the path/binaries below            #
+################################################################
+BIN_WC='/usr/bin/env wc'
+BIN_GREP='/usr/bin/env grep'
+CMD_GREP='-c'
+CMD_WC='-l'
+BIN_APT='/usr/bin/env apt-get'
+CMD_APT='-qq -s upgrade'
+
+################################################################
+# Don't change anything unless you know what are you doing     #
+################################################################
+if command -v apt-get &>/dev/null ; then
+    # Debian / Devuan / Ubuntu
+    # shellcheck disable=SC2086
+    UPDATES=$($BIN_APT $CMD_APT | $BIN_GREP 'Inst' | $BIN_GREP $CMD_GREP '-security')
+    if [ "$UPDATES" -ge 1 ]; then
+        echo "$UPDATES";
+    else
+        echo "0";
+    fi
+else
+    echo "0";
+fi
