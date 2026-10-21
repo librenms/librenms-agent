@@ -10,4 +10,4 @@ unbountctl='/usr/bin/env unbound-control'
 ## You should not need to change anything below.
 ##
 
-$unbountctl stats
+$unbountctl stats_noreset
