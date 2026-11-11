@@ -6,7 +6,7 @@ http_access_log_combined - LibreNMS JSON style SNMP extend for monitoring Apache
 
 =head1 VERSION
 
-0.1.0
+0.2.0
 
 =head1 SYNOPSIS
 
@@ -69,7 +69,7 @@ if possible.
         type :: hash
         defualt :: {}
 
-    - errors :: An hash of error files to get the size of. The key is matched keys in the access hash.
+    - error :: An hash of error files to get the size of. The key is matched keys in the access hash.
         type :: hash
         defualt :: {}
 
@@ -95,6 +95,9 @@ so for access it would be come '-access.log$'.
     - auto_dir :: The dir to look for files in.
         default :: /var/log/apache/
 
+    - auto_mode :: How to look for files under auto_dir. Either single or multidir.
+        default :: single
+
     - auto_end_regex :: What to match files ending in.
         default :: .log$
 
@@ -111,6 +114,50 @@ so for access it would be come '-access.log$'.
         "auto_end_regex": ".log$",
         "auto_access_regex": "-access",
         "auto_error_regex": "-error",
+    }
+
+=head3 multidir
+
+With auto_mode set to multidir, each directory under auto_dir is treated as a site and the
+directory name is used as the log name. The files in each of those directories are matched
+against the regexps built by joining auto_multidir_access_regex/auto_multidir_error_regex to
+auto_multidir_end_regex.
+
+Anything left over in the file name after removing the matched part has any leading or trailing
+'-', '_', or '.' removed and is appended to the log name as a suffix with a '_'. So for the
+directory foo.bar the following...
+
+    /var/log/apache2/foo.bar/access_log
+    /var/log/apache2/foo.bar/error_log
+    /var/log/apache2/foo.bar/ssl_access_log
+    /var/log/apache2/foo.bar/ssl_error_log
+
+Would result in logs named foo.bar and foo.bar_ssl.
+
+If the suffix is the same as the directory name, it is dropped if auto_multidir_auto_suffix_drop
+is true. So foo.bar/foo.bar-access.log would result in a log named foo.bar instead of foo.bar_foo.bar .
+
+    - auto_multidir_end_regex :: What to match files ending in.
+        default :: .log$
+
+    - auto_multidir_access_regex :: What will be prepended to the end regexp for looking for access log files.
+        default :: \-*access
+
+    - auto_multidir_error_regex :: What will be prepended to the end regexp for looking for error log files.
+        default :: \-*error
+
+    - auto_multidir_auto_suffix_drop :: If the suffix should be dropped when it matches the directory name.
+        default :: 1
+
+    # example
+    {
+        "auto": 1,
+        "auto_mode": "multidir",
+        "auto_dir": "/var/log/apache2/",
+        "auto_multidir_end_regex": ".log$",
+        "auto_multidir_access_regex": "\\-*access",
+        "auto_multidir_error_regex": "\\-*error",
+        "auto_multidir_auto_suffix_drop": 1
     }
 
 =head1 REQUIREMENTS
@@ -254,9 +301,27 @@ if ( $config->{auto} ) {
 	if ( !defined( $config->{auto_error_regex} ) ) {
 		$config->{auto_error_regex} = '-error';
 	}
-	if ( -d $config->{auto_dir} && -r $config->{auto_dir} ) {
+	if ( !defined( $config->{auto_mode} ) ) {
+		$config->{auto_mode} = 'single';
+	}
+	if ( !defined( $config->{auto_multidir_end_regex} ) ) {
+		$config->{auto_multidir_end_regex} = '.log$';
+	}
+	if ( !defined( $config->{auto_multidir_access_regex} ) ) {
+		$config->{auto_multidir_access_regex} = '\-*access';
+	}
+	if ( !defined( $config->{auto_multidir_error_regex} ) ) {
+		$config->{auto_multidir_error_regex} = '\-*error';
+	}
+	if ( !defined( $config->{auto_multidir_auto_suffix_drop} ) ) {
+		$config->{auto_multidir_auto_suffix_drop} = 1;
+	}
+	if ( $config->{auto_mode} ne 'single' && $config->{auto_mode} ne 'multidir' ) {
+		die( '"' . $config->{auto_mode} . '" is not a recognized auto_mode... single or multidir' );
+	}
+	if ( $config->{auto_mode} eq 'single' && -d $config->{auto_dir} && -r $config->{auto_dir} ) {
 		my $access_log_regex = $config->{auto_access_regex} . $config->{auto_end_regex};
-		my $error_log_regex  = $config->{auto_access_regex} . $config->{auto_end_regex};
+		my $error_log_regex  = $config->{auto_error_regex} . $config->{auto_end_regex};
 		my @dir              = read_dir( $config->{auto_dir} );
 		foreach my $dir_entry (@dir) {
 			my $full_path = $config->{auto_dir} . '/' . $dir_entry;
@@ -270,7 +335,46 @@ if ( $config->{auto} ) {
 				$config->{error}{$name} = $full_path;
 			}
 		} ## end foreach my $dir_entry (@dir)
-	} ## end if ( -d $config->{auto_dir} && -r $config->...)
+	} elsif ( $config->{auto_mode} eq 'multidir' && -d $config->{auto_dir} && -r $config->{auto_dir} ) {
+		my $access_log_regex = $config->{auto_multidir_access_regex} . $config->{auto_multidir_end_regex};
+		my $error_log_regex  = $config->{auto_multidir_error_regex} . $config->{auto_multidir_end_regex};
+		my @dirs             = read_dir( $config->{auto_dir} );
+		foreach my $site (@dirs) {
+			my $site_dir = $config->{auto_dir} . '/' . $site;
+			if ( !-d $site_dir || !-r $site_dir ) {
+				next;
+			}
+			my @dir = read_dir($site_dir);
+			foreach my $dir_entry (@dir) {
+				my $full_path = $site_dir . '/' . $dir_entry;
+				if ( !-f $full_path || !-r $full_path ) {
+					next;
+				}
+				my $type;
+				my $suffix = $dir_entry;
+				if ( $dir_entry =~ /$access_log_regex/ ) {
+					$type = 'access';
+					$suffix =~ s/$access_log_regex//;
+				} elsif ( $dir_entry =~ /$error_log_regex/ ) {
+					$type = 'error';
+					$suffix =~ s/$error_log_regex//;
+				} else {
+					next;
+				}
+				# use any left over bit as a suffix, so ssl_access_log under foo.bar becomes foo.bar_ssl
+				$suffix =~ s/^[\-\_\.]+//;
+				$suffix =~ s/[\-\_\.]+$//;
+				my $name = $site;
+				if ( $config->{auto_multidir_auto_suffix_drop} && $suffix eq $site ) {
+					$suffix = '';
+				}
+				if ( $suffix ne '' ) {
+					$name = $name . '_' . $suffix;
+				}
+				$config->{$type}{$name} = $full_path;
+			} ## end foreach my $dir_entry (@dir)
+		} ## end foreach my $site (@dirs)
+	} ## end elsif ( $config->{auto_mode} eq 'multidir' &&...)
 } ## end if ( $config->{auto} )
 
 #the data to return
@@ -503,10 +607,10 @@ foreach my $log_name ( keys( %{ $config->{access} } ) ) {
 		$new_entry->{size} = $size;
 		$data->{totals}{size} = $data->{totals}{size} + $size;
 
-		if ( defined( $config->{errors}{$log_name} ) ) {
-			if ( -f $config->{errors}{$log_name} ) {
+		if ( defined( $config->{error}{$log_name} ) ) {
+			if ( -f $config->{error}{$log_name} ) {
 				( $dev, $ino, $mode, $nlink, $uid, $gid, $rdev, $size, $atime, $mtime, $ctime, $blksize, $blocks )
-					= stat( $config->{errors}{$log_name} );
+					= stat( $config->{error}{$log_name} );
 				$new_entry->{error_size} = $size;
 				$data->{totals}{error_size} = $data->{totals}{error_size} + $size;
 			}
