@@ -1,0 +1,322 @@
+#!/usr/bin/env perl
+
+#Copyright (c) 2026, Zane C. Bowers-Hadley
+#All rights reserved.
+#
+#Redistribution and use in source and binary forms, with or without modification,
+#are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+#THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+#WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+#IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+#DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+#LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+#THE POSSIBILITY OF SUCH DAMAGE.
+
+use warnings;
+use strict;
+
+=head1 NAME
+
+linux_pressure - LibreNMS JSON style SNMP extend for monitoring Linux pressure stall information
+
+=head1 VERSION
+
+0.0.1
+
+=cut
+
+our $VERSION = '0.0.1';
+
+=head1 SYNOPSIS
+
+linux_pressure [B<-c>] [B<-b>] [B<-o> <output file> [B<-q>]]
+
+=head1 SNMPD CONFIG
+
+Add this to snmpd.conf as below and restart snmpd.
+
+    extend linux_pressure /etc/snmp/extends/linux_pressure -b
+
+Or if using cron...
+
+    # cron
+    */5 * * * * root /etc/snmp/extends/linux_pressure -b -q -o /var/cache/linux_pressure.json.snmp
+
+    # snmpd.conf
+    extend linux_pressure /bin/cat /var/cache/linux_pressure.json.snmp
+
+=head1 REQUIREMENTS
+
+The kernel needs to be built with CONFIG_PSI. If it was also built with
+CONFIG_PSI_DEFAULT_DISABLED, then it needs booted with psi=1 on the kernel
+command line.
+
+=head1 FLAGS
+
+=head2 -c
+
+Also report the pressure of each cgroup found under /sys/fs/cgroup. This
+requires cgroup v2 and can be large on systems with lots of cgroups.
+
+Cgroups that go away during the run or that have pressure accounting
+turned off via cgroup.pressure are skipped.
+
+=head2 -b
+
+Use gzip+base64 LibreNMS style compression.
+
+=head2 -o <output file>
+
+Also write the output to this file. The write is atomic.
+
+=head2 -q
+
+Do not print to stdout. Requires -o.
+
+=head1 OUTPUT
+
+The system wide pressure is under system, keyed by resource and then by
+stall type. Resources the kernel does not provide and stall types it does
+not report for a resource are not present.
+
+    {
+      "data": {
+        "system": {
+          "cpu": {
+            "some": {
+              "avg10": 0.71,
+              "avg60": 0.46,
+              "avg300": 0.29,
+              "total": 66045996710
+            },
+            "full": { ... }
+          },
+          "io": { ... },
+          "memory": { ... },
+          "irq": { ... }
+        },
+        "cgroups": {
+          "system.slice/cron.service": {
+            "cpu": { ... },
+            ...
+          }
+        }
+      },
+      "error": 0,
+      "errorString": "",
+      "version": 1
+    }
+
+The cgroups hash is only present with -c and is keyed by the cgroup path
+relative to /sys/fs/cgroup. The root cgroup is not included as it is the
+same as system.
+
+- some :: Atleast one task was stalled on the resource.
+
+- full :: All non-idle tasks were stalled on the resource at the same time.
+
+- avg10 :: Percent of the last 10 seconds spent stalled.
+
+- avg60 :: Percent of the last 60 seconds spent stalled.
+
+- avg300 :: Percent of the last 300 seconds spent stalled.
+
+- total :: Total time spent stalled in microseconds. This is a counter.
+
+=head1 INSTALL
+
+Debian...
+
+    apt-get install libjson-perl libmime-base64-perl libfile-slurp-perl
+
+=cut
+
+use Getopt::Std;
+use JSON;
+use MIME::Base64;
+use IO::Compress::Gzip qw(gzip $GzipError);
+use File::Slurp;
+use File::Find;
+use Pod::Usage;
+
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
+
+sub main::VERSION_MESSAGE {
+	print 'linux_pressure LibreNMS extend v. ' . $VERSION . "\n";
+}
+
+sub main::HELP_MESSAGE {
+	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
+}
+
+# Reads a kernel PSI file, be it one under /proc/pressure or a cgroup
+# *.pressure file, and parses it into a hash. Both use the same format,
+# with one line per stall type.
+#
+#     some avg10=0.71 avg60=0.46 avg300=0.29 total=66045996710
+#     full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+#
+# Args:
+# - $pressure_file :: Full path to the PSI file to read,
+#       for example '/proc/pressure/cpu'.
+#
+# Returns a hash ref keyed by stall type, 'some' and/or 'full' depending on
+# what the kernel reports for that resource. Each of those is a hash ref of
+# the numeric values for avg10, avg60, avg300, and total.
+#
+#     {
+#         some => { avg10 => 0.71, avg60 => 0.46, avg300 => 0.29, total => 66045996710 },
+#         full => { avg10 => 0,    avg60 => 0,    avg300 => 0,    total => 0 },
+#     }
+#
+# Returns undef if the file can not be opened or read, with $! holding the
+# reason. Reading a cgroup pressure file fails with "Operation not supported"
+# when pressure accounting is turned off for that cgroup.
+#
+# Example:
+#
+#     my $cpu_pressure = read_pressure_file('/proc/pressure/cpu');
+#     if ( !defined($cpu_pressure) ) {
+#         die( 'Failed to read /proc/pressure/cpu... ' . $! );
+#     }
+#     print $cpu_pressure->{some}{avg10} . "\n";
+sub read_pressure_file {
+	my ($pressure_file) = @_;
+
+	open( my $pressure_fh, '<', $pressure_file ) or return undef;
+	# the open always works for cgroup files, with the error only showing up on read
+	local $! = 0;
+	my @lines = <$pressure_fh>;
+	my $read_error = $!;
+	close($pressure_fh);
+	if ($read_error) {
+		$! = $read_error;
+		return undef;
+	}
+
+	my %pressure;
+	foreach my $line (@lines) {
+		my ( $stall_type, @stats ) = split( /\s+/, $line );
+		foreach my $stat (@stats) {
+			my ( $stat_name, $stat_value ) = split( /=/, $stat, 2 );
+			$pressure{$stall_type}{$stat_name} = $stat_value + 0;
+		}
+	}
+
+	return \%pressure;
+} ## end sub read_pressure_file
+
+#gets the options
+my %opts;
+getopts( 'cbo:q', \%opts );
+
+if ( $opts{q} && !defined( $opts{o} ) ) {
+	die('-q requires -o');
+}
+
+# initiate what will be returned
+my $to_return = {
+	error       => 0,
+	errorString => '',
+	version     => 1,
+	data        => { system => {}, },
+};
+
+my $system_pressure_dir = '/proc/pressure';
+my $cgroup_dir          = '/sys/fs/cgroup';
+
+eval {
+	if ( !-d $system_pressure_dir ) {
+		die(      $system_pressure_dir
+				. ' does not exist. PSI is not available, the kernel either lacks CONFIG_PSI or needs booted with psi=1'
+		);
+	}
+
+	# irq is only present on 6.1+ with CONFIG_IRQ_TIME_ACCOUNTING
+	foreach my $resource ( 'cpu', 'io', 'memory', 'irq' ) {
+		my $pressure_file = $system_pressure_dir . '/' . $resource;
+		if ( !-e $pressure_file ) {
+			next;
+		}
+		my $pressure = read_pressure_file($pressure_file);
+		if ( !defined($pressure) ) {
+			die( 'Failed to read "' . $pressure_file . '"... ' . $! );
+		}
+		$to_return->{data}{system}{$resource} = $pressure;
+	}
+
+	if ( $opts{c} ) {
+		if ( !-f $cgroup_dir . '/cgroup.controllers' ) {
+			die( '-c requires cgroup v2 mounted at ' . $cgroup_dir );
+		}
+
+		$to_return->{data}{cgroups} = {};
+
+		find(
+			{
+				no_chdir => 1,
+				wanted   => sub {
+					# cgroup.pressure also exists, but is the on/off switch and not PSI data
+					if ( $File::Find::name !~ /\/(cpu|io|memory|irq)\.pressure$/ ) {
+						return;
+					}
+					my $resource = $1;
+
+					# the root cgroup is the same as the system wide values
+					if ( $File::Find::dir eq $cgroup_dir ) {
+						return;
+					}
+					my $cgroup = substr( $File::Find::dir, length($cgroup_dir) + 1 );
+
+					# unreadable means the cgroup went away or has pressure accounting off
+					my $pressure = read_pressure_file($File::Find::name);
+					if ( defined($pressure) ) {
+						$to_return->{data}{cgroups}{$cgroup}{$resource} = $pressure;
+					}
+				},
+			},
+			$cgroup_dir
+		);
+	} ## end if ( $opts{c} )
+};
+if ($@) {
+	$to_return->{error}       = 1;
+	$to_return->{errorString} = $@;
+	$to_return->{errorString} =~ s/ at \S+ line \d+\.$//;
+	$to_return->{errorString} =~ s/\s+$//;
+	$to_return->{data} = {};
+}
+
+my $output = JSON->new->canonical(1)->encode($to_return) . "\n";
+
+if ( $opts{b} ) {
+	my $compressed_string;
+	gzip \$output => \$compressed_string or die("gzip failed... $GzipError");
+	my $compressed = encode_base64($compressed_string);
+	$compressed =~ s/\n//g;
+	$compressed = $compressed . "\n";
+	if ( length($compressed) < length($output) ) {
+		$output = $compressed;
+	}
+} ## end if ( $opts{b} )
+
+if ( defined( $opts{o} ) ) {
+	write_file( $opts{o}, { atomic => 1 }, $output );
+}
+
+if ( !$opts{q} ) {
+	print $output;
+}
+
+exit 0;
