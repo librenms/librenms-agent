@@ -1,0 +1,20 @@
+#!/usr/bin/env sh
+# Detects which serial.
+
+if [ -r /sys/devices/virtual/dmi/id/product_serial ]; then
+  DMI=$(cat /sys/devices/virtual/dmi/id/product_serial)
+fi
+if [ -r /sys/firmware/devicetree/base/serial-number ]; then
+  DT=$(cat /sys/firmware/devicetree/base/serial-number)
+fi
+
+if [ -n "${DMI}" ]; then
+  if [ "${DMI}" != "To Be Filled By O.E.M." ] && [ "${DMI}" != "Default string" ] && [ "${DMI}" != "Not Specified" ] && [ "${DMI}" != "None" ] ; then
+    SERIALSTR="${DMI}"
+  fi
+fi
+if [ -z "${SERIALSTR}" ] && [ -n "${DT}" ]; then
+  SERIALSTR="${DT}"
+fi
+  
+echo "${SERIALSTR}"
