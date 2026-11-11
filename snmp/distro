@@ -8,7 +8,7 @@ REV=$(uname -r)
 if [ "${OS}" = "SunOS" ] ; then
   OS=Solaris
   ARCH=$(uname -p)
-  OSSTR="${OS} ${REV}(${ARCH} $(uname -v))"
+  OSSTR="${OS} ${REV} (${ARCH} $(uname -v))"
 
 elif [ "${OS}" = "AIX" ] ; then
   OSSTR="${OS} $(oslevel) ($(oslevel -r))"
