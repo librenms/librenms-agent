@@ -151,8 +151,9 @@ history. The ifindex is read via ifmib(4), so it matches IF-MIB.
   to IF-MIB::ifIndex.$ifindex. entPhysicalAlias is the interface
   description, as set via C<ifconfig $interface description ...>.
 
-- $ifindex * 1000 + 1 :: The transceiver. Vendor name, part number, and
-  serial go in entPhysicalMfgName, ModelName, and SerialNum.
+- $ifindex * 1000 + 1 :: The transceiver. Vendor name, part number,
+  serial, and date go in entPhysicalMfgName, ModelName, SerialNum, and
+  MfgDate.
 
 - $ifindex * 1000 + 10 :: Transceiver temperature, celsius.
 
@@ -187,7 +188,8 @@ With B<--state>, the entStateTable has a row for each transceiver, and
 with B<--power> each battery and the AC adapter.
 
 - Transceivers :: entStateAdmin is unlocked if the interface is up and
-  locked if down. entStateOper is enabled.
+  locked if down. entStateOper is enabled. entStateAlarm is always clear,
+  as ifconfig does not report the alarm, loss of signal, or Tx fault flags.
 
 - Batteries :: entStateAlarm has critical set if acpiconf reports the
   state as critical.
@@ -388,6 +390,7 @@ sub read_smbios_dump {
 # Returns a hash ref. up is true if the interface has the UP flag. description is
 # the interface description. plugged is what ifconfig says is plugged in, '' if there
 # is no module. vendor_name, vendor_pn, and vendor_sn are strings, '' if not printed.
+# mfg_date is the module date as YYYY-MM-DD, '' if missing or invalid.
 # readings is a array ref of hash refs, one per reading found, each with the kind of
 # reading, the lane, 0 if it is not per lane, and the value. Kind is one of temperature
 # in C, voltage in V, bias in mA, tx_power in dBm, or rx_power in dBm. -inf dBm becomes -40.
@@ -399,6 +402,7 @@ sub read_smbios_dump {
 #         vendor_name => 'FINISAR CORP.',
 #         vendor_pn   => 'FTLX8571D3BCL',
 #         vendor_sn   => 'AAA0B1C',
+#         mfg_date    => '2011-05-20',
 #         readings    => [
 #             { kind => 'temperature', lane => 0, value => 32.45 },
 #             { kind => 'rx_power',    lane => 0, value => -2.81 },
@@ -420,6 +424,7 @@ sub parse_ifconfig {
 		vendor_name => '',
 		vendor_pn   => '',
 		vendor_sn   => '',
+		mfg_date    => '',
 		readings    => [],
 	);
 
@@ -434,8 +439,12 @@ sub parse_ifconfig {
 		} elsif ( $line =~ /^\s+plugged:\s*(.*?)\s*$/ ) {
 			# the connector, such as '(LC)', is left off
 			$interface_info{plugged} = $1 =~ s/\s*\([^)]*\)$//r;
-		} elsif ( $line =~ /^\s+vendor:\s*(.*?)\s+PN:\s*(.*?)\s+SN:\s*(.*?)(?:\s+DATE:.*)?\s*$/ ) {
+		} elsif ( $line =~ /^\s+vendor:\s*(.*?)\s+PN:\s*(.*?)\s+SN:\s*(.*?)(?:\s+DATE:\s*(\S*))?\s*$/ ) {
 			@interface_info{ 'vendor_name', 'vendor_pn', 'vendor_sn' } = ( $1, $2, $3 );
+			my $date = $4 // '';
+			if ( $date =~ /^(\d{4})-(\d{2})-(\d{2})$/ && $2 >= 1 && $2 <= 12 && $3 >= 1 && $3 <= 31 ) {
+				$interface_info{mfg_date} = $date;
+			}
 		} elsif ( $line =~ /^\s+module temperature:/i ) {
 			if ( $line =~ /temperature:\s*(-?[\d.]+)\s*C\b/i ) {
 				push( @{ $interface_info{readings} }, { kind => 'temperature', lane => 0, value => $1 + 0 } );
@@ -597,7 +606,7 @@ if ( $opts{u} ) {
 	# Each is [ OID, pass_persist type, value ]. The entPhysicalTable columns
 	# are, in order, Descr, VendorType, ContainedIn, Class, ParentRelPos, Name,
 	# HardwareRev, FirmwareRev, SoftwareRev, SerialNum, MfgName, ModelName,
-	# Alias, AssetID, and IsFRU, which are 2 to 16.
+	# Alias, AssetID, and IsFRU, which are 2 to 16, with MfgDate as 17.
 	my @oids;
 	my $add_entity = sub {
 		my (%entity) = @_;
@@ -625,6 +634,17 @@ if ( $opts{u} ) {
 			push( @oids,
 				[ '.1.3.6.1.2.1.47.1.1.1.1.' . ( $column_index + 2 ) . '.' . $entity{index}, $type, $value ] );
 		}
+
+		# entPhysicalMfgDate is a DateAndTime, the year as two bytes, then a byte each for
+		# month, day, hour, minutes, seconds, and deciseconds. mfg_date is YYYY-MM-DD, with
+		# the time left 0. All zeros means unknown, per the RFC. Sent as hex for the octet type.
+		my @date_parts = ( 0, 0, 0 );
+		if ( ( $entity{mfg_date} // '' ) =~ /^(\d{4})-(\d{2})-(\d{2})$/ ) {
+			@date_parts = ( $1, $2, $3 );
+		}
+		my $mfg_date_hex
+			= join( ' ', map { sprintf( '%02X', $_ ) } unpack( 'C*', pack( 'nC6', @date_parts, 0, 0, 0, 0 ) ) );
+		push( @oids, [ '.1.3.6.1.2.1.47.1.1.1.1.17.' . $entity{index}, 'octet', $mfg_date_hex ] );
 	}; ## end $add_entity = sub
 
 	# Adds a sensor entity and its entPhySensorTable row. Takes index, name,
@@ -793,6 +813,7 @@ if ( $opts{u} ) {
 			mfg_name       => $interface_info->{vendor_name},
 			model_name     => $interface_info->{vendor_pn},
 			is_fru         => 1,
+			mfg_date       => $interface_info->{mfg_date},
 		);
 
 		$add_state->(
