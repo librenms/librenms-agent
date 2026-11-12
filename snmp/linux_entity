@@ -28,7 +28,7 @@ use strict;
 
 =head1 NAME
 
-linux_entity - snmpd pass_persist for ENTITY-MIB and ENTITY-SENSOR-MIB transceiver info on Linux
+linux_entity - snmpd pass_persist for ENTITY-MIB, ENTITY-SENSOR-MIB, and ENTITY-STATE-MIB on Linux
 
 =head1 VERSION
 
@@ -41,6 +41,7 @@ our $VERSION = '0.1.0';
 =head1 SYNOPSIS
 
 linux_entity B<-u> [B<-d> <cache dir>] [B<-i> <regexp>]... [B<-I> <regexp>]...
+[B<--hwmon>] [B<--rapl>] [B<--power>] [B<--inventory>] [B<--state>]
 
 linux_entity B<-p> <base OID> [B<-d> <cache dir>]
 
@@ -50,44 +51,83 @@ linux_entity B<-w> [B<-d> <cache dir>]
 
 Reports pluggable transceivers, SFP, QSFP, and the like, as found via
 C<ethtool -m>, as ENTITY-MIB inventory and their digital optical monitoring
-readings as ENTITY-SENSOR-MIB sensors.
+readings as ENTITY-SENSOR-MIB sensors. Optionally also reports hwmon
+sensors, RAPL power usage, power supplies and batteries, hardware
+inventory, and ENTITY-STATE-MIB state.
 
-It works in two parts. Ran with B<-u> from cron as root, it reads the
-transceivers and writes the cache. Ran with B<-p> by snmpd, it answers
+It works in two parts. Ran with B<-u> from cron as root, it gathers
+everything and writes the cache. Ran with B<-p> by snmpd, it answers
 requests from the cache. snmpd never waits on ethtool, which can take
 seconds per port on some drivers and needs root.
 
 =head1 SNMPD CONFIG
 
     # cron
-    */5 * * * * root /etc/snmp/extends/linux_entity -u
+    */5 * * * * root /etc/snmp/extends/linux_entity -u --hwmon --rapl --power --inventory --state
 
     # snmpd.conf
     pass_persist .1.3.6.1.2.1.47 /etc/snmp/extends/linux_entity -p .1.3.6.1.2.1.47
     pass_persist .1.3.6.1.2.1.99 /etc/snmp/extends/linux_entity -p .1.3.6.1.2.1.99
+    pass_persist .1.3.6.1.2.1.131 /etc/snmp/extends/linux_entity -p .1.3.6.1.2.1.131
 
-Two lines are needed as the MIBs are in separate trees. B<-p> is told the
-tree as snmpd does not pass along what it was registered for.
+One line is needed per MIB as they are in separate trees. B<-p> is told
+the tree as snmpd does not pass along what it was registered for. The
+.1.3.6.1.2.1.131 line is only needed with B<--state>.
 
 Run B<-u> once before restarting snmpd so the cache exists. Without a
 cache, nothing is returned.
 
-Check that snmpd does not already answer for ENTITY-MIB first, as some
-builds might. This should return nothing...
+Check that snmpd does not already answer for these first, as some builds
+might. This should return nothing...
 
     snmpwalk -v2c -c public localhost .1.3.6.1.2.1.47
 
 =head1 REQUIREMENTS
 
-ethtool, plus a NIC and driver that support reading the module EEPROM.
-Not all do. Readings only show up for modules that support digital
-optical monitoring.
+ethtool, plus a NIC and driver that support reading the module EEPROM for
+transceivers. Not all do. Readings only show up for modules that support
+digital optical monitoring.
 
 =head1 FLAGS
 
 =head2 -u
 
-Update the cache. Needs root, as C<ethtool -m> does.
+Update the cache. Needs root, as C<ethtool -m>, RAPL, and the SMBIOS
+tables all do. Transceivers are always checked. The rest are added with
+the flags below.
+
+=head2 --hwmon
+
+Add the sensors under /sys/class/hwmon. Temperature, voltage, current,
+power, fan, and humidity are reported. This covers CPU temperatures,
+NVMe drives, SATA drives with the drivetemp module loaded, GPUs, and
+whatever else has a hwmon driver.
+
+With B<--power>, hwmon devices that belong to a power supply are skipped
+as those are already reported by it.
+
+=head2 --rapl
+
+Add the CPU package, core, uncore, and DRAM power usage from the RAPL
+zones under /sys/class/powercap. The kernel only provides a energy counter,
+so the power is the average since the last run. Nothing is reported for
+a zone until the second run.
+
+=head2 --power
+
+Add the power supplies and batteries under /sys/class/power_supply, with
+their voltage, current, power, and temperature when present.
+
+=head2 --inventory
+
+Add the motherboard, CPUs, memory, and disks to the inventory. The CPUs
+and memory come from the SMBIOS tables, so are not present on systems
+lacking them. Disks are SATA, SAS, and NVMe, skipping removable ones.
+
+=head2 --state
+
+Add ENTITY-STATE-MIB state for the transceivers and, with B<--power>, the
+power supplies.
 
 =head2 -p <base OID>
 
@@ -100,12 +140,13 @@ Print the cache the same as snmpwalk would, for debugging.
 =head2 -d <cache dir>
 
 The cache directory. Defaults to /var/cache/linux_entity. The cache is
-entity.json in it.
+entity.json in it, with state.json holding what is needed between runs.
 
 =head2 -i <regexp>
 
-Only check interfaces with a name matching this regexp. May be used more
-than once, in which case an interface matching any of them is checked.
+Only check interfaces with a name matching this regexp for transceivers.
+May be used more than once, in which case an interface matching any of
+them is checked.
 
 =head2 -I <regexp>
 
@@ -118,21 +159,21 @@ are already skipped.
 
 =head1 ENTITIES
 
-Each port with a readable module gets a port entity, a module entity under
-it, and a sensor entity for each reading under that. Indexes are derived
-from the kernel ifindex so they stay the same between runs.
+Indexes are kept the same between runs, so a sensor or part keeps its
+history.
 
 - 1 :: The chassis, using what is in /sys/class/dmi/id.
 
-- $ifindex * 1000 :: The port. entAliasMappingIdentifier maps it to
-  IF-MIB::ifIndex.$ifindex.
+- $ifindex * 1000 :: A transceiver port. entAliasMappingIdentifier maps it
+  to IF-MIB::ifIndex.$ifindex.
 
-- $ifindex * 1000 + 1 :: The module. Vendor name, part number, revision,
-  and serial go in entPhysicalMfgName, ModelName, HardwareRev, and SerialNum.
+- $ifindex * 1000 + 1 :: The transceiver. Vendor name, part number,
+  revision, and serial go in entPhysicalMfgName, ModelName, HardwareRev,
+  and SerialNum.
 
-- $ifindex * 1000 + 10 :: Module temperature, celsius.
+- $ifindex * 1000 + 10 :: Transceiver temperature, celsius.
 
-- $ifindex * 1000 + 11 :: Module voltage, voltsDC.
+- $ifindex * 1000 + 11 :: Transceiver voltage, voltsDC.
 
 - $ifindex * 1000 + 100 + $lane :: Laser bias current, amperes at milli scale.
 
@@ -140,20 +181,41 @@ from the kernel ifindex so they stay the same between runs.
 
 - $ifindex * 1000 + 300 + $lane :: Rx power, other with dBm as the units.
 
-$lane is 0 for single lane modules and the channel number for multi lane
-ones, such as 1 to 4 for QSFP.
+- 1000000000 and up :: Everything else. hwmon device numbers, disk names,
+  and the like change between boots, so each is given the next free index
+  the first time it is seen, keyed by something stable such as the device
+  path. That is saved in state.json. Removing it renumbers everything.
 
-The Tx and Rx power sensors are named "$interface Tx Power Sensor" and
-"$interface Rx Power Sensor", or "$interface Lane $lane Rx Power Sensor"
-and so on for multi lane modules. ENTITY-SENSOR-MIB lacks a dBm type and
-LibreNMS uses those names to treat them as dBm. A power reading of zero,
-shown by ethtool as -inf dBm, is reported as -40 dBm.
+$lane is 0 for single lane transceivers and the channel number for multi
+lane ones, such as 1 to 4 for QSFP. Interfaces with a ifindex over 999999
+are skipped so the transceiver indexes stay under 1000000000.
+
+The transceiver Tx and Rx power sensors are named "$interface Tx Power
+Sensor" and "$interface Rx Power Sensor", or "$interface Lane $lane Rx
+Power Sensor" and so on for multi lane ones. ENTITY-SENSOR-MIB lacks a
+dBm type and LibreNMS uses those names to treat them as dBm. A power
+reading of zero, shown by ethtool as -inf dBm, is reported as -40 dBm.
 
 Alarm and warning thresholds are not reported as ENTITY-SENSOR-MIB has
-nowhere to put them.
+nowhere to put them. Battery charge is not reported either, as it lacks a
+percent type.
 
-Interfaces with a ifindex over 2147482 are skipped, as the indexes would
-not fit in a entPhysicalIndex.
+=head1 STATE
+
+With B<--state>, the entStateTable has a row for each transceiver and
+each power supply.
+
+- Transceivers :: entStateAdmin is unlocked if the interface is up and
+  locked if down. entStateOper is enabled. entStateAlarm has critical set
+  if any of the alarm flags are on and warning if any of the warning flags
+  are on.
+
+- Power supplies :: entStateOper is enabled or disabled going by online,
+  for those that have it. entStateAlarm has critical set for a battery
+  with a capacity level of critical, warning for one that is low, and
+  major for any health other than good.
+
+The rest of the columns are unknown.
 
 =head1 INSTALL
 
@@ -171,6 +233,8 @@ use Getopt::Long;
 use JSON;
 use File::Slurp;
 use Pod::Usage;
+use Cwd         qw(realpath);
+use Time::HiRes qw(time);
 
 sub main::VERSION_MESSAGE {
 	print 'linux_entity LibreNMS snmpd pass_persist v. ' . $VERSION . "\n";
@@ -206,6 +270,99 @@ sub oid_compare {
 	return @{$oid_a_parts} <=> @{$oid_b_parts};
 } ## end sub oid_compare
 
+# Reads a sysfs or similar small text file, with surrounding whitespace removed.
+#
+# Args:
+# - $path :: Full path to the file, for example '/sys/class/dmi/id/board_name'.
+#
+# Returns the contents as a string, or undef if it does not exist or can not be
+# read. sysfs files can exist and still fail to read, such as a hwmon input for
+# a sensor that is not connected, which also gives undef.
+#
+# Example:
+#
+#     my $board_name = read_sysfs('/sys/class/dmi/id/board_name') // '';
+sub read_sysfs {
+	my ($path) = @_;
+
+	my $contents = read_file( $path, err_mode => 'quiet' );
+	return undef if !defined($contents);
+
+	return $contents =~ s/^\s+|\s+$//gr;
+}
+
+# Blanks the filler text BIOS vendors put in unused SMBIOS and DMI fields,
+# such as 'To Be Filled By O.E.M.', so it does not end up in the inventory.
+#
+# Args:
+# - $value :: The string from DMI or SMBIOS, may be undef.
+#
+# Returns the value with surrounding whitespace removed, as SMBIOS strings are
+# often padded, or '' if it is undef or filler.
+#
+# Example:
+#
+#     # returns ''
+#     my $serial = clean_dmi('Not Specified');
+sub clean_dmi {
+	my ($value) = @_;
+
+	return '' if !defined($value);
+	$value =~ s/^\s+|\s+$//g;
+	return '' if $value =~ /^(?:not specified|to be filled by o\.e\.m\.|default string|unknown|none|n\/a|0+|)$/i;
+
+	return $value;
+}
+
+# Reads all the SMBIOS structures of one type from /sys/firmware/dmi/entries.
+# Needs root as those files are only readable by it.
+#
+# Args:
+# - $smbios_type :: The SMBIOS structure type number, such as 4 for processors
+#       or 17 for memory devices.
+#
+# Returns a array ref of hash refs, one per structure, in the order the kernel
+# lists them. formatted is the raw bytes of the formatted area, including the four
+# byte header, so the offsets in the SMBIOS spec can be used on it directly.
+# strings is the string table, where a string number N from the formatted area is
+# at index N - 1. Returns a empty array ref if there are none or they can not be read.
+#
+#     [
+#         {
+#             formatted => "\x11\x28\x2a\x00...",
+#             strings   => [ 'DIMM A', 'BANK 0', 'Samsung', '12345678', 'M471A1K43DB1-CWE' ],
+#         },
+#     ]
+#
+# Example:
+#
+#     foreach my $structure ( @{ read_smbios_structures(17) } ) {
+#         my $locator_number = ord( substr( $structure->{formatted}, 0x10, 1 ) );
+#         print $structure->{strings}[ $locator_number - 1 ] . "\n" if $locator_number;
+#     }
+sub read_smbios_structures {
+	my ($smbios_type) = @_;
+
+	my @structures;
+	foreach my $entry_dir ( sort { $a cmp $b } glob( '/sys/firmware/dmi/entries/' . $smbios_type . '-*' ) ) {
+		my $raw = read_file( $entry_dir . '/raw', binmode => ':raw', err_mode => 'quiet' );
+		next if !defined($raw) || length($raw) < 4;
+
+		# the second byte of the header is the length of the formatted area, with
+		# the NUL terminated strings after it and a extra NUL ending the table
+		my $formatted_length = ord( substr( $raw, 1, 1 ) );
+		push(
+			@structures,
+			{
+				formatted => substr( $raw, 0, $formatted_length ),
+				strings   => [ split( /\0/, substr( $raw, $formatted_length ) ) ],
+			}
+		);
+	} ## end foreach my $entry_dir ( sort { $a cmp $b } glob...)
+
+	return \@structures;
+} ## end sub read_smbios_structures
+
 # Parses the text output of 'ethtool -m $interface'. Handles the SFF-8472
 # layout used for SFP and the per channel layout used for QSFP, SFF-8636
 # and CMIS, as printed by ethtool.
@@ -218,12 +375,14 @@ sub oid_compare {
 #       Vendor name                               : FINISAR CORP.
 #       Laser bias current                        : 6.162 mA
 #       Laser output power                        : 0.6233 mW / -2.05 dBm
+#       Laser bias current high alarm             : Off
 #
 # Returns a hash ref. The info keys are strings and are empty if ethtool did not
 # print them. readings is a array ref of hash refs, one per reading found, each with
 # the kind of reading, the lane, 0 if it is not per channel, and the value. Kind is
 # one of temperature in C, voltage in V, bias in mA, tx_power in dBm, or rx_power
-# in dBm. -inf dBm becomes -40.
+# in dBm. -inf dBm becomes -40. alarms and warnings are how many of the alarm and
+# warning flags are on.
 #
 #     {
 #         identifier       => 'SFP',
@@ -236,6 +395,8 @@ sub oid_compare {
 #             { kind => 'bias',     lane => 0, value => 6.162 },
 #             { kind => 'tx_power', lane => 0, value => -2.05 },
 #         ],
+#         alarms   => 0,
+#         warnings => 1,
 #     }
 #
 # Example:
@@ -279,6 +440,8 @@ sub parse_ethtool_module {
 		vendor_rev       => '',
 		vendor_sn        => '',
 		readings         => [],
+		alarms           => 0,
+		warnings         => 0,
 	);
 
 	foreach my $line ( split( /\n/, $ethtool_output ) ) {
@@ -294,6 +457,16 @@ sub parse_ethtool_module {
 				$module_info{$info_key} = $value;
 			}
 			next;
+		}
+
+		# Flags are 'On' or 'Off', or a bracketed list of them for multi lane ones. The
+		# thresholds share the label start, but their values are numbers so never match.
+		if ( $value =~ /\bon\b/i ) {
+			if ( $label =~ /\balarm\b/ ) {
+				$module_info{alarms}++;
+			} elsif ( $label =~ /\bwarning\b/ ) {
+				$module_info{warnings}++;
+			}
 		}
 
 		foreach my $reading_pattern (@reading_patterns) {
@@ -372,7 +545,10 @@ sub load_cache {
 my %opts;
 # i and I are array refs as they may be given more than once
 Getopt::Long::Configure( 'bundling', 'no_ignore_case' );
-GetOptions( \%opts, 'u', 'p=s', 'w', 'd=s', 'i=s@', 'I=s@', 'help', 'version' ) or exit 255;
+GetOptions(
+	\%opts, 'u',     'p=s',       'w',     'd=s',  'i=s@', 'I=s@', 'hwmon',
+	'rapl', 'power', 'inventory', 'state', 'help', 'version'
+) or exit 255;
 
 if ( $opts{version} ) {
 	main::VERSION_MESSAGE();
@@ -389,8 +565,13 @@ if ( $modes_given != 1 ) {
 	die('One of -u, -p, or -w is required');
 }
 
+if ( !$opts{u} && grep { $opts{$_} } ( 'hwmon', 'rapl', 'power', 'inventory', 'state' ) ) {
+	die('--hwmon, --rapl, --power, --inventory, and --state are only used with -u');
+}
+
 my $cache_dir  = defined( $opts{d} ) ? $opts{d} : '/var/cache/linux_entity';
 my $cache_file = $cache_dir . '/entity.json';
+my $state_file = $cache_dir . '/state.json';
 
 if ( $opts{u} ) {
 	# compiled up front so a bad regexp dies before anything is done
@@ -402,6 +583,40 @@ if ( $opts{u} ) {
 	if ( !defined($ethtool) ) {
 		die('ethtool not found');
 	}
+
+	if ( !-d $cache_dir ) {
+		mkdir( $cache_dir, 0755 ) or die( 'Failed to create "' . $cache_dir . '"... ' . $! );
+	}
+
+	# What has to be kept between runs. index_map is stable key to entPhysicalIndex for
+	# everything not using the ifindex based ones, with next_index the last one handed out.
+	# rapl is the previous energy reading and time for each zone, keyed by zone name.
+	my $state = eval { decode_json( read_file($state_file) ) };
+	if ( ref($state) ne 'HASH' ) {
+		$state = {};
+	}
+	$state->{index_map}  //= {};
+	$state->{next_index} //= 999999999;
+	$state->{rapl}       //= {};
+
+	my $index_for = sub {
+		my ($stable_key) = @_;
+		$state->{index_map}{$stable_key} //= ++$state->{next_index};
+		return $state->{index_map}{$stable_key};
+	};
+
+	# entPhysicalClass values
+	my %entity_classes = (
+		other         => 1,
+		chassis       => 3,
+		power_supply  => 6,
+		sensor        => 8,
+		module        => 9,
+		port          => 10,
+		cpu           => 12,
+		battery       => 14,
+		storage_drive => 15,
+	);
 
 	# Each is [ OID, pass_persist type, value ]. The entPhysicalTable columns
 	# are, in order, Descr, VendorType, ContainedIn, Class, ParentRelPos, Name,
@@ -418,7 +633,7 @@ if ( $opts{u} ) {
 			[ 'integer',  $entity{parent_rel_pos} ],
 			[ 'string',   $entity{name} ],
 			[ 'string',   $entity{hardware_rev} // '' ],
-			[ 'string',   '' ],
+			[ 'string',   $entity{firmware_rev} // '' ],
 			[ 'string',   '' ],
 			[ 'string',   $entity{serial}     // '' ],
 			[ 'string',   $entity{mfg_name}   // '' ],
@@ -436,13 +651,107 @@ if ( $opts{u} ) {
 		}
 	}; ## end $add_entity = sub
 
-	# entPhysicalClass values
-	my %entity_classes = ( chassis => 3, module => 9, port => 10, sensor => 8 );
+	# Adds a sensor entity and its entPhySensorTable row. Takes index, name,
+	# contained_in, parent_rel_pos, type, scale, precision, value, and units.
+	#
+	# type is the entPhySensorType, 1 other, 4 voltsDC, 5 amperes, 6 watts, 8 celsius,
+	# 9 percentRH, or 10 rpm. scale is the entPhySensorScale, 7 micro, 8 milli, or 9 units.
+	# value is the integer to send, the reading being value / 10 ** precision at that scale.
+	my $add_sensor = sub {
+		my (%sensor) = @_;
 
-	# Type is the entPhySensorType, 1 other, 4 voltsDC, 5 amperes, 8 celsius.
-	# Scale is the entPhySensorScale, 8 milli, 9 units.
-	# Value is sent as a integer multiplied by 10 ** precision.
-	my %sensor_kinds = (
+		# entPhySensorValue is a Integer32
+		return if abs( $sensor{value} ) > 2147483647;
+
+		$add_entity->(
+			index          => $sensor{index},
+			descr          => $sensor{name},
+			name           => $sensor{name},
+			contained_in   => $sensor{contained_in},
+			class          => $entity_classes{sensor},
+			parent_rel_pos => $sensor{parent_rel_pos},
+		);
+
+		# Type, Scale, Precision, Value, OperStatus of ok, and UnitsDisplay
+		my @sensor_columns = (
+			[ 'integer', $sensor{type} ],
+			[ 'integer', $sensor{scale} ],
+			[ 'integer', $sensor{precision} ],
+			[ 'integer', $sensor{value} ],
+			[ 'integer', 1 ],
+			[ 'string',  $sensor{units} ],
+		);
+		for ( my $column_index = 0; $column_index < @sensor_columns; $column_index++ ) {
+			push(
+				@oids,
+				[
+					'.1.3.6.1.2.1.99.1.1.1.' . ( $column_index + 1 ) . '.' . $sensor{index},
+					@{ $sensor_columns[$column_index] }
+				]
+			);
+		}
+	}; ## end $add_sensor = sub
+
+	# Adds a entStateTable row if --state was given. Takes index, admin, oper, and
+	# the alarms as a hash ref of critical, major, and warning, true for each set.
+	#
+	# admin is entStateAdmin, 1 unknown, 2 locked, or 4 unlocked. oper is entStateOper,
+	# 1 unknown, 2 disabled, or 3 enabled. Usage and standby are always 1, unknown.
+	my $add_state = sub {
+		my (%entity_state) = @_;
+		return if !$opts{state};
+
+		# entStateAlarm is BITS, numbered from the high bit of the first octet, with
+		# critical as 2, major as 3, and warning as 5. Sent as hex for the octet type.
+		my $alarm_bits = 0;
+		$alarm_bits |= 0x20 if $entity_state{alarms}{critical};
+		$alarm_bits |= 0x10 if $entity_state{alarms}{major};
+		$alarm_bits |= 0x04 if $entity_state{alarms}{warning};
+
+		my @state_columns = (
+			[ 2, 'integer', $entity_state{admin} ],
+			[ 3, 'integer', $entity_state{oper} ],
+			[ 4, 'integer', 1 ],
+			[ 5, 'octet',   sprintf( '%02X', $alarm_bits ) ],
+			[ 6, 'integer', 1 ],
+		);
+		foreach my $state_column (@state_columns) {
+			my ( $column, $type, $value ) = @{$state_column};
+			push( @oids, [ '.1.3.6.1.2.1.131.1.1.1.' . $column . '.' . $entity_state{index}, $type, $value ] );
+		}
+	}; ## end $add_state = sub
+
+	#
+	# chassis
+	#
+
+	my %dmi;
+	foreach my $dmi_item (
+		'sys_vendor',   'product_name', 'product_serial', 'bios_version',
+		'board_vendor', 'board_name',   'board_version',  'board_serial'
+		)
+	{
+		$dmi{$dmi_item} = clean_dmi( read_sysfs( '/sys/class/dmi/id/' . $dmi_item ) );
+	}
+	$add_entity->(
+		index          => 1,
+		descr          => 'Chassis',
+		name           => 'Chassis',
+		contained_in   => 0,
+		class          => $entity_classes{chassis},
+		parent_rel_pos => -1,
+		firmware_rev   => $dmi{bios_version},
+		serial         => $dmi{product_serial},
+		mfg_name       => $dmi{sys_vendor},
+		model_name     => $dmi{product_name},
+	);
+
+	#
+	# transceivers
+	#
+
+	# offset is added to the port index, plus the lane for those that can have more than one
+	my %transceiver_sensor_kinds = (
 		temperature =>
 			{ offset => 10, type => 8, scale => 9, precision => 2, units => 'C', name => 'Temperature Sensor' },
 		voltage => { offset => 11, type => 4, scale => 9, precision => 3, units => 'V', name => 'Voltage Sensor' },
@@ -454,23 +763,6 @@ if ( $opts{u} ) {
 			{ offset => 300, type => 1, scale => 9, precision => 2, units => 'dBm', name => 'Rx Power Sensor' },
 	);
 
-	my %dmi;
-	foreach my $dmi_item ( 'sys_vendor', 'product_name', 'product_serial' ) {
-		my $dmi_value = read_file( '/sys/class/dmi/id/' . $dmi_item, err_mode => 'quiet' );
-		$dmi{$dmi_item} = defined($dmi_value) ? $dmi_value =~ s/^\s+|\s+$//gr : '';
-	}
-	$add_entity->(
-		index          => 1,
-		descr          => 'Chassis',
-		name           => 'Chassis',
-		contained_in   => 0,
-		class          => $entity_classes{chassis},
-		parent_rel_pos => -1,
-		serial         => $dmi{product_serial},
-		mfg_name       => $dmi{sys_vendor},
-		model_name     => $dmi{product_name},
-	);
-
 	opendir( my $net_dh, '/sys/class/net' ) or die( 'Failed to open /sys/class/net... ' . $! );
 	my @interfaces = sort { $a cmp $b } grep { -e '/sys/class/net/' . $_ . '/device' } readdir($net_dh);
 	closedir($net_dh);
@@ -479,11 +771,9 @@ if ( $opts{u} ) {
 		next if @include_regexps && !grep { $interface =~ $_ } @include_regexps;
 		next if grep                      { $interface =~ $_ } @ignore_regexps;
 
-		my $ifindex = read_file( '/sys/class/net/' . $interface . '/ifindex', err_mode => 'quiet' );
-		next if !defined($ifindex);
-		chomp($ifindex);
-		# entPhysicalIndex is a Integer32
-		next if $ifindex > 2147482;
+		my $ifindex = read_sysfs( '/sys/class/net/' . $interface . '/ifindex' );
+		# keeps the transceiver indexes under the 1000000000 the others start at
+		next if !defined($ifindex) || $ifindex > 999999;
 
 		# ethtool complains on stderr for every NIC that lacks a module, which is
 		# just noise in cron mail, so it is pointed at /dev/null for the run
@@ -529,53 +819,414 @@ if ( $opts{u} ) {
 			is_fru         => 1,
 		);
 
+		# IFF_UP is the lowest bit of the interface flags
+		my $interface_flags = read_sysfs( '/sys/class/net/' . $interface . '/flags' ) // '0';
+		$add_state->(
+			index  => $module_index,
+			admin  => hex($interface_flags) & 1 ? 4 : 2,
+			oper   => 3,
+			alarms => { critical => $module_info->{alarms}, warning => $module_info->{warnings} },
+		);
+
 		my $sensor_position = 1;
 		foreach my $reading ( @{ $module_info->{readings} } ) {
-			my $sensor_kind  = $sensor_kinds{ $reading->{kind} };
-			my $sensor_index = $port_index + $sensor_kind->{offset} + $reading->{lane};
+			my $sensor_kind = $transceiver_sensor_kinds{ $reading->{kind} };
 			my $sensor_name
 				= $reading->{lane}
 				? $interface . ' Lane ' . $reading->{lane} . ' ' . $sensor_kind->{name}
 				: $interface . ' ' . $sensor_kind->{name};
-
-			$add_entity->(
-				index          => $sensor_index,
-				descr          => $sensor_name,
+			$add_sensor->(
+				index          => $port_index + $sensor_kind->{offset} + $reading->{lane},
 				name           => $sensor_name,
 				contained_in   => $module_index,
-				class          => $entity_classes{sensor},
 				parent_rel_pos => $sensor_position++,
+				type           => $sensor_kind->{type},
+				scale          => $sensor_kind->{scale},
+				precision      => $sensor_kind->{precision},
+				value          => sprintf( '%.0f', $reading->{value} * 10**$sensor_kind->{precision} ),
+				units          => $sensor_kind->{units},
 			);
-
-			# entPhySensorType, Scale, Precision, Value, OperStatus of ok, and UnitsDisplay
-			my $sensor_value   = sprintf( '%.0f', $reading->{value} * 10**$sensor_kind->{precision} );
-			my @sensor_columns = (
-				[ 'integer', $sensor_kind->{type} ],
-				[ 'integer', $sensor_kind->{scale} ],
-				[ 'integer', $sensor_kind->{precision} ],
-				[ 'integer', $sensor_value ],
-				[ 'integer', 1 ],
-				[ 'string',  $sensor_kind->{units} ],
-			);
-			for ( my $column_index = 0; $column_index < @sensor_columns; $column_index++ ) {
-				push(
-					@oids,
-					[
-						'.1.3.6.1.2.1.99.1.1.1.' . ( $column_index + 1 ) . '.' . $sensor_index,
-						@{ $sensor_columns[$column_index] }
-					]
-				);
-			}
 		} ## end foreach my $reading ( @{ $module_info->{readings...}})
 	} ## end foreach my $interface (@interfaces)
 
-	if ( !-d $cache_dir ) {
-		mkdir( $cache_dir, 0755 ) or die( 'Failed to create "' . $cache_dir . '"... ' . $! );
-	}
+	#
+	# hwmon
+	#
 
-	# snmpd reads it as its own user
+	if ( $opts{hwmon} ) {
+		# The hwmon input files and how their raw values map to ENTITY-SENSOR-MIB. Power is
+		# in microwatts, which is sent at milli scale so a big PSU does not overflow.
+		my %hwmon_kinds = (
+			temp     => { type => 8,  scale => 8, divide => 1,    units => 'C' },
+			in       => { type => 4,  scale => 8, divide => 1,    units => 'V' },
+			curr     => { type => 5,  scale => 8, divide => 1,    units => 'A' },
+			power    => { type => 6,  scale => 8, divide => 1000, units => 'W' },
+			fan      => { type => 10, scale => 9, divide => 1,    units => 'RPM' },
+			humidity => { type => 9,  scale => 8, divide => 1,    units => '%RH' },
+		);
+
+		my @hwmon_dirs = sort { $a cmp $b } glob('/sys/class/hwmon/hwmon*');
+
+		# coretemp, nvme, and the like show up once per socket or drive, so those get the
+		# device name added to tell them apart
+		my %chip_name_counts;
+		foreach my $hwmon_dir (@hwmon_dirs) {
+			$chip_name_counts{ read_sysfs( $hwmon_dir . '/name' ) // '' }++;
+		}
+
+		foreach my $hwmon_dir (@hwmon_dirs) {
+			my $chip_name   = read_sysfs( $hwmon_dir . '/name' ) // next;
+			my $device_path = -e $hwmon_dir . '/device' ? realpath( $hwmon_dir . '/device' ) : '';
+			# reported by --power with more detail
+			next if $opts{power} && $device_path =~ m{/power_supply/};
+
+			my $chip_display_name = $chip_name;
+			if ( $chip_name_counts{$chip_name} > 1 && $device_path ne '' ) {
+				$chip_display_name = $chip_name . ' ' . ( $device_path =~ s{.*/}{}r );
+			}
+
+			# input is preferred, with average used if that is all there is, which is common for power
+			my %sensor_files;
+			opendir( my $hwmon_dh, $hwmon_dir ) or next;
+			foreach my $file ( readdir($hwmon_dh) ) {
+				my ( $kind, $number, $reading_type ) = $file =~ /^([a-z]+)(\d+)_(input|average)$/ or next;
+				next if !$hwmon_kinds{$kind};
+				if ( $reading_type eq 'input' || !defined( $sensor_files{$kind}{$number} ) ) {
+					$sensor_files{$kind}{$number} = $file;
+				}
+			}
+			closedir($hwmon_dh);
+			# Read first, so a device whose inputs all fail to read, such as a powered down
+			# GPU, is skipped instead of showing up with no sensors.
+			my @readings;
+			foreach my $kind ( sort { $a cmp $b } keys(%sensor_files) ) {
+				foreach my $number ( sort { $a <=> $b } keys( %{ $sensor_files{$kind} } ) ) {
+					# some drivers leave disabled or unconnected inputs readable, but with a enable of 0
+					next if ( read_sysfs( $hwmon_dir . '/' . $kind . $number . '_enable' ) // 1 ) eq '0';
+					my $raw_value = read_sysfs( $hwmon_dir . '/' . $sensor_files{$kind}{$number} );
+					next if !defined($raw_value) || $raw_value !~ /^-?\d+$/;
+					push( @readings, { kind => $kind, number => $number, raw_value => $raw_value } );
+				}
+			}
+			next if !@readings;
+
+			my $chip_key   = 'hwmon:' . $device_path . ':' . $chip_name;
+			my $chip_index = $index_for->($chip_key);
+			$add_entity->(
+				index          => $chip_index,
+				descr          => $chip_display_name,
+				name           => $chip_display_name,
+				contained_in   => 1,
+				class          => $entity_classes{other},
+				parent_rel_pos => -1,
+			);
+
+			my $sensor_position = 1;
+			foreach my $reading (@readings) {
+				my $kind   = $reading->{kind};
+				my $number = $reading->{number};
+				my $label  = read_sysfs( $hwmon_dir . '/' . $kind . $number . '_label' ) // $kind . $number;
+				$add_sensor->(
+					index          => $index_for->( $chip_key . ':' . $kind . $number ),
+					name           => $chip_display_name . ' ' . $label,
+					contained_in   => $chip_index,
+					parent_rel_pos => $sensor_position++,
+					type           => $hwmon_kinds{$kind}{type},
+					scale          => $hwmon_kinds{$kind}{scale},
+					precision      => 0,
+					value          => sprintf( '%.0f', $reading->{raw_value} / $hwmon_kinds{$kind}{divide} ),
+					units          => $hwmon_kinds{$kind}{units},
+				);
+			} ## end foreach my $reading (@readings)
+		} ## end foreach my $hwmon_dir (@hwmon_dirs)
+	} ## end if ( $opts{hwmon} )
+
+	#
+	# RAPL
+	#
+
+	if ( $opts{rapl} ) {
+		# intel-rapl:0 is package 0, with intel-rapl:0:0 and so on being the core, uncore,
+		# and DRAM zones in it. AMD uses the same names. intel-rapl-mmio duplicates the
+		# package zones on some Intel systems, so it is not used.
+		my $sensor_position = 1;
+		foreach my $zone_dir ( sort { $a cmp $b } glob('/sys/class/powercap/intel-rapl:*') ) {
+			my $zone = $zone_dir =~ s{.*/}{}r;
+
+			my $energy_uj = read_sysfs( $zone_dir . '/energy_uj' );
+			next if !defined($energy_uj) || $energy_uj !~ /^\d+$/;
+			my $now = time;
+
+			my $zone_name = read_sysfs( $zone_dir . '/name' ) // $zone;
+			# names a subzone after its package, such as 'package-0 core'
+			if ( $zone =~ /^(intel-rapl:\d+):\d+$/ ) {
+				$zone_name = ( read_sysfs( '/sys/class/powercap/' . $1 . '/name' ) // $1 ) . ' ' . $zone_name;
+			}
+
+			my $previous = $state->{rapl}{$zone};
+			$state->{rapl}{$zone} = { energy_uj => $energy_uj, time => $now };
+			# also skips it if the previous run was long enough ago for the counter to wrap more than once
+			next if ref($previous) ne 'HASH' || $now <= $previous->{time} || $now - $previous->{time} > 3600;
+
+			my $used_uj = $energy_uj - $previous->{energy_uj};
+			if ( $used_uj < 0 ) {
+				my $max_energy_uj = read_sysfs( $zone_dir . '/max_energy_range_uj' ) // next;
+				$used_uj += $max_energy_uj;
+			}
+
+			# microjoules per second is microwatts, sent as milliwatts
+			$add_sensor->(
+				index          => $index_for->( 'rapl:' . $zone ),
+				name           => 'RAPL ' . $zone_name,
+				contained_in   => 1,
+				parent_rel_pos => $sensor_position++,
+				type           => 6,
+				scale          => 8,
+				precision      => 0,
+				value          => sprintf( '%.0f', $used_uj / ( $now - $previous->{time} ) / 1000 ),
+				units          => 'W',
+			);
+		} ## end foreach my $zone_dir ( sort { $a cmp $b } glob(...))
+	} ## end if ( $opts{rapl} )
+
+	#
+	# power supplies
+	#
+
+	if ( $opts{power} ) {
+		# The power_supply files and how their raw values map to ENTITY-SENSOR-MIB.
+		# Voltage, current, and power are in micro units, and temp is in tenths of a degree C.
+		my @power_supply_readings = (
+			[ 'voltage_now', 'Voltage',     { type => 4, scale => 7, precision => 0, units => 'V' } ],
+			[ 'current_now', 'Current',     { type => 5, scale => 7, precision => 0, units => 'A' } ],
+			[ 'power_now',   'Power',       { type => 6, scale => 7, precision => 0, units => 'W' } ],
+			[ 'temp',        'Temperature', { type => 8, scale => 9, precision => 1, units => 'C' } ],
+		);
+
+		my $supply_position = 1;
+		foreach my $supply_dir ( sort { $a cmp $b } glob('/sys/class/power_supply/*') ) {
+			my $supply_name = $supply_dir =~ s{.*/}{}r;
+			my $supply_type = read_sysfs( $supply_dir . '/type' ) // 'Unknown';
+			my $mfg_name    = clean_dmi( read_sysfs( $supply_dir . '/manufacturer' ) );
+			my $model_name  = clean_dmi( read_sysfs( $supply_dir . '/model_name' ) );
+
+			my $supply_index = $index_for->( 'power_supply:' . $supply_name );
+			$add_entity->(
+				index          => $supply_index,
+				descr          => join( ' ', grep { $_ ne '' } $mfg_name, $model_name, $supply_type ),
+				name           => $supply_name,
+				contained_in   => 1,
+				class          => $supply_type eq 'Battery' ? $entity_classes{battery} : $entity_classes{power_supply},
+				parent_rel_pos => $supply_position++,
+				serial         => clean_dmi( read_sysfs( $supply_dir . '/serial_number' ) ),
+				mfg_name       => $mfg_name,
+				model_name     => $model_name,
+			);
+
+			my $online         = read_sysfs( $supply_dir . '/online' );
+			my $capacity_level = read_sysfs( $supply_dir . '/capacity_level' ) // '';
+			my $health         = read_sysfs( $supply_dir . '/health' )         // 'Good';
+			$add_state->(
+				index  => $supply_index,
+				admin  => 1,
+				oper   => !defined($online) ? 1 : $online ? 3 : 2,
+				alarms => {
+					critical => $capacity_level eq 'Critical',
+					major    => $health !~ /^(?:good|unknown)$/i,
+					warning  => $capacity_level eq 'Low',
+				},
+			);
+
+			my $sensor_position = 1;
+			foreach my $power_supply_reading (@power_supply_readings) {
+				my ( $file, $label, $sensor_kind ) = @{$power_supply_reading};
+				my $raw_value = read_sysfs( $supply_dir . '/' . $file );
+				next if !defined($raw_value) || $raw_value !~ /^-?\d+$/;
+				$add_sensor->(
+					index          => $index_for->( 'power_supply:' . $supply_name . ':' . $file ),
+					name           => $supply_name . ' ' . $label,
+					contained_in   => $supply_index,
+					parent_rel_pos => $sensor_position++,
+					value          => $raw_value,
+					%{$sensor_kind},
+				);
+			} ## end foreach my $power_supply_reading (@power_supply_readings)
+		} ## end foreach my $supply_dir ( sort { $a cmp $b } glob...)
+	} ## end if ( $opts{power} )
+
+	#
+	# inventory
+	#
+
+	if ( $opts{inventory} ) {
+		my $board_index = $index_for->('board');
+		$add_entity->(
+			index          => $board_index,
+			descr          => join( ' ', grep { $_ ne '' } $dmi{board_vendor}, $dmi{board_name} ) || 'Motherboard',
+			name           => 'Motherboard',
+			contained_in   => 1,
+			class          => $entity_classes{module},
+			parent_rel_pos => -1,
+			hardware_rev   => $dmi{board_version},
+			serial         => $dmi{board_serial},
+			mfg_name       => $dmi{board_vendor},
+			model_name     => $dmi{board_name},
+		);
+
+		# Returns the string a SMBIOS string number at the given offset of the
+		# formatted area points to, or '' if the structure is too short for it,
+		# it is 0 for none, or it is filler text.
+		my $smbios_string = sub {
+			my ( $structure, $offset ) = @_;
+			return '' if length( $structure->{formatted} ) <= $offset;
+			my $string_number = ord( substr( $structure->{formatted}, $offset, 1 ) );
+			return '' if !$string_number;
+			return clean_dmi( $structure->{strings}[ $string_number - 1 ] );
+		};
+
+		# SMBIOS type 4, processors. Socket designation is at 0x04, manufacturer at 0x07,
+		# version, which is the model, at 0x10, status at 0x18, serial at 0x20, and part
+		# number at 0x22. Bit 6 of status is set if the socket is populated.
+		my $cpu_position = 1;
+		foreach my $cpu_structure ( @{ read_smbios_structures(4) } ) {
+			next if length( $cpu_structure->{formatted} ) <= 0x18;
+			next if !( ord( substr( $cpu_structure->{formatted}, 0x18, 1 ) ) & 0x40 );
+
+			my $socket = $smbios_string->( $cpu_structure, 0x04 ) || 'CPU ' . $cpu_position;
+			my $model  = $smbios_string->( $cpu_structure, 0x10 );
+			$add_entity->(
+				index          => $index_for->( 'cpu:' . $socket ),
+				descr          => $model || $socket,
+				name           => $socket,
+				contained_in   => $board_index,
+				class          => $entity_classes{cpu},
+				parent_rel_pos => $cpu_position++,
+				serial         => $smbios_string->( $cpu_structure, 0x20 ),
+				mfg_name       => $smbios_string->( $cpu_structure, 0x07 ),
+				model_name     => $smbios_string->( $cpu_structure, 0x22 ) || $model,
+				is_fru         => 1,
+			);
+		} ## end foreach my $cpu_structure ( @{ read_smbios_structures...})
+
+		# SMBIOS type 17, memory devices. Size is a word at 0x0C, device locator at 0x10,
+		# bank locator at 0x11, memory type at 0x12, speed a word at 0x15, manufacturer at
+		# 0x17, serial at 0x18, part number at 0x1A, and extended size a dword at 0x1C.
+		my %memory_types = (
+			0x12 => 'DDR',
+			0x13 => 'DDR2',
+			0x18 => 'DDR3',
+			0x1A => 'DDR4',
+			0x1B => 'LPDDR',
+			0x1C => 'LPDDR2',
+			0x1D => 'LPDDR3',
+			0x1E => 'LPDDR4',
+			0x22 => 'DDR5',
+			0x23 => 'LPDDR5',
+		);
+		my $dimm_position = 1;
+		foreach my $dimm_structure ( @{ read_smbios_structures(17) } ) {
+			my $formatted = $dimm_structure->{formatted};
+			next if length($formatted) <= 0x12;
+
+			# 0 is a empty slot and 0xFFFF unknown. 0x7FFF means the size is in the extended
+			# size, in MB. Otherwise it is in MB, or KB if the high bit is set.
+			my $size_word = unpack( 'v', substr( $formatted, 0x0C, 2 ) );
+			next if $size_word == 0 || $size_word == 0xFFFF;
+			my $size_mb;
+			if ( $size_word == 0x7FFF ) {
+				next if length($formatted) < 0x20;
+				$size_mb = unpack( 'V', substr( $formatted, 0x1C, 4 ) ) & 0x7FFFFFFF;
+			} elsif ( $size_word & 0x8000 ) {
+				$size_mb = ( $size_word & 0x7FFF ) / 1024;
+			} else {
+				$size_mb = $size_word;
+			}
+
+			my $speed = length($formatted) > 0x16 ? unpack( 'v', substr( $formatted, 0x15, 2 ) ) : 0;
+			my $descr = join( ' ',
+				$size_mb >= 1024 ? ( $size_mb / 1024 ) . ' GB' : $size_mb . ' MB',
+				grep { $_ ne '' } $memory_types{ ord( substr( $formatted, 0x12, 1 ) ) } // '',
+				$speed && $speed != 0xFFFF ? $speed . ' MT/s' : '' );
+
+			my $locator = join( ' ',
+				grep { $_ ne '' } $smbios_string->( $dimm_structure, 0x11 ),
+				$smbios_string->( $dimm_structure, 0x10 ) )
+				|| 'DIMM ' . $dimm_position;
+			$add_entity->(
+				index          => $index_for->( 'dimm:' . $locator ),
+				descr          => $descr,
+				name           => $locator,
+				contained_in   => $board_index,
+				class          => $entity_classes{module},
+				parent_rel_pos => $dimm_position++,
+				serial         => $smbios_string->( $dimm_structure, 0x18 ),
+				mfg_name       => $smbios_string->( $dimm_structure, 0x17 ),
+				model_name     => $smbios_string->( $dimm_structure, 0x1A ),
+				is_fru         => 1,
+			);
+		} ## end foreach my $dimm_structure ( @{ read_smbios_structures...})
+
+		# Disks are keyed by their device path, which is the slot or port they are in, so a
+		# swapped disk keeps the index with the serial changing. NVMe is done per controller
+		# via /sys/class/nvme, as a controller can have more than one namespace under /sys/block.
+		my $disk_position = 1;
+		foreach my $nvme_dir ( sort { $a cmp $b } glob('/sys/class/nvme/nvme*') ) {
+			my $model = read_sysfs( $nvme_dir . '/model' ) // next;
+			next if !-e $nvme_dir . '/device';
+			my $controller = $nvme_dir =~ s{.*/}{}r;
+			$add_entity->(
+				index          => $index_for->( 'disk:' . realpath( $nvme_dir . '/device' ) ),
+				descr          => $model,
+				name           => $controller,
+				contained_in   => 1,
+				class          => $entity_classes{storage_drive},
+				parent_rel_pos => $disk_position++,
+				firmware_rev   => read_sysfs( $nvme_dir . '/firmware_rev' ) // '',
+				serial         => read_sysfs( $nvme_dir . '/serial' )       // '',
+				model_name     => $model,
+				is_fru         => 1,
+			);
+		} ## end foreach my $nvme_dir ( sort { $a cmp $b } glob(...))
+
+		foreach my $block_dir ( sort { $a cmp $b } glob('/sys/block/*') ) {
+			my $disk = $block_dir =~ s{.*/}{}r;
+			# loop, dm, md, zram, and the like have no device, and NVMe is done above
+			next if !-e $block_dir . '/device' || $disk =~ /^nvme/;
+			next if ( read_sysfs( $block_dir . '/removable' ) // '0' ) eq '1';
+			my $model = read_sysfs( $block_dir . '/device/model' ) // next;
+
+			# VPD page 0x80 is the serial, after a 4 byte header. libata provides it for SATA.
+			my $serial   = '';
+			my $vpd_page = read_file( $block_dir . '/device/vpd_pg80', binmode => ':raw', err_mode => 'quiet' );
+			if ( defined($vpd_page) && length($vpd_page) > 4 ) {
+				$serial = substr( $vpd_page, 4 ) =~ s/[^\x20-\x7E]//gr =~ s/^\s+|\s+$//gr;
+			}
+
+			# 512 byte sectors, shown as decimal GB as drives are sold
+			my $sectors = read_sysfs( $block_dir . '/size' ) // 0;
+			my $vendor  = clean_dmi( read_sysfs( $block_dir . '/device/vendor' ) );
+			# libata reports every SATA disk as vendor ATA
+			$vendor = '' if $vendor eq 'ATA';
+			$add_entity->(
+				index => $index_for->( 'disk:' . realpath( $block_dir . '/device' ) ),
+				descr => join( ' ', grep { $_ ne '' } $vendor, $model, sprintf( '%.0f GB', $sectors * 512 / 1e9 ) ),
+				name  => $disk,
+				contained_in   => 1,
+				class          => $entity_classes{storage_drive},
+				parent_rel_pos => $disk_position++,
+				firmware_rev   => read_sysfs( $block_dir . '/device/rev' ) // '',
+				serial         => $serial,
+				mfg_name       => $vendor,
+				model_name     => $model,
+				is_fru         => 1,
+			);
+		} ## end foreach my $block_dir ( sort { $a cmp $b } glob...)
+	} ## end if ( $opts{inventory} )
+
+	# snmpd reads the cache as its own user
 	umask(022);
 	write_file( $cache_file, { atomic => 1 }, encode_json( { version => 1, updated => time, oids => \@oids } ) );
+	write_file( $state_file, { atomic => 1 }, encode_json($state) );
 
 	exit 0;
 } ## end if ( $opts{u} )
