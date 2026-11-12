@@ -1,0 +1,1212 @@
+#!/usr/bin/env perl
+
+#Copyright (c) 2026, Zane C. Bowers-Hadley
+#All rights reserved.
+#
+#Redistribution and use in source and binary forms, with or without modification,
+#are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+#THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+#WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+#IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+#DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+#LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+#THE POSSIBILITY OF SUCH DAMAGE.
+
+use warnings;
+use strict;
+
+=head1 NAME
+
+freebsd_entity - snmpd pass_persist for ENTITY-MIB, ENTITY-SENSOR-MIB, and ENTITY-STATE-MIB on FreeBSD
+
+=head1 VERSION
+
+0.1.0
+
+=cut
+
+our $VERSION = '0.1.0';
+
+=head1 SYNOPSIS
+
+freebsd_entity B<-u> [B<-d> <cache dir>] [B<-i> <regexp>]... [B<-I> <regexp>]...
+[B<--sensors>] [B<--power>] [B<--inventory>] [B<--state>]
+
+freebsd_entity B<-p> <base OID> [B<-d> <cache dir>]
+
+freebsd_entity B<-w> [B<-d> <cache dir>]
+
+=head1 DESCRIPTION
+
+Reports pluggable transceivers, SFP, QSFP, and the like, as found via
+C<ifconfig -v>, as ENTITY-MIB inventory and their digital optical
+monitoring readings as ENTITY-SENSOR-MIB sensors. Optionally also reports
+temperature sensors, batteries and AC power, hardware inventory, and
+ENTITY-STATE-MIB state.
+
+It works in two parts. Ran with B<-u> from cron as root, it gathers
+everything and writes the cache. Ran with B<-p> by snmpd, it answers
+requests from the cache. snmpd never waits on reading the transceivers,
+which can be slow on some drivers.
+
+This is for net-snmp from ports, net-mgmt/net-snmp. bsnmpd from base does
+not support pass_persist.
+
+=head1 SNMPD CONFIG
+
+    # /etc/crontab
+    */5 * * * * root /usr/local/etc/snmp/extends/freebsd_entity -u --sensors --power --inventory --state
+
+    # /usr/local/etc/snmp/snmpd.conf
+    pass_persist .1.3.6.1.2.1.47 /usr/local/etc/snmp/extends/freebsd_entity -p .1.3.6.1.2.1.47
+    pass_persist .1.3.6.1.2.1.99 /usr/local/etc/snmp/extends/freebsd_entity -p .1.3.6.1.2.1.99
+    pass_persist .1.3.6.1.2.1.131 /usr/local/etc/snmp/extends/freebsd_entity -p .1.3.6.1.2.1.131
+
+One line is needed per MIB as they are in separate trees. B<-p> is told
+the tree as snmpd does not pass along what it was registered for. The
+.1.3.6.1.2.1.131 line is only needed with B<--state>.
+
+Run B<-u> once before restarting snmpd so the cache exists. Without a
+cache, nothing is returned.
+
+=head1 REQUIREMENTS
+
+A NIC and driver that support reading the module EEPROM for transceivers,
+such as ix, ixl, mce, and cxgbe. Readings only show up for modules that
+support digital optical monitoring.
+
+dmidecode for the CPUs and memory with B<--inventory>.
+
+=head1 FLAGS
+
+=head2 -u
+
+Update the cache. Transceivers are always checked. The rest are added
+with the flags below.
+
+=head2 --sensors
+
+Add the temperatures from coretemp(4), amdtemp(4), pchtherm(4), and the
+ACPI thermal zones.
+
+=head2 --power
+
+Add the ACPI batteries, with their voltage and rate, and the AC adapter.
+
+=head2 --inventory
+
+Add the motherboard, CPUs, memory, and disks to the inventory. The
+motherboard comes from kenv. The CPUs and memory need dmidecode and are
+skipped without it. Disks come from geom, skipping md and cd devices.
+
+=head2 --state
+
+Add ENTITY-STATE-MIB state for the transceivers and, with B<--power>, the
+batteries and AC adapter.
+
+=head2 -p <base OID>
+
+Run as a snmpd pass_persist for the tree under the base OID.
+
+=head2 -w
+
+Print the cache the same as snmpwalk would, for debugging.
+
+=head2 -d <cache dir>
+
+The cache directory. Defaults to /var/cache/freebsd_entity. The cache is
+entity.json in it, with state.json holding what is needed between runs.
+
+=head2 -i <regexp>
+
+Only check interfaces with a name matching this regexp for transceivers.
+May be used more than once, in which case an interface matching any of
+them is checked.
+
+=head2 -I <regexp>
+
+Skip interfaces with a name matching this regexp. May be used more than
+once. Checked after B<-i>. Handy for skipping the piles of epair and tap
+interfaces jails and VMs bring.
+
+=head1 ENTITIES
+
+Indexes are kept the same between runs, so a sensor or part keeps its
+history. The ifindex is read via ifmib(4), so it matches IF-MIB.
+
+- 1 :: The chassis, using what is in kenv.
+
+- $ifindex * 1000 :: A transceiver port. entAliasMappingIdentifier maps it
+  to IF-MIB::ifIndex.$ifindex. entPhysicalAlias is the interface
+  description, as set via C<ifconfig $interface description ...>.
+
+- $ifindex * 1000 + 1 :: The transceiver. Vendor name, part number, and
+  serial go in entPhysicalMfgName, ModelName, and SerialNum.
+
+- $ifindex * 1000 + 10 :: Transceiver temperature, celsius.
+
+- $ifindex * 1000 + 11 :: Transceiver voltage, voltsDC.
+
+- $ifindex * 1000 + 100 + $lane :: Laser bias current, amperes at milli scale.
+
+- $ifindex * 1000 + 200 + $lane :: Tx power, other with dBm as the units.
+
+- $ifindex * 1000 + 300 + $lane :: Rx power, other with dBm as the units.
+
+- 1000000000 and up :: Everything else. Disk names and the like can change
+  between boots, so each is given the next free index the first time it is
+  seen, keyed by something stable such as the CAM bus, target, and LUN.
+  That is saved in state.json. Removing it renumbers everything.
+
+$lane is 0 for single lane transceivers and the lane number for multi lane
+ones, such as 1 to 4 for QSFP. Interfaces with a ifindex over 999999 are
+skipped so the transceiver indexes stay under 1000000000.
+
+The transceiver Tx and Rx power sensors are named "$interface Tx Power
+Sensor" and "$interface Rx Power Sensor", or "$interface Lane $lane Rx
+Power Sensor" and so on for multi lane ones. ENTITY-SENSOR-MIB lacks a
+dBm type and LibreNMS uses those names to treat them as dBm. A power
+reading of zero, -inf dBm, is reported as -40 dBm.
+
+Battery charge is not reported, as ENTITY-SENSOR-MIB lacks a percent type.
+
+=head1 STATE
+
+With B<--state>, the entStateTable has a row for each transceiver, and
+with B<--power> each battery and the AC adapter.
+
+- Transceivers :: entStateAdmin is unlocked if the interface is up and
+  locked if down. entStateOper is enabled.
+
+- Batteries :: entStateAlarm has critical set if acpiconf reports the
+  state as critical.
+
+- AC adapter :: entStateOper is enabled if on AC power and disabled if not.
+
+The rest of the columns are unknown.
+
+=head1 INSTALL
+
+    pkg install p5-JSON p5-File-Slurp dmidecode
+
+=cut
+
+use Getopt::Long;
+use JSON;
+use File::Slurp;
+use File::Temp qw(tempdir);
+use Pod::Usage;
+
+sub main::VERSION_MESSAGE {
+	print 'freebsd_entity LibreNMS snmpd pass_persist v. ' . $VERSION . "\n";
+}
+
+sub main::HELP_MESSAGE {
+	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
+}
+
+# Compares two OIDs component by component, numerically, for use with sort
+# and for finding the next OID. A OID that is a prefix of another sorts first.
+#
+# Args:
+# - $oid_a_parts :: Array ref of the numeric components of the first OID,
+#       for example [ 1, 3, 6, 1, 2, 1, 47 ].
+# - $oid_b_parts :: Same for the second OID.
+#
+# Returns -1, 0, or 1, the same as <=>.
+#
+# Example:
+#
+#     # returns -1 as 9 sorts before 10, which a string compare gets wrong
+#     my $order = oid_compare( [ 1, 3, 9 ], [ 1, 3, 10 ] );
+sub oid_compare {
+	my ( $oid_a_parts, $oid_b_parts ) = @_;
+
+	my $shortest = @{$oid_a_parts} < @{$oid_b_parts} ? scalar( @{$oid_a_parts} ) : scalar( @{$oid_b_parts} );
+	for ( my $part_index = 0; $part_index < $shortest; $part_index++ ) {
+		my $order = $oid_a_parts->[$part_index] <=> $oid_b_parts->[$part_index];
+		return $order if $order;
+	}
+
+	return @{$oid_a_parts} <=> @{$oid_b_parts};
+} ## end sub oid_compare
+
+# Runs a command, without a shell, and returns what it printed to stdout.
+# stderr goes to /dev/null, as the tools used here complain about every
+# interface without a module, sysctl that does not exist, and the like,
+# which would just be noise in cron mail.
+#
+# Args:
+# - @command :: The command and its args, for example
+#       ( '/sbin/sysctl', '-n', 'hw.acpi.acline' ).
+#
+# Returns a list of the output as a string, raw bytes so binary sysctls work,
+# and true if it exited 0. The output is '' if it could not be ran.
+#
+#     ( "1\n", 1 )
+#
+# Example:
+#
+#     my ( $acline, $acline_ok ) = run_command( '/sbin/sysctl', '-n', 'hw.acpi.acline' );
+#     print 'on AC' if $acline_ok && $acline == 1;
+sub run_command {
+	my (@command) = @_;
+
+	open( my $saved_stderr, '>&', \*STDERR ) or die( 'Failed to dup stderr... ' . $! );
+	open( STDERR,           '>',  '/dev/null' );
+	my $output     = '';
+	my $command_ok = open( my $command_fh, '-|', @command );
+	if ($command_ok) {
+		binmode($command_fh);
+		$output = join( '', <$command_fh> );
+		# close returns false when the command exits non-zero
+		$command_ok = close($command_fh);
+	}
+	open( STDERR, '>&', $saved_stderr );
+
+	return ( $output, $command_ok );
+} ## end sub run_command
+
+# Blanks the filler text BIOS vendors put in unused SMBIOS fields, such as
+# 'To Be Filled By O.E.M.', so it does not end up in the inventory.
+#
+# Args:
+# - $value :: The string from kenv or SMBIOS, may be undef.
+#
+# Returns the value with surrounding whitespace removed, as SMBIOS strings are
+# often padded, or '' if it is undef or filler.
+#
+# Example:
+#
+#     # returns ''
+#     my $serial = clean_dmi('Not Specified');
+sub clean_dmi {
+	my ($value) = @_;
+
+	return '' if !defined($value);
+	$value =~ s/^\s+|\s+$//g;
+	return '' if $value =~ /^(?:not specified|to be filled by o\.e\.m\.|default string|unknown|none|n\/a|0+|)$/i;
+
+	return $value;
+}
+
+# Reads the SMBIOS table via 'dmidecode --dump-bin', which puts the entry point
+# at the start of the file and the table at offset 32, and splits it into
+# structures by type.
+#
+# Args:
+# - $dmidecode :: Full path to dmidecode.
+#
+# Returns a hash ref keyed by SMBIOS structure type, each a array ref of hash refs,
+# one per structure, in table order. formatted is the raw bytes of the formatted
+# area, including the four byte header, so the offsets in the SMBIOS spec can be
+# used on it directly. strings is the string table, where a string number N from
+# the formatted area is at index N - 1. Returns a empty hash ref if dmidecode is
+# missing or fails.
+#
+#     {
+#         17 => [
+#             {
+#                 formatted => "\x11\x28\x2a\x00...",
+#                 strings   => [ 'DIMM A', 'BANK 0', 'Samsung', '12345678', 'M471A1K43DB1-CWE' ],
+#             },
+#         ],
+#     }
+#
+# Example:
+#
+#     my $smbios = read_smbios_dump('/usr/local/sbin/dmidecode');
+#     print scalar( @{ $smbios->{17} || [] } ) . " memory devices\n";
+sub read_smbios_dump {
+	my ($dmidecode) = @_;
+
+	return {} if !-x $dmidecode;
+
+	my $dump_dir  = tempdir( CLEANUP => 1 );
+	my $dump_file = $dump_dir . '/smbios.bin';
+	my ( undef, $dump_ok ) = run_command( $dmidecode, '-q', '--dump-bin', $dump_file );
+	return {} if !$dump_ok;
+	my $dump = read_file( $dump_file, binmode => ':raw', err_mode => 'quiet' );
+	return {} if !defined($dump);
+
+	my %structures;
+	my $offset = 32;
+	while ( $offset + 4 <= length($dump) ) {
+		my $type             = ord( substr( $dump, $offset,     1 ) );
+		my $formatted_length = ord( substr( $dump, $offset + 1, 1 ) );
+		last if $formatted_length < 4;
+
+		# the strings follow the formatted area, each NUL terminated, with a extra NUL ending them
+		my $strings_start = $offset + $formatted_length;
+		my $strings_end   = index( $dump, "\0\0", $strings_start );
+		last if $strings_end < 0;
+
+		push(
+			@{ $structures{$type} },
+			{
+				formatted => substr( $dump, $offset, $formatted_length ),
+				strings   => [ split( /\0/, substr( $dump, $strings_start, $strings_end - $strings_start ) ) ],
+			}
+		);
+
+		# 127 is the end of table marker
+		last if $type == 127;
+		$offset = $strings_end + 2;
+	} ## end while ( $offset + 4 <= length($dump) )
+
+	return \%structures;
+} ## end sub read_smbios_dump
+
+# Parses the output of 'ifconfig -v $interface' for what is needed about the
+# interface and its transceiver.
+#
+# Args:
+# - $ifconfig_output :: The full output of 'ifconfig -v', as a string...
+#
+#       ix0: flags=8843<UP,BROADCAST,RUNNING,SIMPLEX,MULTICAST> metric 0 mtu 1500
+#               description: uplink to core
+#               plugged: SFP/SFP+/SFP28 10G Base-SR (LC)
+#               vendor: FINISAR CORP. PN: FTLX8571D3BCL SN: AAA0B1C DATE: 2011-05-20
+#               module temperature: 32.45 C voltage: 3.33 Volts
+#               RX: 0.52 mW (-2.81 dBm) TX: 0.62 mW (-2.05 dBm)
+#
+#       QSFP has a line per lane instead of the RX/TX one...
+#
+#               lane 1: RX power: 0.41 mW (-3.82 dBm) TX bias: 6.22 mA
+#
+# Returns a hash ref. up is true if the interface has the UP flag. description is
+# the interface description. plugged is what ifconfig says is plugged in, '' if there
+# is no module. vendor_name, vendor_pn, and vendor_sn are strings, '' if not printed.
+# readings is a array ref of hash refs, one per reading found, each with the kind of
+# reading, the lane, 0 if it is not per lane, and the value. Kind is one of temperature
+# in C, voltage in V, bias in mA, tx_power in dBm, or rx_power in dBm. -inf dBm becomes -40.
+#
+#     {
+#         up          => 1,
+#         description => 'uplink to core',
+#         plugged     => 'SFP/SFP+/SFP28 10G Base-SR',
+#         vendor_name => 'FINISAR CORP.',
+#         vendor_pn   => 'FTLX8571D3BCL',
+#         vendor_sn   => 'AAA0B1C',
+#         readings    => [
+#             { kind => 'temperature', lane => 0, value => 32.45 },
+#             { kind => 'rx_power',    lane => 0, value => -2.81 },
+#         ],
+#     }
+#
+# Example:
+#
+#     my ($ifconfig_output) = run_command( '/sbin/ifconfig', '-v', 'ix0' );
+#     my $interface_info = parse_ifconfig( $ifconfig_output );
+#     print $interface_info->{vendor_pn} . "\n" if $interface_info->{plugged} ne '';
+sub parse_ifconfig {
+	my ($ifconfig_output) = @_;
+
+	my %interface_info = (
+		up          => 0,
+		description => '',
+		plugged     => '',
+		vendor_name => '',
+		vendor_pn   => '',
+		vendor_sn   => '',
+		readings    => [],
+	);
+
+	# the power and bias values, the mW figure being ignored for the dBm one
+	my $dbm_regexp = qr/\s*[\d.]+\s*mW\s*\(\s*(-?(?:[\d.]+|inf))\s*dBm\s*\)/i;
+
+	foreach my $line ( split( /\n/, $ifconfig_output ) ) {
+		if ( $line =~ /^\S+: flags=[0-9a-f]+<([^>]*)>/ ) {
+			$interface_info{up} = grep { $_ eq 'UP' } split( /,/, $1 );
+		} elsif ( $line =~ /^\s+description:\s*(.*?)\s*$/ ) {
+			$interface_info{description} = $1;
+		} elsif ( $line =~ /^\s+plugged:\s*(.*?)\s*$/ ) {
+			# the connector, such as '(LC)', is left off
+			$interface_info{plugged} = $1 =~ s/\s*\([^)]*\)$//r;
+		} elsif ( $line =~ /^\s+vendor:\s*(.*?)\s+PN:\s*(.*?)\s+SN:\s*(.*?)(?:\s+DATE:.*)?\s*$/ ) {
+			@interface_info{ 'vendor_name', 'vendor_pn', 'vendor_sn' } = ( $1, $2, $3 );
+		} elsif ( $line =~ /^\s+module temperature:/i ) {
+			if ( $line =~ /temperature:\s*(-?[\d.]+)\s*C\b/i ) {
+				push( @{ $interface_info{readings} }, { kind => 'temperature', lane => 0, value => $1 + 0 } );
+			}
+			if ( $line =~ /voltage:\s*(-?[\d.]+)\s*Volts?\b/i ) {
+				push( @{ $interface_info{readings} }, { kind => 'voltage', lane => 0, value => $1 + 0 } );
+			}
+		} elsif ( $line =~ /^\s+(?:lane\s+(\d+):\s*)?RX\b/i ) {
+			my $lane = $1 // 0;
+			my @line_readings;
+			if ( $line =~ /RX(?: power)?:$dbm_regexp/i ) {
+				push( @line_readings, [ 'rx_power', $1 ] );
+			}
+			# TX is the power for SFP and, on some versions, the bias for QSFP
+			if ( $line =~ /TX(?: power)?:$dbm_regexp/i ) {
+				push( @line_readings, [ 'tx_power', $1 ] );
+			} elsif ( $line =~ /TX(?: bias)?:\s*(-?[\d.]+)\s*mA/i ) {
+				push( @line_readings, [ 'bias', $1 ] );
+			}
+			foreach my $line_reading (@line_readings) {
+				my ( $kind, $value ) = @{$line_reading};
+				$value = -40 if $value =~ /inf$/;
+				push( @{ $interface_info{readings} }, { kind => $kind, lane => $lane, value => $value + 0 } );
+			}
+		} ## end elsif ( $line =~ /^\s+(?:lane\s+(\d+):\s*)?RX\b/i)
+	} ## end foreach my $line ( split( /\n/, $ifconfig_output...))
+
+	return \%interface_info;
+} ## end sub parse_ifconfig
+
+# Reads the cache and returns the OIDs in it that are under the base OID, in order.
+#
+# Args:
+# - $cache_file :: Full path to the cache file written by -u.
+# - $base_oid :: Only OIDs under this are returned, for example '.1.3.6.1.2.1.47'.
+#       Undef returns all of them.
+#
+# Returns a array ref of hash refs, sorted by OID, each with the OID as a string,
+# its numeric parts as a array ref, its pass_persist type, and its value. Returns
+# a empty array ref if the cache does not exist or can not be parsed, so a missing
+# cache just means nothing is answered.
+#
+#     [
+#         {
+#             oid   => '.1.3.6.1.2.1.47.1.1.1.1.2.1',
+#             parts => [ 1, 3, 6, 1, 2, 1, 47, 1, 1, 1, 1, 2, 1 ],
+#             type  => 'string',
+#             value => 'Chassis',
+#         },
+#     ]
+#
+# Example:
+#
+#     my $entries = load_cache( '/var/cache/freebsd_entity/entity.json', '.1.3.6.1.2.1.99' );
+sub load_cache {
+	my ( $cache_file, $base_oid ) = @_;
+
+	my $cache = eval { decode_json( read_file($cache_file) ) };
+	return [] if ref($cache) ne 'HASH' || ref( $cache->{oids} ) ne 'ARRAY';
+
+	my $base_prefix = defined($base_oid) ? $base_oid . '.' : '';
+
+	my @entries;
+	foreach my $cached_oid ( @{ $cache->{oids} } ) {
+		my ( $oid, $type, $value ) = @{$cached_oid};
+		next if index( $oid, $base_prefix ) != 0;
+		push(
+			@entries,
+			{
+				oid   => $oid,
+				parts => [ grep { $_ ne '' } split( /\./, $oid ) ],
+				type  => $type,
+				value => $value,
+			}
+		);
+	} ## end foreach my $cached_oid ( @{ $cache->{oids} } )
+
+	return [ sort { oid_compare( $a->{parts}, $b->{parts} ) } @entries ];
+} ## end sub load_cache
+
+#gets the options
+my %opts;
+# i and I are array refs as they may be given more than once
+Getopt::Long::Configure( 'bundling', 'no_ignore_case' );
+GetOptions( \%opts, 'u', 'p=s', 'w', 'd=s', 'i=s@', 'I=s@', 'sensors', 'power', 'inventory', 'state', 'help',
+	'version' )
+	or exit 255;
+
+if ( $opts{version} ) {
+	main::VERSION_MESSAGE();
+	exit 0;
+}
+
+if ( $opts{help} ) {
+	main::VERSION_MESSAGE();
+	main::HELP_MESSAGE();
+}
+
+my $modes_given = grep { defined( $opts{$_} ) } ( 'u', 'p', 'w' );
+if ( $modes_given != 1 ) {
+	die('One of -u, -p, or -w is required');
+}
+
+if ( !$opts{u} && grep { $opts{$_} } ( 'sensors', 'power', 'inventory', 'state' ) ) {
+	die('--sensors, --power, --inventory, and --state are only used with -u');
+}
+
+my $cache_dir  = defined( $opts{d} ) ? $opts{d} : '/var/cache/freebsd_entity';
+my $cache_file = $cache_dir . '/entity.json';
+my $state_file = $cache_dir . '/state.json';
+
+if ( $opts{u} ) {
+	# compiled up front so a bad regexp dies before anything is done
+	my @include_regexps = map { qr/$_/ } @{ $opts{i} || [] };
+	my @ignore_regexps  = map { qr/$_/ } @{ $opts{I} || [] };
+
+	# full paths as cron has a minimal path
+	my %commands = (
+		sysctl     => '/sbin/sysctl',
+		ifconfig   => '/sbin/ifconfig',
+		kenv       => '/bin/kenv',
+		acpiconf   => '/usr/sbin/acpiconf',
+		geom       => '/sbin/geom',
+		camcontrol => '/sbin/camcontrol',
+		dmidecode  => '/usr/local/sbin/dmidecode',
+	);
+
+	if ( !-d $cache_dir ) {
+		mkdir( $cache_dir, 0755 ) or die( 'Failed to create "' . $cache_dir . '"... ' . $! );
+	}
+
+	# What has to be kept between runs. index_map is stable key to entPhysicalIndex for
+	# everything not using the ifindex based ones, with next_index the last one handed out.
+	my $state = eval { decode_json( read_file($state_file) ) };
+	if ( ref($state) ne 'HASH' ) {
+		$state = {};
+	}
+	$state->{index_map}  //= {};
+	$state->{next_index} //= 999999999;
+
+	my $index_for = sub {
+		my ($stable_key) = @_;
+		$state->{index_map}{$stable_key} //= ++$state->{next_index};
+		return $state->{index_map}{$stable_key};
+	};
+
+	# entPhysicalClass values
+	my %entity_classes = (
+		chassis       => 3,
+		power_supply  => 6,
+		sensor        => 8,
+		module        => 9,
+		port          => 10,
+		cpu           => 12,
+		battery       => 14,
+		storage_drive => 15,
+	);
+
+	# Each is [ OID, pass_persist type, value ]. The entPhysicalTable columns
+	# are, in order, Descr, VendorType, ContainedIn, Class, ParentRelPos, Name,
+	# HardwareRev, FirmwareRev, SoftwareRev, SerialNum, MfgName, ModelName,
+	# Alias, AssetID, and IsFRU, which are 2 to 16.
+	my @oids;
+	my $add_entity = sub {
+		my (%entity) = @_;
+		my @columns = (
+			[ 'string',   $entity{descr} ],
+			[ 'objectid', '.0.0' ],
+			[ 'integer',  $entity{contained_in} ],
+			[ 'integer',  $entity{class} ],
+			[ 'integer',  $entity{parent_rel_pos} ],
+			[ 'string',   $entity{name} ],
+			[ 'string',   $entity{hardware_rev} // '' ],
+			[ 'string',   $entity{firmware_rev} // '' ],
+			[ 'string',   '' ],
+			[ 'string',   $entity{serial}     // '' ],
+			[ 'string',   $entity{mfg_name}   // '' ],
+			[ 'string',   $entity{model_name} // '' ],
+			[ 'string',   $entity{alias}      // '' ],
+			[ 'string',   '' ],
+			[ 'integer',  $entity{is_fru} ? 1 : 2 ],
+		);
+		for ( my $column_index = 0; $column_index < @columns; $column_index++ ) {
+			my ( $type, $value ) = @{ $columns[$column_index] };
+			# a newline would break the pass_persist protocol
+			$value =~ s/[\r\n]+/ /g;
+			push( @oids,
+				[ '.1.3.6.1.2.1.47.1.1.1.1.' . ( $column_index + 2 ) . '.' . $entity{index}, $type, $value ] );
+		}
+	}; ## end $add_entity = sub
+
+	# Adds a sensor entity and its entPhySensorTable row. Takes index, name,
+	# contained_in, parent_rel_pos, type, scale, precision, value, and units.
+	#
+	# type is the entPhySensorType, 1 other, 4 voltsDC, 5 amperes, 6 watts, or 8 celsius.
+	# scale is the entPhySensorScale, 8 milli or 9 units. value is the integer to send,
+	# the reading being value / 10 ** precision at that scale.
+	my $add_sensor = sub {
+		my (%sensor) = @_;
+
+		# entPhySensorValue is a Integer32
+		return if abs( $sensor{value} ) > 2147483647;
+
+		$add_entity->(
+			index          => $sensor{index},
+			descr          => $sensor{name},
+			name           => $sensor{name},
+			contained_in   => $sensor{contained_in},
+			class          => $entity_classes{sensor},
+			parent_rel_pos => $sensor{parent_rel_pos},
+		);
+
+		# Type, Scale, Precision, Value, OperStatus of ok, and UnitsDisplay
+		my @sensor_columns = (
+			[ 'integer', $sensor{type} ],
+			[ 'integer', $sensor{scale} ],
+			[ 'integer', $sensor{precision} ],
+			[ 'integer', $sensor{value} ],
+			[ 'integer', 1 ],
+			[ 'string',  $sensor{units} ],
+		);
+		for ( my $column_index = 0; $column_index < @sensor_columns; $column_index++ ) {
+			push(
+				@oids,
+				[
+					'.1.3.6.1.2.1.99.1.1.1.' . ( $column_index + 1 ) . '.' . $sensor{index},
+					@{ $sensor_columns[$column_index] }
+				]
+			);
+		}
+	}; ## end $add_sensor = sub
+
+	# Adds a entStateTable row if --state was given. Takes index, admin, oper, and
+	# the alarms as a hash ref of critical, major, and warning, true for each set.
+	#
+	# admin is entStateAdmin, 1 unknown, 2 locked, or 4 unlocked. oper is entStateOper,
+	# 1 unknown, 2 disabled, or 3 enabled. Usage and standby are always 1, unknown.
+	my $add_state = sub {
+		my (%entity_state) = @_;
+		return if !$opts{state};
+
+		# entStateAlarm is BITS, numbered from the high bit of the first octet, with
+		# critical as 2, major as 3, and warning as 5. Sent as hex for the octet type.
+		my $alarm_bits = 0;
+		$alarm_bits |= 0x20 if $entity_state{alarms}{critical};
+		$alarm_bits |= 0x10 if $entity_state{alarms}{major};
+		$alarm_bits |= 0x04 if $entity_state{alarms}{warning};
+
+		my @state_columns = (
+			[ 2, 'integer', $entity_state{admin} ],
+			[ 3, 'integer', $entity_state{oper} ],
+			[ 4, 'integer', 1 ],
+			[ 5, 'octet',   sprintf( '%02X', $alarm_bits ) ],
+			[ 6, 'integer', 1 ],
+		);
+		foreach my $state_column (@state_columns) {
+			my ( $column, $type, $value ) = @{$state_column};
+			push( @oids, [ '.1.3.6.1.2.1.131.1.1.1.' . $column . '.' . $entity_state{index}, $type, $value ] );
+		}
+	}; ## end $add_state = sub
+
+	#
+	# chassis
+	#
+
+	# kenv prints each as name="value"
+	my %kenv;
+	my ($kenv_output) = run_command( $commands{kenv} );
+	foreach my $kenv_line ( split( /\n/, $kenv_output ) ) {
+		if ( $kenv_line =~ /^([^=]+)="(.*)"$/ ) {
+			$kenv{$1} = clean_dmi($2);
+		}
+	}
+	$add_entity->(
+		index          => 1,
+		descr          => 'Chassis',
+		name           => 'Chassis',
+		contained_in   => 0,
+		class          => $entity_classes{chassis},
+		parent_rel_pos => -1,
+		firmware_rev   => $kenv{'smbios.bios.version'},
+		serial         => $kenv{'smbios.system.serial'},
+		mfg_name       => $kenv{'smbios.system.maker'},
+		model_name     => $kenv{'smbios.system.product'},
+	);
+
+	#
+	# transceivers
+	#
+
+	# Interface name to ifindex via ifmib(4). ifcount is the highest ifindex in use, and
+	# each index that exists has a struct ifmibdata starting with the name in a 16 byte,
+	# NUL padded field. Destroyed interfaces leave gaps, which just fail and are skipped.
+	my %interface_indexes;
+	my ($ifcount) = run_command( $commands{sysctl}, '-n', 'net.link.generic.system.ifcount' );
+	$ifcount = 0 if $ifcount !~ /^\s*\d+\s*$/;
+	foreach my $ifindex ( 1 .. $ifcount ) {
+		my ( $ifmib_data, $ifmib_ok )
+			= run_command( $commands{sysctl}, '-b', 'net.link.generic.ifdata.' . $ifindex . '.general' );
+		next if !$ifmib_ok || length($ifmib_data) < 16;
+		my $interface = substr( $ifmib_data, 0, 16 ) =~ s/\0.*//sr;
+		$interface_indexes{$interface} = $ifindex if $interface ne '';
+	}
+
+	# offset is added to the port index, plus the lane for those that can have more than one
+	my %transceiver_sensor_kinds = (
+		temperature =>
+			{ offset => 10, type => 8, scale => 9, precision => 2, units => 'C', name => 'Temperature Sensor' },
+		voltage => { offset => 11, type => 4, scale => 9, precision => 3, units => 'V', name => 'Voltage Sensor' },
+		bias    =>
+			{ offset => 100, type => 5, scale => 8, precision => 3, units => 'mA', name => 'Bias Current Sensor' },
+		tx_power =>
+			{ offset => 200, type => 1, scale => 9, precision => 2, units => 'dBm', name => 'Tx Power Sensor' },
+		rx_power =>
+			{ offset => 300, type => 1, scale => 9, precision => 2, units => 'dBm', name => 'Rx Power Sensor' },
+	);
+
+	foreach my $interface ( sort { $interface_indexes{$a} <=> $interface_indexes{$b} } keys(%interface_indexes) ) {
+		next if @include_regexps && !grep { $interface =~ $_ } @include_regexps;
+		next if grep                      { $interface =~ $_ } @ignore_regexps;
+
+		my $ifindex = $interface_indexes{$interface};
+		# keeps the transceiver indexes under the 1000000000 the others start at
+		next if $ifindex > 999999;
+
+		my ( $ifconfig_output, $ifconfig_ok ) = run_command( $commands{ifconfig}, '-v', $interface );
+		next if !$ifconfig_ok;
+		my $interface_info = parse_ifconfig($ifconfig_output);
+		next if $interface_info->{plugged} eq '';
+
+		my $port_index   = $ifindex * 1000;
+		my $module_index = $port_index + 1;
+
+		$add_entity->(
+			index          => $port_index,
+			descr          => $interface,
+			name           => $interface,
+			contained_in   => 1,
+			class          => $entity_classes{port},
+			parent_rel_pos => $ifindex,
+			alias          => $interface_info->{description},
+		);
+		# entAliasMappingIdentifier, with 0 as the logical index
+		push( @oids,
+			[ '.1.3.6.1.2.1.47.1.3.2.1.2.' . $port_index . '.0', 'objectid', '.1.3.6.1.2.1.2.2.1.1.' . $ifindex ] );
+
+		$add_entity->(
+			index          => $module_index,
+			descr          => $interface_info->{plugged},
+			name           => $interface . ' Transceiver',
+			contained_in   => $port_index,
+			class          => $entity_classes{module},
+			parent_rel_pos => 1,
+			serial         => $interface_info->{vendor_sn},
+			mfg_name       => $interface_info->{vendor_name},
+			model_name     => $interface_info->{vendor_pn},
+			is_fru         => 1,
+		);
+
+		$add_state->(
+			index  => $module_index,
+			admin  => $interface_info->{up} ? 4 : 2,
+			oper   => 3,
+			alarms => {},
+		);
+
+		my $sensor_position = 1;
+		foreach my $reading ( @{ $interface_info->{readings} } ) {
+			my $sensor_kind = $transceiver_sensor_kinds{ $reading->{kind} };
+			my $sensor_name
+				= $reading->{lane}
+				? $interface . ' Lane ' . $reading->{lane} . ' ' . $sensor_kind->{name}
+				: $interface . ' ' . $sensor_kind->{name};
+			$add_sensor->(
+				index          => $port_index + $sensor_kind->{offset} + $reading->{lane},
+				name           => $sensor_name,
+				contained_in   => $module_index,
+				parent_rel_pos => $sensor_position++,
+				type           => $sensor_kind->{type},
+				scale          => $sensor_kind->{scale},
+				precision      => $sensor_kind->{precision},
+				value          => sprintf( '%.0f', $reading->{value} * 10**$sensor_kind->{precision} ),
+				units          => $sensor_kind->{units},
+			);
+		} ## end foreach my $reading ( @{ $interface_info->{readings...}})
+	} ## end foreach my $interface ( sort { $interface_indexes...})
+
+	#
+	# temperature sensors
+	#
+
+	if ( $opts{sensors} ) {
+		# Each is a regexp for the sysctl name and how to name the sensor from its captures.
+		# Temperatures are printed like '45.0C'. Only the current readings are matched, so
+		# tjmax, the ACPI _PSV, _HOT, and _CRT trip points, and the like are left out.
+		my @temperature_sysctls = (
+			[ qr/^dev\.cpu\.(\d+)\.temperature$/,            sub { 'CPU ' . $_[0] } ],
+			[ qr/^dev\.amdtemp\.(\d+)\.(.+)$/,               sub { 'amdtemp ' . $_[0] . ' ' . $_[1] } ],
+			[ qr/^dev\.pchtherm\.(\d+)\.temperature$/,       sub { 'PCH ' . $_[0] } ],
+			[ qr/^hw\.acpi\.thermal\.(tz\d+)\.temperature$/, sub { 'ACPI ' . $_[0] } ],
+		);
+
+		# a node that does not exist just prints a error and the rest still print
+		my ($sysctl_output)
+			= run_command( $commands{sysctl}, '-e', 'dev.cpu', 'dev.amdtemp', 'dev.pchtherm', 'hw.acpi.thermal' );
+
+		my $sensor_position = 1;
+		foreach my $sysctl_line ( split( /\n/, $sysctl_output ) ) {
+			my ( $sysctl_name, $temperature ) = $sysctl_line =~ /^([^=]+)=(-?[\d.]+)C$/ or next;
+			foreach my $temperature_sysctl (@temperature_sysctls) {
+				my ( $name_regexp, $make_sensor_name ) = @{$temperature_sysctl};
+				my @name_parts = $sysctl_name =~ $name_regexp or next;
+				$add_sensor->(
+					index          => $index_for->( 'sysctl:' . $sysctl_name ),
+					name           => $make_sensor_name->(@name_parts),
+					contained_in   => 1,
+					parent_rel_pos => $sensor_position++,
+					type           => 8,
+					scale          => 9,
+					precision      => 1,
+					value          => sprintf( '%.0f', $temperature * 10 ),
+					units          => 'C',
+				);
+				last;
+			} ## end foreach my $temperature_sysctl (@temperature_sysctls)
+		} ## end foreach my $sysctl_line ( split( /\n/, $sysctl_output...))
+	} ## end if ( $opts{sensors} )
+
+	#
+	# power
+	#
+
+	if ( $opts{power} ) {
+		my ( $acline, $acline_ok ) = run_command( $commands{sysctl}, '-n', 'hw.acpi.acline' );
+		if ( $acline_ok && $acline =~ /^\s*(\d+)\s*$/ ) {
+			my $on_ac    = $1;
+			my $ac_index = $index_for->('power:acline');
+			$add_entity->(
+				index          => $ac_index,
+				descr          => 'AC Adapter',
+				name           => 'AC',
+				contained_in   => 1,
+				class          => $entity_classes{power_supply},
+				parent_rel_pos => 1,
+			);
+			$add_state->( index => $ac_index, admin => 1, oper => $on_ac ? 3 : 2, alarms => {} );
+		} ## end if ( $acline_ok && $acline =~ /^\s*(\d+)\s*$/)
+
+		my ($battery_units) = run_command( $commands{sysctl}, '-n', 'hw.acpi.battery.units' );
+		$battery_units = 0 if $battery_units !~ /^\s*\d+\s*$/;
+		foreach my $battery_unit ( 0 .. $battery_units - 1 ) {
+			my ( $acpiconf_output, $acpiconf_ok ) = run_command( $commands{acpiconf}, '-i', $battery_unit );
+			next if !$acpiconf_ok;
+
+			# each line is a label, a colon, and tabs before the value
+			my %battery_info;
+			foreach my $acpiconf_line ( split( /\n/, $acpiconf_output ) ) {
+				if ( $acpiconf_line =~ /^([^:]+):\s*(.*?)\s*$/ ) {
+					$battery_info{ lc($1) } = $2;
+				}
+			}
+
+			my $mfg_name      = clean_dmi( $battery_info{'oem info'} );
+			my $model_name    = clean_dmi( $battery_info{'model number'} );
+			my $battery_name  = 'Battery ' . $battery_unit;
+			my $battery_index = $index_for->( 'power:battery:' . $battery_unit );
+			$add_entity->(
+				index          => $battery_index,
+				descr          => join( ' ', grep { $_ ne '' } $mfg_name, $model_name, 'Battery' ),
+				name           => $battery_name,
+				contained_in   => 1,
+				class          => $entity_classes{battery},
+				parent_rel_pos => $battery_unit + 2,
+				serial         => clean_dmi( $battery_info{'serial number'} ),
+				mfg_name       => $mfg_name,
+				model_name     => $model_name,
+			);
+			$add_state->(
+				index => $battery_index,
+				admin => 1,
+				oper  => 1,
+				# the ternary keeps a failed match from becoming a empty list in the hash
+				alarms => { critical => ( $battery_info{state} // '' ) =~ /critical/i ? 1 : 0 },
+			);
+
+			# Present rate is the power in mW, or the current in mA for batteries that report
+			# capacity in mAh. Both are sent at milli scale.
+			my $sensor_position = 1;
+			if ( ( $battery_info{'present voltage'} // '' ) =~ /^(\d+)\s*mV$/ ) {
+				$add_sensor->(
+					index          => $index_for->( 'power:battery:' . $battery_unit . ':voltage' ),
+					name           => $battery_name . ' Voltage',
+					contained_in   => $battery_index,
+					parent_rel_pos => $sensor_position++,
+					type           => 4,
+					scale          => 8,
+					precision      => 0,
+					value          => $1,
+					units          => 'V',
+				);
+			} ## end if ( ( $battery_info{'present voltage'} //...))
+			if ( ( $battery_info{'present rate'} // '' ) =~ /^(\d+)\s*m([WA])$/ ) {
+				my ( $rate, $rate_unit ) = ( $1, $2 );
+				$add_sensor->(
+					index          => $index_for->( 'power:battery:' . $battery_unit . ':rate' ),
+					name           => $battery_name . ( $rate_unit eq 'W' ? ' Power' : ' Current' ),
+					contained_in   => $battery_index,
+					parent_rel_pos => $sensor_position++,
+					type           => $rate_unit eq 'W' ? 6 : 5,
+					scale          => 8,
+					precision      => 0,
+					value          => $rate,
+					units          => $rate_unit,
+				);
+			} ## end if ( ( $battery_info{'present rate'} // ''...))
+		} ## end foreach my $battery_unit ( 0 .. $battery_units ...)
+	} ## end if ( $opts{power} )
+
+	#
+	# inventory
+	#
+
+	if ( $opts{inventory} ) {
+		my $board_index = $index_for->('board');
+		$add_entity->(
+			index => $board_index,
+			descr =>
+				join( ' ', grep { $_ ne '' } $kenv{'smbios.planar.maker'} // '', $kenv{'smbios.planar.product'} // '' )
+				|| 'Motherboard',
+			name           => 'Motherboard',
+			contained_in   => 1,
+			class          => $entity_classes{module},
+			parent_rel_pos => -1,
+			hardware_rev   => $kenv{'smbios.planar.version'},
+			serial         => $kenv{'smbios.planar.serial'},
+			mfg_name       => $kenv{'smbios.planar.maker'},
+			model_name     => $kenv{'smbios.planar.product'},
+		);
+
+		my $smbios = read_smbios_dump( $commands{dmidecode} );
+
+		# Returns the string a SMBIOS string number at the given offset of the
+		# formatted area points to, or '' if the structure is too short for it,
+		# it is 0 for none, or it is filler text.
+		my $smbios_string = sub {
+			my ( $structure, $offset ) = @_;
+			return '' if length( $structure->{formatted} ) <= $offset;
+			my $string_number = ord( substr( $structure->{formatted}, $offset, 1 ) );
+			return '' if !$string_number;
+			return clean_dmi( $structure->{strings}[ $string_number - 1 ] );
+		};
+
+		# SMBIOS type 4, processors. Socket designation is at 0x04, manufacturer at 0x07,
+		# version, which is the model, at 0x10, status at 0x18, serial at 0x20, and part
+		# number at 0x22. Bit 6 of status is set if the socket is populated.
+		my $cpu_position = 1;
+		foreach my $cpu_structure ( @{ $smbios->{4} || [] } ) {
+			next if length( $cpu_structure->{formatted} ) <= 0x18;
+			next if !( ord( substr( $cpu_structure->{formatted}, 0x18, 1 ) ) & 0x40 );
+
+			my $socket = $smbios_string->( $cpu_structure, 0x04 ) || 'CPU ' . $cpu_position;
+			my $model  = $smbios_string->( $cpu_structure, 0x10 );
+			$add_entity->(
+				index          => $index_for->( 'cpu:' . $socket ),
+				descr          => $model || $socket,
+				name           => $socket,
+				contained_in   => $board_index,
+				class          => $entity_classes{cpu},
+				parent_rel_pos => $cpu_position++,
+				serial         => $smbios_string->( $cpu_structure, 0x20 ),
+				mfg_name       => $smbios_string->( $cpu_structure, 0x07 ),
+				model_name     => $smbios_string->( $cpu_structure, 0x22 ) || $model,
+				is_fru         => 1,
+			);
+		} ## end foreach my $cpu_structure ( @{ $smbios->{4} || ...})
+
+		# SMBIOS type 17, memory devices. Size is a word at 0x0C, device locator at 0x10,
+		# bank locator at 0x11, memory type at 0x12, speed a word at 0x15, manufacturer at
+		# 0x17, serial at 0x18, part number at 0x1A, and extended size a dword at 0x1C.
+		my %memory_types = (
+			0x12 => 'DDR',
+			0x13 => 'DDR2',
+			0x18 => 'DDR3',
+			0x1A => 'DDR4',
+			0x1B => 'LPDDR',
+			0x1C => 'LPDDR2',
+			0x1D => 'LPDDR3',
+			0x1E => 'LPDDR4',
+			0x22 => 'DDR5',
+			0x23 => 'LPDDR5',
+		);
+		my $dimm_position = 1;
+		foreach my $dimm_structure ( @{ $smbios->{17} || [] } ) {
+			my $formatted = $dimm_structure->{formatted};
+			next if length($formatted) <= 0x12;
+
+			# 0 is a empty slot and 0xFFFF unknown. 0x7FFF means the size is in the extended
+			# size, in MB. Otherwise it is in MB, or KB if the high bit is set.
+			my $size_word = unpack( 'v', substr( $formatted, 0x0C, 2 ) );
+			next if $size_word == 0 || $size_word == 0xFFFF;
+			my $size_mb;
+			if ( $size_word == 0x7FFF ) {
+				next if length($formatted) < 0x20;
+				$size_mb = unpack( 'V', substr( $formatted, 0x1C, 4 ) ) & 0x7FFFFFFF;
+			} elsif ( $size_word & 0x8000 ) {
+				$size_mb = ( $size_word & 0x7FFF ) / 1024;
+			} else {
+				$size_mb = $size_word;
+			}
+
+			my $speed = length($formatted) > 0x16 ? unpack( 'v', substr( $formatted, 0x15, 2 ) ) : 0;
+			my $descr = join( ' ',
+				$size_mb >= 1024 ? ( $size_mb / 1024 ) . ' GB' : $size_mb . ' MB',
+				grep { $_ ne '' } $memory_types{ ord( substr( $formatted, 0x12, 1 ) ) } // '',
+				$speed && $speed != 0xFFFF ? $speed . ' MT/s' : '' );
+
+			my $locator = join( ' ',
+				grep { $_ ne '' } $smbios_string->( $dimm_structure, 0x11 ),
+				$smbios_string->( $dimm_structure, 0x10 ) )
+				|| 'DIMM ' . $dimm_position;
+			$add_entity->(
+				index          => $index_for->( 'dimm:' . $locator ),
+				descr          => $descr,
+				name           => $locator,
+				contained_in   => $board_index,
+				class          => $entity_classes{module},
+				parent_rel_pos => $dimm_position++,
+				serial         => $smbios_string->( $dimm_structure, 0x18 ),
+				mfg_name       => $smbios_string->( $dimm_structure, 0x17 ),
+				model_name     => $smbios_string->( $dimm_structure, 0x1A ),
+				is_fru         => 1,
+			);
+		} ## end foreach my $dimm_structure ( @{ $smbios->{17} ||...})
+
+		# Disk names such as ada0 can change between boots, so CAM disks are keyed by where
+		# they are, the SIM, target, and LUN from 'camcontrol devlist -v', which also has the
+		# firmware revision as the last word of the inquiry string...
+		#
+		#     scbus0 on ahcich0 bus 0:
+		#     <Samsung SSD 850 EVO 500GB EMT02B6Q>  at scbus0 target 0 lun 0 (pass0,ada0)
+		#
+		# nvd disks are not under CAM, so are keyed by their serial instead.
+		my %cam_disks;
+		my ($devlist_output) = run_command( $commands{camcontrol}, 'devlist', '-v' );
+		my $sim = '';
+		foreach my $devlist_line ( split( /\n/, $devlist_output ) ) {
+			if ( $devlist_line =~ /^scbus-?\d+ on (\S+) bus (\d+):/ ) {
+				$sim = $1 . ':' . $2;
+			} elsif ( $devlist_line =~ /^<(.*)>\s+at scbus\d+ target (\d+) lun (\S+) \(([^)]*)\)/ ) {
+				my ( $inquiry, $target, $lun, $periphs ) = ( $1, $2, $3, $4 );
+				my $firmware_rev = $inquiry =~ /\s(\S+)$/ ? $1 : '';
+				foreach my $periph ( split( /,/, $periphs ) ) {
+					$cam_disks{$periph} = { key => $sim . ':' . $target . ':' . $lun, firmware_rev => $firmware_rev };
+				}
+			}
+		} ## end foreach my $devlist_line ( split( /\n/, $devlist_output...))
+
+		# 'geom disk list' has a block per disk, starting with 'Geom name: ada0'
+		my @disks;
+		my ($geom_output) = run_command( $commands{geom}, 'disk', 'list' );
+		foreach my $geom_line ( split( /\n/, $geom_output ) ) {
+			if ( $geom_line =~ /^Geom name:\s*(\S+)/ ) {
+				push( @disks, { name => $1, mediasize => 0, descr => '', ident => '' } );
+			} elsif ( @disks && $geom_line =~ /^\s+(Mediasize|descr|ident):\s*(\S.*?)\s*$/ ) {
+				my ( $field, $value ) = ( lc($1), $2 );
+				$value = $1 if $field eq 'mediasize' && $value =~ /^(\d+)/;
+				$disks[-1]{$field} = $value;
+			}
+		}
+
+		my $disk_position = 1;
+		foreach my $disk (@disks) {
+			# memory disks, and optical drives which show 0 when empty
+			next if $disk->{name} =~ /^(?:md|cd)\d/ || !$disk->{mediasize};
+
+			my $serial   = clean_dmi( $disk->{ident} );
+			my $cam_disk = $cam_disks{ $disk->{name} } // {};
+			my $disk_key = defined( $cam_disk->{key} ) ? 'cam:' . $cam_disk->{key} : 'serial:' . $serial;
+			# no stable key to be had
+			next if $disk_key eq 'serial:';
+
+			$add_entity->(
+				index => $index_for->( 'disk:' . $disk_key ),
+				descr =>
+					join( ' ', grep { $_ ne '' } $disk->{descr}, sprintf( '%.0f GB', $disk->{mediasize} / 1e9 ) ),
+				name           => $disk->{name},
+				contained_in   => 1,
+				class          => $entity_classes{storage_drive},
+				parent_rel_pos => $disk_position++,
+				firmware_rev   => $cam_disk->{firmware_rev} // '',
+				serial         => $serial,
+				model_name     => $disk->{descr},
+				is_fru         => 1,
+			);
+		} ## end foreach my $disk (@disks)
+	} ## end if ( $opts{inventory} )
+
+	# snmpd reads the cache as its own user
+	umask(022);
+	write_file( $cache_file, { atomic => 1 }, encode_json( { version => 1, updated => time, oids => \@oids } ) );
+	write_file( $state_file, { atomic => 1 }, encode_json($state) );
+
+	exit 0;
+} ## end if ( $opts{u} )
+
+if ( $opts{w} ) {
+	foreach my $entry ( @{ load_cache($cache_file) } ) {
+		print $entry->{oid} . ' = ' . $entry->{type} . ': ' . $entry->{value} . "\n";
+	}
+
+	exit 0;
+}
+
+# pass_persist mode. snmpd sends a command line and, for get and getnext, a OID line.
+#
+#     PING                       -> PONG
+#     get / .1.3.6.1.2.1.47...   -> OID, type, and value lines, or NONE
+#     getnext / .1.3.6...        -> the same for the next OID, or NONE
+#     set / OID / type value     -> not-writable
+#
+# A empty line or EOF means snmpd is done with us.
+
+my $base_oid = $opts{p};
+if ( $base_oid !~ /^\.?\d+(?:\.\d+)*$/ ) {
+	die( '-p "' . $base_oid . '" is not a numeric OID' );
+}
+$base_oid =~ s/^(?!\.)/./;
+
+$| = 1;
+
+my $cache_mtime = -1;
+my $entries     = [];
+
+while ( defined( my $command = <STDIN> ) ) {
+	chomp($command);
+	last if $command eq '';
+
+	if ( $command eq 'PING' ) {
+		print "PONG\n";
+		next;
+	}
+
+	my $requested_oid = <STDIN>;
+	last if !defined($requested_oid);
+	chomp($requested_oid);
+
+	if ( $command eq 'set' ) {
+		# the value line, which is not used
+		<STDIN>;
+		print "not-writable\n";
+		next;
+	}
+
+	# reload when -u has written a new cache, missing counts as 0 so it is empty until there is one
+	my $current_mtime = ( stat($cache_file) )[9] // 0;
+	if ( $current_mtime != $cache_mtime ) {
+		$entries     = load_cache( $cache_file, $base_oid );
+		$cache_mtime = $current_mtime;
+	}
+
+	my @requested_parts = grep { $_ ne '' } split( /\./, $requested_oid );
+	my $found;
+	if ( $command eq 'get' ) {
+		($found) = grep { $_->{oid} eq '.' . join( '.', @requested_parts ) } @{$entries};
+	} elsif ( $command eq 'getnext' ) {
+		($found) = grep { oid_compare( $_->{parts}, \@requested_parts ) > 0 } @{$entries};
+	}
+
+	if ( defined($found) ) {
+		print $found->{oid} . "\n" . $found->{type} . "\n" . $found->{value} . "\n";
+	} else {
+		print "NONE\n";
+	}
+} ## end while ( defined( my $command = <STDIN> ) )
