@@ -1,0 +1,651 @@
+#!/usr/bin/env perl
+
+#Copyright (c) 2026, Zane C. Bowers-Hadley
+#All rights reserved.
+#
+#Redistribution and use in source and binary forms, with or without modification,
+#are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+#THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+#WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+#IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+#DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+#LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+#THE POSSIBILITY OF SUCH DAMAGE.
+
+use warnings;
+use strict;
+
+=head1 NAME
+
+linux_entity - snmpd pass_persist for ENTITY-MIB and ENTITY-SENSOR-MIB transceiver info on Linux
+
+=head1 VERSION
+
+0.1.0
+
+=cut
+
+our $VERSION = '0.1.0';
+
+=head1 SYNOPSIS
+
+linux_entity B<-u> [B<-d> <cache dir>] [B<-i> <regexp>]... [B<-I> <regexp>]...
+
+linux_entity B<-p> <base OID> [B<-d> <cache dir>]
+
+linux_entity B<-w> [B<-d> <cache dir>]
+
+=head1 DESCRIPTION
+
+Reports pluggable transceivers, SFP, QSFP, and the like, as found via
+C<ethtool -m>, as ENTITY-MIB inventory and their digital optical monitoring
+readings as ENTITY-SENSOR-MIB sensors.
+
+It works in two parts. Ran with B<-u> from cron as root, it reads the
+transceivers and writes the cache. Ran with B<-p> by snmpd, it answers
+requests from the cache. snmpd never waits on ethtool, which can take
+seconds per port on some drivers and needs root.
+
+=head1 SNMPD CONFIG
+
+    # cron
+    */5 * * * * root /etc/snmp/extends/linux_entity -u
+
+    # snmpd.conf
+    pass_persist .1.3.6.1.2.1.47 /etc/snmp/extends/linux_entity -p .1.3.6.1.2.1.47
+    pass_persist .1.3.6.1.2.1.99 /etc/snmp/extends/linux_entity -p .1.3.6.1.2.1.99
+
+Two lines are needed as the MIBs are in separate trees. B<-p> is told the
+tree as snmpd does not pass along what it was registered for.
+
+Run B<-u> once before restarting snmpd so the cache exists. Without a
+cache, nothing is returned.
+
+Check that snmpd does not already answer for ENTITY-MIB first, as some
+builds might. This should return nothing...
+
+    snmpwalk -v2c -c public localhost .1.3.6.1.2.1.47
+
+=head1 REQUIREMENTS
+
+ethtool, plus a NIC and driver that support reading the module EEPROM.
+Not all do. Readings only show up for modules that support digital
+optical monitoring.
+
+=head1 FLAGS
+
+=head2 -u
+
+Update the cache. Needs root, as C<ethtool -m> does.
+
+=head2 -p <base OID>
+
+Run as a snmpd pass_persist for the tree under the base OID.
+
+=head2 -w
+
+Print the cache the same as snmpwalk would, for debugging.
+
+=head2 -d <cache dir>
+
+The cache directory. Defaults to /var/cache/linux_entity. The cache is
+entity.json in it.
+
+=head2 -i <regexp>
+
+Only check interfaces with a name matching this regexp. May be used more
+than once, in which case an interface matching any of them is checked.
+
+=head2 -I <regexp>
+
+Skip interfaces with a name matching this regexp. May be used more than
+once. Checked after B<-i>.
+
+Only interfaces with a device under /sys/class/net/$interface/device are
+checked to begin with, so virtual ones such as bridges, veth, and VLANs
+are already skipped.
+
+=head1 ENTITIES
+
+Each port with a readable module gets a port entity, a module entity under
+it, and a sensor entity for each reading under that. Indexes are derived
+from the kernel ifindex so they stay the same between runs.
+
+- 1 :: The chassis, using what is in /sys/class/dmi/id.
+
+- $ifindex * 1000 :: The port. entAliasMappingIdentifier maps it to
+  IF-MIB::ifIndex.$ifindex.
+
+- $ifindex * 1000 + 1 :: The module. Vendor name, part number, revision,
+  and serial go in entPhysicalMfgName, ModelName, HardwareRev, and SerialNum.
+
+- $ifindex * 1000 + 10 :: Module temperature, celsius.
+
+- $ifindex * 1000 + 11 :: Module voltage, voltsDC.
+
+- $ifindex * 1000 + 100 + $lane :: Laser bias current, amperes at milli scale.
+
+- $ifindex * 1000 + 200 + $lane :: Tx power, other with dBm as the units.
+
+- $ifindex * 1000 + 300 + $lane :: Rx power, other with dBm as the units.
+
+$lane is 0 for single lane modules and the channel number for multi lane
+ones, such as 1 to 4 for QSFP.
+
+The Tx and Rx power sensors are named "$interface Tx Power Sensor" and
+"$interface Rx Power Sensor", or "$interface Lane $lane Rx Power Sensor"
+and so on for multi lane modules. ENTITY-SENSOR-MIB lacks a dBm type and
+LibreNMS uses those names to treat them as dBm. A power reading of zero,
+shown by ethtool as -inf dBm, is reported as -40 dBm.
+
+Alarm and warning thresholds are not reported as ENTITY-SENSOR-MIB has
+nowhere to put them.
+
+Interfaces with a ifindex over 2147482 are skipped, as the indexes would
+not fit in a entPhysicalIndex.
+
+=head1 INSTALL
+
+Debian...
+
+    apt-get install ethtool libjson-perl libfile-slurp-perl
+
+Generic...
+
+    cpanm JSON File::Slurp
+
+=cut
+
+use Getopt::Long;
+use JSON;
+use File::Slurp;
+use Pod::Usage;
+
+sub main::VERSION_MESSAGE {
+	print 'linux_entity LibreNMS snmpd pass_persist v. ' . $VERSION . "\n";
+}
+
+sub main::HELP_MESSAGE {
+	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
+}
+
+# Compares two OIDs component by component, numerically, for use with sort
+# and for finding the next OID. A OID that is a prefix of another sorts first.
+#
+# Args:
+# - $oid_a_parts :: Array ref of the numeric components of the first OID,
+#       for example [ 1, 3, 6, 1, 2, 1, 47 ].
+# - $oid_b_parts :: Same for the second OID.
+#
+# Returns -1, 0, or 1, the same as <=>.
+#
+# Example:
+#
+#     # returns -1 as 9 sorts before 10, which a string compare gets wrong
+#     my $order = oid_compare( [ 1, 3, 9 ], [ 1, 3, 10 ] );
+sub oid_compare {
+	my ( $oid_a_parts, $oid_b_parts ) = @_;
+
+	my $shortest = @{$oid_a_parts} < @{$oid_b_parts} ? scalar( @{$oid_a_parts} ) : scalar( @{$oid_b_parts} );
+	for ( my $part_index = 0; $part_index < $shortest; $part_index++ ) {
+		my $order = $oid_a_parts->[$part_index] <=> $oid_b_parts->[$part_index];
+		return $order if $order;
+	}
+
+	return @{$oid_a_parts} <=> @{$oid_b_parts};
+} ## end sub oid_compare
+
+# Parses the text output of 'ethtool -m $interface'. Handles the SFF-8472
+# layout used for SFP and the per channel layout used for QSFP, SFF-8636
+# and CMIS, as printed by ethtool.
+#
+# Args:
+# - $ethtool_output :: The full output of 'ethtool -m', as a string. Each line is
+#       a label, padding, a colon, and the value...
+#
+#       Identifier                                : 0x03 (SFP)
+#       Vendor name                               : FINISAR CORP.
+#       Laser bias current                        : 6.162 mA
+#       Laser output power                        : 0.6233 mW / -2.05 dBm
+#
+# Returns a hash ref. The info keys are strings and are empty if ethtool did not
+# print them. readings is a array ref of hash refs, one per reading found, each with
+# the kind of reading, the lane, 0 if it is not per channel, and the value. Kind is
+# one of temperature in C, voltage in V, bias in mA, tx_power in dBm, or rx_power
+# in dBm. -inf dBm becomes -40.
+#
+#     {
+#         identifier       => 'SFP',
+#         transceiver_type => '10G Ethernet: 10G Base-SR',
+#         vendor_name      => 'FINISAR CORP.',
+#         vendor_pn        => 'FTLX8571D3BCL',
+#         vendor_rev       => 'A',
+#         vendor_sn        => 'AAA0B1C',
+#         readings         => [
+#             { kind => 'bias',     lane => 0, value => 6.162 },
+#             { kind => 'tx_power', lane => 0, value => -2.05 },
+#         ],
+#     }
+#
+# Example:
+#
+#     my $module_info = parse_ethtool_module( $ethtool_output );
+#     print $module_info->{vendor_pn} . "\n";
+sub parse_ethtool_module {
+	my ($ethtool_output) = @_;
+
+	my %labels_to_keys = (
+		'identifier'       => 'identifier',
+		'transceiver type' => 'transceiver_type',
+		'vendor name'      => 'vendor_name',
+		'vendor pn'        => 'vendor_pn',
+		'vendor rev'       => 'vendor_rev',
+		'vendor sn'        => 'vendor_sn',
+	);
+
+	# The labels differ between ethtool versions and between the SFP and QSFP layouts.
+	# Anchored at both ends so the threshold and alarm lines, which start the same, do not match.
+	my @reading_patterns = (
+		[ 'temperature', qr/^module temperature$/,                                         qr/(-?[\d.]+)\s*degrees C/ ],
+		[ 'voltage',     qr/^module voltage$/,                                             qr/(-?[\d.]+)\s*V/ ],
+		[ 'bias',        qr/^laser (?:tx )?bias current\s*(?:\(channel (?<lane>\d+)\))?$/, qr/(-?[\d.]+)\s*mA/ ],
+		[
+			'tx_power', qr/^(?:laser output power|transmit avg optical power)\s*(?:\(channel (?<lane>\d+)\))?$/,
+			qr/(-?(?:[\d.]+|inf))\s*dBm/
+		],
+		[
+			'rx_power',
+			qr/^(?:receiver signal average optical power|rcvr signal avg optical power)\s*(?:\(channel (?<lane>\d+)\))?$/,
+			qr/(-?(?:[\d.]+|inf))\s*dBm/
+		],
+	);
+
+	my %module_info = (
+		identifier       => '',
+		transceiver_type => '',
+		vendor_name      => '',
+		vendor_pn        => '',
+		vendor_rev       => '',
+		vendor_sn        => '',
+		readings         => [],
+	);
+
+	foreach my $line ( split( /\n/, $ethtool_output ) ) {
+		# the label never has a colon, but the value may, such as '10G Ethernet: 10G Base-SR'
+		my ( $label, $value ) = $line =~ /^\s*([^:]+?)\s*:\s*(.*?)\s*$/;
+		next if !defined($label);
+		$label = lc($label);
+
+		my $info_key = $labels_to_keys{$label};
+		if ( defined($info_key) ) {
+			# first one wins, as some, such as transceiver type, can be printed more than once
+			if ( $module_info{$info_key} eq '' ) {
+				$module_info{$info_key} = $value;
+			}
+			next;
+		}
+
+		foreach my $reading_pattern (@reading_patterns) {
+			my ( $kind, $label_regexp, $value_regexp ) = @{$reading_pattern};
+			next if $label !~ $label_regexp;
+			# named so a pattern without a channel group gives no lane instead of the 1 a plain list match returns
+			my $lane = $+{lane};
+			my ($reading) = $value =~ $value_regexp or last;
+			if ( $reading =~ /inf$/ ) {
+				$reading = -40;
+			}
+			push( @{ $module_info{readings} }, { kind => $kind, lane => $lane // 0, value => $reading + 0 } );
+			last;
+		} ## end foreach my $reading_pattern (@reading_patterns)
+	} ## end foreach my $line ( split( /\n/, $ethtool_output...))
+
+	# '0x03 (SFP)' to 'SFP'
+	if ( $module_info{identifier} =~ /\((.+)\)/ ) {
+		$module_info{identifier} = $1;
+	}
+
+	return \%module_info;
+} ## end sub parse_ethtool_module
+
+# Reads the cache and returns the OIDs in it that are under the base OID, in order.
+#
+# Args:
+# - $cache_file :: Full path to the cache file written by -u.
+# - $base_oid :: Only OIDs under this are returned, for example '.1.3.6.1.2.1.47'.
+#       Undef returns all of them.
+#
+# Returns a array ref of hash refs, sorted by OID, each with the OID as a string,
+# its numeric parts as a array ref, its pass_persist type, and its value. Returns
+# a empty array ref if the cache does not exist or can not be parsed, so a missing
+# cache just means nothing is answered.
+#
+#     [
+#         {
+#             oid   => '.1.3.6.1.2.1.47.1.1.1.1.2.1',
+#             parts => [ 1, 3, 6, 1, 2, 1, 47, 1, 1, 1, 1, 2, 1 ],
+#             type  => 'string',
+#             value => 'Chassis',
+#         },
+#     ]
+#
+# Example:
+#
+#     my $entries = load_cache( '/var/cache/linux_entity/entity.json', '.1.3.6.1.2.1.99' );
+sub load_cache {
+	my ( $cache_file, $base_oid ) = @_;
+
+	my $cache = eval { decode_json( read_file($cache_file) ) };
+	return [] if ref($cache) ne 'HASH' || ref( $cache->{oids} ) ne 'ARRAY';
+
+	my $base_prefix = defined($base_oid) ? $base_oid . '.' : '';
+
+	my @entries;
+	foreach my $cached_oid ( @{ $cache->{oids} } ) {
+		my ( $oid, $type, $value ) = @{$cached_oid};
+		next if index( $oid, $base_prefix ) != 0;
+		push(
+			@entries,
+			{
+				oid   => $oid,
+				parts => [ grep { $_ ne '' } split( /\./, $oid ) ],
+				type  => $type,
+				value => $value,
+			}
+		);
+	} ## end foreach my $cached_oid ( @{ $cache->{oids} } )
+
+	return [ sort { oid_compare( $a->{parts}, $b->{parts} ) } @entries ];
+} ## end sub load_cache
+
+#gets the options
+my %opts;
+# i and I are array refs as they may be given more than once
+Getopt::Long::Configure( 'bundling', 'no_ignore_case' );
+GetOptions( \%opts, 'u', 'p=s', 'w', 'd=s', 'i=s@', 'I=s@', 'help', 'version' ) or exit 255;
+
+if ( $opts{version} ) {
+	main::VERSION_MESSAGE();
+	exit 0;
+}
+
+if ( $opts{help} ) {
+	main::VERSION_MESSAGE();
+	main::HELP_MESSAGE();
+}
+
+my $modes_given = grep { defined( $opts{$_} ) } ( 'u', 'p', 'w' );
+if ( $modes_given != 1 ) {
+	die('One of -u, -p, or -w is required');
+}
+
+my $cache_dir  = defined( $opts{d} ) ? $opts{d} : '/var/cache/linux_entity';
+my $cache_file = $cache_dir . '/entity.json';
+
+if ( $opts{u} ) {
+	# compiled up front so a bad regexp dies before anything is done
+	my @include_regexps = map { qr/$_/ } @{ $opts{i} || [] };
+	my @ignore_regexps  = map { qr/$_/ } @{ $opts{I} || [] };
+
+	# cron often lacks sbin in the path
+	my ($ethtool) = grep { -x $_ } ( '/usr/sbin/ethtool', '/sbin/ethtool', '/usr/bin/ethtool', '/bin/ethtool' );
+	if ( !defined($ethtool) ) {
+		die('ethtool not found');
+	}
+
+	# Each is [ OID, pass_persist type, value ]. The entPhysicalTable columns
+	# are, in order, Descr, VendorType, ContainedIn, Class, ParentRelPos, Name,
+	# HardwareRev, FirmwareRev, SoftwareRev, SerialNum, MfgName, ModelName,
+	# Alias, AssetID, and IsFRU, which are 2 to 16.
+	my @oids;
+	my $add_entity = sub {
+		my (%entity) = @_;
+		my @columns = (
+			[ 'string',   $entity{descr} ],
+			[ 'objectid', '.0.0' ],
+			[ 'integer',  $entity{contained_in} ],
+			[ 'integer',  $entity{class} ],
+			[ 'integer',  $entity{parent_rel_pos} ],
+			[ 'string',   $entity{name} ],
+			[ 'string',   $entity{hardware_rev} // '' ],
+			[ 'string',   '' ],
+			[ 'string',   '' ],
+			[ 'string',   $entity{serial}     // '' ],
+			[ 'string',   $entity{mfg_name}   // '' ],
+			[ 'string',   $entity{model_name} // '' ],
+			[ 'string',   '' ],
+			[ 'string',   '' ],
+			[ 'integer',  $entity{is_fru} ? 1 : 2 ],
+		);
+		for ( my $column_index = 0; $column_index < @columns; $column_index++ ) {
+			my ( $type, $value ) = @{ $columns[$column_index] };
+			# a newline would break the pass_persist protocol
+			$value =~ s/[\r\n]+/ /g;
+			push( @oids,
+				[ '.1.3.6.1.2.1.47.1.1.1.1.' . ( $column_index + 2 ) . '.' . $entity{index}, $type, $value ] );
+		}
+	}; ## end $add_entity = sub
+
+	# entPhysicalClass values
+	my %entity_classes = ( chassis => 3, module => 9, port => 10, sensor => 8 );
+
+	# Type is the entPhySensorType, 1 other, 4 voltsDC, 5 amperes, 8 celsius.
+	# Scale is the entPhySensorScale, 8 milli, 9 units.
+	# Value is sent as a integer multiplied by 10 ** precision.
+	my %sensor_kinds = (
+		temperature =>
+			{ offset => 10, type => 8, scale => 9, precision => 2, units => 'C', name => 'Temperature Sensor' },
+		voltage => { offset => 11, type => 4, scale => 9, precision => 3, units => 'V', name => 'Voltage Sensor' },
+		bias    =>
+			{ offset => 100, type => 5, scale => 8, precision => 3, units => 'mA', name => 'Bias Current Sensor' },
+		tx_power =>
+			{ offset => 200, type => 1, scale => 9, precision => 2, units => 'dBm', name => 'Tx Power Sensor' },
+		rx_power =>
+			{ offset => 300, type => 1, scale => 9, precision => 2, units => 'dBm', name => 'Rx Power Sensor' },
+	);
+
+	my %dmi;
+	foreach my $dmi_item ( 'sys_vendor', 'product_name', 'product_serial' ) {
+		my $dmi_value = read_file( '/sys/class/dmi/id/' . $dmi_item, err_mode => 'quiet' );
+		$dmi{$dmi_item} = defined($dmi_value) ? $dmi_value =~ s/^\s+|\s+$//gr : '';
+	}
+	$add_entity->(
+		index          => 1,
+		descr          => 'Chassis',
+		name           => 'Chassis',
+		contained_in   => 0,
+		class          => $entity_classes{chassis},
+		parent_rel_pos => -1,
+		serial         => $dmi{product_serial},
+		mfg_name       => $dmi{sys_vendor},
+		model_name     => $dmi{product_name},
+	);
+
+	opendir( my $net_dh, '/sys/class/net' ) or die( 'Failed to open /sys/class/net... ' . $! );
+	my @interfaces = sort { $a cmp $b } grep { -e '/sys/class/net/' . $_ . '/device' } readdir($net_dh);
+	closedir($net_dh);
+
+	foreach my $interface (@interfaces) {
+		next if @include_regexps && !grep { $interface =~ $_ } @include_regexps;
+		next if grep                      { $interface =~ $_ } @ignore_regexps;
+
+		my $ifindex = read_file( '/sys/class/net/' . $interface . '/ifindex', err_mode => 'quiet' );
+		next if !defined($ifindex);
+		chomp($ifindex);
+		# entPhysicalIndex is a Integer32
+		next if $ifindex > 2147482;
+
+		# ethtool complains on stderr for every NIC that lacks a module, which is
+		# just noise in cron mail, so it is pointed at /dev/null for the run
+		open( my $saved_stderr, '>&', \*STDERR ) or die( 'Failed to dup stderr... ' . $! );
+		open( STDERR,           '>',  '/dev/null' );
+		my $ethtool_ok     = open( my $ethtool_fh, '-|', $ethtool, '-m', $interface );
+		my $ethtool_output = $ethtool_ok ? join( '', <$ethtool_fh> ) : '';
+		# close returns false when ethtool exits non-zero, which is how a missing module shows
+		$ethtool_ok = $ethtool_ok && close($ethtool_fh);
+		open( STDERR, '>&', $saved_stderr );
+		next if !$ethtool_ok;
+
+		my $module_info = parse_ethtool_module($ethtool_output);
+		# raw hex output or something else not understood
+		next if $module_info->{identifier} eq '';
+
+		my $port_index   = $ifindex * 1000;
+		my $module_index = $port_index + 1;
+
+		$add_entity->(
+			index          => $port_index,
+			descr          => $interface,
+			name           => $interface,
+			contained_in   => 1,
+			class          => $entity_classes{port},
+			parent_rel_pos => $ifindex,
+		);
+		# entAliasMappingIdentifier, with 0 as the logical index
+		push( @oids,
+			[ '.1.3.6.1.2.1.47.1.3.2.1.2.' . $port_index . '.0', 'objectid', '.1.3.6.1.2.1.2.2.1.1.' . $ifindex ] );
+
+		$add_entity->(
+			index        => $module_index,
+			descr        => join( ' ', grep { $_ ne '' } $module_info->{identifier}, $module_info->{transceiver_type} ),
+			name         => $interface . ' Transceiver',
+			contained_in => $port_index,
+			class        => $entity_classes{module},
+			parent_rel_pos => 1,
+			hardware_rev   => $module_info->{vendor_rev},
+			serial         => $module_info->{vendor_sn},
+			mfg_name       => $module_info->{vendor_name},
+			model_name     => $module_info->{vendor_pn},
+			is_fru         => 1,
+		);
+
+		my $sensor_position = 1;
+		foreach my $reading ( @{ $module_info->{readings} } ) {
+			my $sensor_kind  = $sensor_kinds{ $reading->{kind} };
+			my $sensor_index = $port_index + $sensor_kind->{offset} + $reading->{lane};
+			my $sensor_name
+				= $reading->{lane}
+				? $interface . ' Lane ' . $reading->{lane} . ' ' . $sensor_kind->{name}
+				: $interface . ' ' . $sensor_kind->{name};
+
+			$add_entity->(
+				index          => $sensor_index,
+				descr          => $sensor_name,
+				name           => $sensor_name,
+				contained_in   => $module_index,
+				class          => $entity_classes{sensor},
+				parent_rel_pos => $sensor_position++,
+			);
+
+			# entPhySensorType, Scale, Precision, Value, OperStatus of ok, and UnitsDisplay
+			my $sensor_value   = sprintf( '%.0f', $reading->{value} * 10**$sensor_kind->{precision} );
+			my @sensor_columns = (
+				[ 'integer', $sensor_kind->{type} ],
+				[ 'integer', $sensor_kind->{scale} ],
+				[ 'integer', $sensor_kind->{precision} ],
+				[ 'integer', $sensor_value ],
+				[ 'integer', 1 ],
+				[ 'string',  $sensor_kind->{units} ],
+			);
+			for ( my $column_index = 0; $column_index < @sensor_columns; $column_index++ ) {
+				push(
+					@oids,
+					[
+						'.1.3.6.1.2.1.99.1.1.1.' . ( $column_index + 1 ) . '.' . $sensor_index,
+						@{ $sensor_columns[$column_index] }
+					]
+				);
+			}
+		} ## end foreach my $reading ( @{ $module_info->{readings...}})
+	} ## end foreach my $interface (@interfaces)
+
+	if ( !-d $cache_dir ) {
+		mkdir( $cache_dir, 0755 ) or die( 'Failed to create "' . $cache_dir . '"... ' . $! );
+	}
+
+	# snmpd reads it as its own user
+	umask(022);
+	write_file( $cache_file, { atomic => 1 }, encode_json( { version => 1, updated => time, oids => \@oids } ) );
+
+	exit 0;
+} ## end if ( $opts{u} )
+
+if ( $opts{w} ) {
+	foreach my $entry ( @{ load_cache($cache_file) } ) {
+		print $entry->{oid} . ' = ' . $entry->{type} . ': ' . $entry->{value} . "\n";
+	}
+
+	exit 0;
+}
+
+# pass_persist mode. snmpd sends a command line and, for get and getnext, a OID line.
+#
+#     PING                       -> PONG
+#     get / .1.3.6.1.2.1.47...   -> OID, type, and value lines, or NONE
+#     getnext / .1.3.6...        -> the same for the next OID, or NONE
+#     set / OID / type value     -> not-writable
+#
+# A empty line or EOF means snmpd is done with us.
+
+my $base_oid = $opts{p};
+if ( $base_oid !~ /^\.?\d+(?:\.\d+)*$/ ) {
+	die( '-p "' . $base_oid . '" is not a numeric OID' );
+}
+$base_oid =~ s/^(?!\.)/./;
+
+$| = 1;
+
+my $cache_mtime = -1;
+my $entries     = [];
+
+while ( defined( my $command = <STDIN> ) ) {
+	chomp($command);
+	last if $command eq '';
+
+	if ( $command eq 'PING' ) {
+		print "PONG\n";
+		next;
+	}
+
+	my $requested_oid = <STDIN>;
+	last if !defined($requested_oid);
+	chomp($requested_oid);
+
+	if ( $command eq 'set' ) {
+		# the value line, which is not used
+		<STDIN>;
+		print "not-writable\n";
+		next;
+	}
+
+	# reload when -u has written a new cache, missing counts as 0 so it is empty until there is one
+	my $current_mtime = ( stat($cache_file) )[9] // 0;
+	if ( $current_mtime != $cache_mtime ) {
+		$entries     = load_cache( $cache_file, $base_oid );
+		$cache_mtime = $current_mtime;
+	}
+
+	my @requested_parts = grep { $_ ne '' } split( /\./, $requested_oid );
+	my $found;
+	if ( $command eq 'get' ) {
+		($found) = grep { $_->{oid} eq '.' . join( '.', @requested_parts ) } @{$entries};
+	} elsif ( $command eq 'getnext' ) {
+		($found) = grep { oid_compare( $_->{parts}, \@requested_parts ) > 0 } @{$entries};
+	}
+
+	if ( defined($found) ) {
+		print $found->{oid} . "\n" . $found->{type} . "\n" . $found->{value} . "\n";
+	} else {
+		print "NONE\n";
+	}
+} ## end while ( defined( my $command = <STDIN> ) )
