@@ -41,7 +41,7 @@ our $VERSION = '0.1.0';
 =head1 SYNOPSIS
 
 linux_entity B<-u> [B<-d> <cache dir>] [B<-i> <regexp>]... [B<-I> <regexp>]...
-[B<--hwmon>] [B<--rapl>] [B<--power>] [B<--inventory>] [B<--state>]
+[B<--hwmon>] [B<--hwmon-kinds> <kinds>] [B<--rapl>] [B<--power>] [B<--inventory>] [B<--state>]
 
 linux_entity B<-p> <base OID> [B<-d> <cache dir>]
 
@@ -106,6 +106,15 @@ whatever else has a hwmon driver.
 With B<--power>, hwmon devices that belong to a power supply are skipped
 as those are already reported by it.
 
+=head2 --hwmon-kinds <kinds>
+
+Only report these kinds of hwmon sensors, as a comma separated list of
+temp, in, curr, power, fan, and humidity. in is voltage and curr is
+current. Defaults to all of them. Implies B<--hwmon>.
+
+Mainly for keeping out what LM-SENSORS-MIB already reports, see
+L</LM-SENSORS-MIB>.
+
 =head2 --rapl
 
 Add the CPU package, core, uncore, and DRAM power usage from the RAPL
@@ -156,6 +165,33 @@ once. Checked after B<-i>.
 Only interfaces with a device under /sys/class/net/$interface/device are
 checked to begin with, so virtual ones such as bridges, veth, and VLANs
 are already skipped.
+
+=head1 LM-SENSORS-MIB
+
+If snmpd was built with lm-sensors support, it already serves the
+temperature, fan, and voltage readings from the same hwmon chips under
+LM-SENSORS-MIB, and LibreNMS picks those up. B<--hwmon> then reports them
+a second time.
+
+The better fix is hiding LM-SENSORS-MIB from LibreNMS and letting
+B<--hwmon> replace it. LM-SENSORS-MIB names a sensor by its label alone,
+so two sockets each have a "Core 0", its indexes are just positions that
+shift if the chips are found in a different order, and LibreNMS does not
+use its current or power readings. Add a excluded line to the view
+LibreNMS polls through in snmpd.conf...
+
+    view all    excluded  .1.3.6.1.4.1.2021.13.16
+
+That is for the view named all from the snmpd.conf example in the
+LibreNMS docs, so goes after its "view all included .1" line. If a
+different view is used, use its name instead. The old lmsensors sensors
+go away in LibreNMS and the hwmon ones are new, so their history does not
+carry over.
+
+If snmpd.conf can not be changed, leave out the kinds LM-SENSORS-MIB
+already covers instead...
+
+    linux_entity -u --hwmon-kinds curr,power,humidity
 
 =head1 ENTITIES
 
@@ -545,10 +581,13 @@ sub load_cache {
 my %opts;
 # i and I are array refs as they may be given more than once
 Getopt::Long::Configure( 'bundling', 'no_ignore_case' );
-GetOptions(
-	\%opts, 'u',     'p=s',       'w',     'd=s',  'i=s@', 'I=s@', 'hwmon',
-	'rapl', 'power', 'inventory', 'state', 'help', 'version'
-) or exit 255;
+GetOptions( \%opts, 'u', 'p=s', 'w', 'd=s', 'i=s@', 'I=s@', 'hwmon', 'hwmon-kinds=s',
+	'rapl', 'power', 'inventory', 'state', 'help', 'version' )
+	or exit 255;
+
+if ( defined( $opts{'hwmon-kinds'} ) ) {
+	$opts{hwmon} = 1;
+}
 
 if ( $opts{version} ) {
 	main::VERSION_MESSAGE();
@@ -566,7 +605,7 @@ if ( $modes_given != 1 ) {
 }
 
 if ( !$opts{u} && grep { $opts{$_} } ( 'hwmon', 'rapl', 'power', 'inventory', 'state' ) ) {
-	die('--hwmon, --rapl, --power, --inventory, and --state are only used with -u');
+	die('--hwmon, --hwmon-kinds, --rapl, --power, --inventory, and --state are only used with -u');
 }
 
 my $cache_dir  = defined( $opts{d} ) ? $opts{d} : '/var/cache/linux_entity';
@@ -864,6 +903,20 @@ if ( $opts{u} ) {
 			fan      => { type => 10, scale => 9, divide => 1,    units => 'RPM' },
 			humidity => { type => 9,  scale => 8, divide => 1,    units => '%RH' },
 		);
+
+		# dropping the unwanted kinds here is all it takes, as files of kinds not in it are skipped
+		if ( defined( $opts{'hwmon-kinds'} ) ) {
+			my %wanted_kinds  = map  { $_ => 1 } split( /\s*,\s*/, $opts{'hwmon-kinds'} );
+			my @unknown_kinds = grep { !$hwmon_kinds{$_} } sort( keys(%wanted_kinds) );
+			if (@unknown_kinds) {
+				die(      '--hwmon-kinds has unknown kinds "'
+						. join( ',', @unknown_kinds )
+						. '", valid ones are temp, in, curr, power, fan, and humidity' );
+			}
+			foreach my $kind ( keys(%hwmon_kinds) ) {
+				delete( $hwmon_kinds{$kind} ) if !$wanted_kinds{$kind};
+			}
+		} ## end if ( defined( $opts{'hwmon-kinds'} ) )
 
 		my @hwmon_dirs = sort { $a cmp $b } glob('/sys/class/hwmon/hwmon*');
 
