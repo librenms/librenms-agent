@@ -32,15 +32,15 @@ linux_pressure - LibreNMS JSON style SNMP extend for monitoring Linux pressure s
 
 =head1 VERSION
 
-0.0.1
+0.1.0
 
 =cut
 
-our $VERSION = '0.0.1';
+our $VERSION = '0.1.0';
 
 =head1 SYNOPSIS
 
-linux_pressure [B<-c>] [B<-b>] [B<-o> <output file> [B<-q>]]
+linux_pressure [B<-c>] [B<-r> <regexp>]... [B<-b>] [B<-o> <output file> [B<-q>]]
 
 =head1 SNMPD CONFIG
 
@@ -71,6 +71,28 @@ requires cgroup v2 and can be large on systems with lots of cgroups.
 
 Cgroups that go away during the run or that have pressure accounting
 turned off via cgroup.pressure are skipped.
+
+=head2 -r <regexp>
+
+Only report cgroups matching this regexp. It is matched against the cgroup
+path relative to /sys/fs/cgroup, for example 'system.slice/cron.service'.
+May be used more than once, in which case a cgroup is reported if it
+matches any of them. Implies -c.
+
+For only the systemd system services...
+
+    linux_pressure -r '^system\.slice/[^/]+\.service$'
+
+That does not match instances of template units, as those live a level
+deeper under their own slice, such as
+'system.slice/system-getty.slice/getty@tty1.service'. To match every
+service, including the template instances and the ones under user.slice...
+
+    linux_pressure -r '\.service$'
+
+Or for the system services as well as every scope...
+
+    linux_pressure -r '^system\.slice/[^/]+\.service$' -r '\.scope$'
 
 =head2 -b
 
@@ -118,7 +140,7 @@ not report for a resource are not present.
       "version": 1
     }
 
-The cgroups hash is only present with -c and is keyed by the cgroup path
+The cgroups hash is only present with -c or -r and is keyed by the cgroup path
 relative to /sys/fs/cgroup. The root cgroup is not included as it is the
 same as system.
 
@@ -142,15 +164,13 @@ Debian...
 
 =cut
 
-use Getopt::Std;
+use Getopt::Long;
 use JSON;
 use MIME::Base64;
 use IO::Compress::Gzip qw(gzip $GzipError);
 use File::Slurp;
 use File::Find;
 use Pod::Usage;
-
-$Getopt::Std::STANDARD_HELP_VERSION = 1;
 
 sub main::VERSION_MESSAGE {
 	print 'linux_pressure LibreNMS extend v. ' . $VERSION . "\n";
@@ -219,7 +239,23 @@ sub read_pressure_file {
 
 #gets the options
 my %opts;
-getopts( 'cbo:q', \%opts );
+# bundling keeps stuff like -bq working, r is a array ref as it may be given more than once
+Getopt::Long::Configure( 'bundling', 'no_ignore_case' );
+GetOptions( \%opts, 'c', 'b', 'o=s', 'q', 'r=s@', 'help', 'version' ) or exit 255;
+
+if ( $opts{version} ) {
+	main::VERSION_MESSAGE();
+	exit 0;
+}
+
+if ( $opts{help} ) {
+	main::VERSION_MESSAGE();
+	main::HELP_MESSAGE();
+}
+
+if ( defined( $opts{r} ) ) {
+	$opts{c} = 1;
+}
 
 if ( $opts{q} && !defined( $opts{o} ) ) {
 	die('-q requires -o');
@@ -263,6 +299,16 @@ eval {
 
 		$to_return->{data}{cgroups} = {};
 
+		# compiled here so a bad regexp ends up in errorString
+		my @cgroup_regexps;
+		foreach my $regexp_string ( @{ $opts{r} || [] } ) {
+			my $cgroup_regexp = eval { qr/$regexp_string/ };
+			if ( !defined($cgroup_regexp) ) {
+				die( '-r regexp "' . $regexp_string . '" is not valid... ' . $@ );
+			}
+			push( @cgroup_regexps, $cgroup_regexp );
+		}
+
 		find(
 			{
 				no_chdir => 1,
@@ -278,6 +324,11 @@ eval {
 						return;
 					}
 					my $cgroup = substr( $File::Find::dir, length($cgroup_dir) + 1 );
+
+					# with -r, only cgroups matching atleast one of the regexps are wanted
+					if ( @cgroup_regexps && !grep { $cgroup =~ $_ } @cgroup_regexps ) {
+						return;
+					}
 
 					# unreadable means the cgroup went away or has pressure accounting off
 					my $pressure = read_pressure_file($File::Find::name);
