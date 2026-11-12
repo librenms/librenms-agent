@@ -48,11 +48,18 @@ takes roughly two seconds per pool. On a host with more than a pool or two
 that is long enough for the extend to time out, so the output is written to a
 file via cron and SNMPD reads that instead of running this directly.
 
+Run it once first, so the cache file exists before cron first fires.
+
+    /etc/snmp/zfs -b -w -q
+
+Then add the extend to snmpd.conf.
+
     extend zfs /bin/cat /var/cache/zfs.extend
 
-Then the extend is set to be ran via cron.
+Then the extend is set to be ran via cron. The entry belongs in root's
+crontab, since the script writes under /var/cache.
 
-    */5 * * * * /etc/snmp/zfs -w -q
+    */5 * * * * /etc/snmp/zfs -b -w -q
 
 =head1 REQUIREMENTS
 
