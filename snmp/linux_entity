@@ -201,7 +201,8 @@ history.
 - 1 :: The chassis, using what is in /sys/class/dmi/id.
 
 - $ifindex * 1000 :: A transceiver port. entAliasMappingIdentifier maps it
-  to IF-MIB::ifIndex.$ifindex.
+  to IF-MIB::ifIndex.$ifindex. entPhysicalAlias is the interface
+  description, as set via C<ip link set $interface alias ...>.
 
 - $ifindex * 1000 + 1 :: The transceiver. Vendor name, part number,
   revision, and serial go in entPhysicalMfgName, ModelName, HardwareRev,
@@ -677,7 +678,7 @@ if ( $opts{u} ) {
 			[ 'string',   $entity{serial}     // '' ],
 			[ 'string',   $entity{mfg_name}   // '' ],
 			[ 'string',   $entity{model_name} // '' ],
-			[ 'string',   '' ],
+			[ 'string',   $entity{alias}      // '' ],
 			[ 'string',   '' ],
 			[ 'integer',  $entity{is_fru} ? 1 : 2 ],
 		);
@@ -839,6 +840,8 @@ if ( $opts{u} ) {
 			contained_in   => 1,
 			class          => $entity_classes{port},
 			parent_rel_pos => $ifindex,
+			# the description set via 'ip link set $interface alias ...', empty if none
+			alias => read_sysfs( '/sys/class/net/' . $interface . '/ifalias' ) // '',
 		);
 		# entAliasMappingIdentifier, with 0 as the logical index
 		push( @oids,
