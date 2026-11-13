@@ -1,0 +1,10 @@
+# Allow snmpd to run mdadm read-only commands without a password.
+# Install: sudo cp sudoers.d-mdadm /etc/sudoers.d/mdadm
+#          sudo chmod 440 /etc/sudoers.d/mdadm
+#
+# Covers:
+#   mdadm --detail /dev/mdX   - array health and device counts
+#   mdadm -E /dev/<member>    - member superblock (UUID, events)
+
+Debian-snmp ALL=(root) NOPASSWD: /sbin/mdadm --detail /dev/md*, \
+                                              /sbin/mdadm -E /dev/*

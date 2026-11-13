@@ -1,0 +1,17 @@
+---
+# mdadm pass_persist agent configuration
+#
+# Copy to /etc/snmp/extension/mdadm.yaml and adjust as needed.
+
+# Logging level: DEBUG, VERBOSE, INFO, NOTICE, WARNING, ERROR
+log_level: WARNING
+
+# Log file path. Defaults to mdadm.log in the same directory as the script.
+# log_file: /var/log/mdadm-snmp.log
+
+# Data refresh interval in seconds. The agent stays resident and re-collects
+# at most once per ttl seconds.
+ttl: 60
+
+# Devices to poll. Empty list auto-discovers all md arrays.
+devices: []
