@@ -1,0 +1,1394 @@
+#!/usr/bin/env perl
+
+#Copyright (c) 2026, Zane C. Bowers-Hadley
+#All rights reserved.
+#
+#Redistribution and use in source and binary forms, with or without modification,
+#are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+#THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+#ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+#WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+#IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+#INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+#DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+#LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+#THE POSSIBILITY OF SUCH DAMAGE.
+
+use warnings;
+use strict;
+
+=head1 NAME
+
+generic_entity - snmpd pass_persist for ENTITY-MIB, ENTITY-SENSOR-MIB, and ENTITY-STATE-MIB on unix
+
+=head1 VERSION
+
+0.1.0
+
+=cut
+
+our $VERSION = '0.1.0';
+
+=head1 SYNOPSIS
+
+generic_entity B<-u> [B<-d> <cache dir>] [B<--dmi>] [B<--smart>] [B<--smart-cache> <cache>]
+[B<--smart-mode> <mode>] [B<--ipmi>][B<--state>] [B<--thresholds>]
+
+generic_entity B<-p> <base OID> [B<-d> <cache dir>]
+
+generic_entity B<-w> [B<-d> <cache dir>]
+
+=head1 DESCRIPTION
+
+Reports hardware inventory from the SMBIOS tables via dmidecode, disks
+and their temperatures from the smart-v1 extend's cache or smartctl, and BMC sensors
+via freeipmi, as ENTITY-MIB inventory, ENTITY-SENSOR-MIB sensors, and
+ENTITY-STATE-MIB state.
+
+Nothing in it is specific to a OS, so it is for the unix systems that
+lack their own script, such as OpenBSD, NetBSD, and illumos. On Linux and
+FreeBSD, linux_entity and freebsd_entity cover more. Only one of them can
+be used on a host, as they answer for the same MIBs.
+
+It works in two parts. Ran with B<-u> from cron as root, it gathers
+everything and writes the cache. Ran with B<-p> by snmpd, it answers
+requests from the cache, so snmpd never waits on dmidecode or the BMC.
+
+=head1 SNMPD CONFIG
+
+    # cron
+    */5 * * * * root /etc/snmp/extends/generic_entity -u --dmi --smart --ipmi --state
+
+    # snmpd.conf
+    pass_persist .1.3.6.1.2.1.47 /etc/snmp/extends/generic_entity -p .1.3.6.1.2.1.47
+    pass_persist .1.3.6.1.2.1.99 /etc/snmp/extends/generic_entity -p .1.3.6.1.2.1.99
+    pass_persist .1.3.6.1.2.1.131 /etc/snmp/extends/generic_entity -p .1.3.6.1.2.1.131
+
+One line is needed per MIB as they are in separate trees. B<-p> is told
+the tree as snmpd does not pass along what it was registered for. The
+.1.3.6.1.2.1.131 line is only needed with B<--state>. B<--thresholds>
+needs one more, see L</THRESHOLDS>.
+
+This needs net-snmp, as bsnmpd and OpenBSD's snmpd do not support
+pass_persist.
+
+Run B<-u> once before restarting snmpd so the cache exists. Without a
+cache, nothing is returned.
+
+=head1 REQUIREMENTS
+
+dmidecode for B<--dmi>, on hardware with SMBIOS tables.
+
+For B<--smart>, the smart-v1 extend ran from cron so its cache stays
+current, with useSN set to 0 in its config, see B<--smart-mode>, or
+smartmontools 7.0 or newer.
+
+freeipmi for B<--ipmi>, plus a BMC the kernel can reach.
+
+The tools are looked for in the path, then in /usr/local, /usr/pkg, and
+/opt/local, as cron often has a minimal path.
+
+=head1 FLAGS
+
+=head2 -u
+
+Update the cache. Needs root, as dmidecode and the BMC do. The chassis is
+always present. The rest are added with the flags below.
+
+=head2 --dmi
+
+Add what the SMBIOS tables have, via dmidecode. The chassis gets its
+vendor, product, serial, and BIOS version, and the motherboard, CPUs,
+memory, and power supplies are added.
+
+Power supplies come from the SMBIOS system power supply structures,
+which many systems leave out. Their status is as of boot, as the BIOS
+does not update it after, so no entStateTable row is added for them.
+
+=head2 --smart
+
+Add the disks, from the smart-v1 extend's cache or smartctl, see
+B<--smart-mode>.
+
+Each disk gets its serial, firmware, and model, plus a temperature
+sensor named "$disk Temperature", with its temperature limit as a
+threshold, see L</THRESHOLDS>, and with B<--state> a entStateTable row,
+see L</STATE>.
+
+=head2 --smart-cache <cache>
+
+The smart-v1 cache to use. Defaults to /var/cache/smart, the plain JSON
+one, not smart.snmp. Implies B<--smart>.
+
+=head2 --smart-mode <mode>
+
+Where the SMART info comes from. Implies B<--smart>.
+
+- auto :: The smart-v1 cache if it exists, else smartctl. The default.
+
+- extend :: The smart-v1 cache. It is as old as the last smart-v1 run.
+  useSN should be set to 0 in the smart-v1 config. Disks are then keyed
+  by the name from its config, such as ada0 or twl0,1, so a replaced disk
+  keeps the same entity and sensor history. With useSN=1, they are keyed
+  by serial, so a replaced disk shows up as a new entity, with the old
+  one going away, and they are named after the device plus the serial.
+
+- smartctl :: The disks come from C<smartctl --scan>, which includes those
+  behind RAID controllers it knows how to reach, named after the device
+  plus the type, such as "bus/0 megaraid,0". The rest are named after the
+  device, such as sda. Disks that are asleep are skipped instead of being
+  woken up. As nothing else lists the disks, they are missing from the
+  cache until a run when they are awake.
+
+=head2 --ipmi
+
+Add the BMC, with its manufacturer, product ID, and firmware from
+C<bmc-info>, and its sensors via C<ipmi-sensors>. Temperature, voltage,
+current, power, and fan readings are reported. Discrete sensors and those
+in other units, such as percent, are skipped.
+
+=head2 --state
+
+Add ENTITY-STATE-MIB state for the BMC with B<--ipmi> and the disks with
+B<--smart>.
+
+=head2 --thresholds
+
+Add the CISCO-ENTITY-SENSOR-MIB entSensorThresholdTable, under
+.1.3.6.1.4.1.9.9.91, for sensors that have thresholds, which are the
+B<--ipmi> and B<--smart> ones. See L</THRESHOLDS>.
+
+=head2 -p <base OID>
+
+Run as a snmpd pass_persist for the tree under the base OID.
+
+=head2 -w
+
+Print the cache the same as snmpwalk would, for debugging.
+
+=head2 -d <cache dir>
+
+The cache directory. Defaults to /var/cache/generic_entity. The cache is
+entity.json in it, with state.json holding what is needed between runs.
+
+=head1 ENTITIES
+
+- 1 :: The chassis.
+
+- 1000000000 and up :: Everything else. Each is given the next free index
+  the first time it is seen, keyed by something stable such as the DIMM
+  locator or the disk name. That is saved in state.json.
+  Removing it renumbers everything.
+
+=head1 THRESHOLDS
+
+ENTITY-SENSOR-MIB has nowhere to put thresholds, so with B<--thresholds>
+they go in the entSensorThresholdTable from CISCO-ENTITY-SENSOR-MIB. It is
+indexed by the entPhysicalIndex of the sensor, then the threshold.
+
+- 1 :: Lower non-recoverable, critical, less or equal.
+
+- 2 :: Lower critical, major, less or equal.
+
+- 3 :: Lower non-critical, minor, less or equal.
+
+- 4 :: Upper non-critical, minor, greater or equal.
+
+- 5 :: Upper critical, major, greater or equal.
+
+- 6 :: Upper non-recoverable, critical, greater or equal.
+
+Only the ones the BMC has are present. Disk temperatures only have 5, the
+drive's temperature limit. The value uses the same scale and precision as
+the sensor's entPhySensorValue. entSensorThresholdEvaluation is true if
+the reading is past it. entSensorThresholdNotificationEnable is always
+false, as no traps are sent.
+
+It needs its own pass_persist line...
+
+    pass_persist .1.3.6.1.4.1.9.9.91 /etc/snmp/extends/generic_entity -p .1.3.6.1.4.1.9.9.91
+
+=head1 STATE
+
+With B<--state>, the entStateTable has a row for the BMC with B<--ipmi>
+and each disk with B<--smart>.
+
+- BMC :: entStateOper is enabled. entStateAlarm has critical set if any
+  sensor is at or past a non-recoverable threshold, major for a critical
+  one, and warning for a non-critical one.
+
+- Disks :: entStateOper is disabled if smartctl could not read the disk
+  and enabled if it could. entStateAlarm has critical set if the SMART
+  health check did not pass, which includes smartctl not being able to
+  read it, and major if it is over its temperature limit. A disk with no
+  SMART health status, such as some virtual disks, never has critical set.
+
+The rest of the columns are unknown.
+
+=head1 INSTALL
+
+Debian...
+
+    apt-get install libjson-perl libfile-slurp-perl dmidecode freeipmi-tools smartmontools
+
+FreeBSD...
+
+    pkg install p5-JSON p5-File-Slurp dmidecode freeipmi smartmontools
+
+Generic...
+
+    cpanm JSON File::Slurp
+
+=cut
+
+use Getopt::Long;
+use JSON;
+use File::Slurp;
+use File::Temp qw(tempdir);
+use Pod::Usage;
+
+sub main::VERSION_MESSAGE {
+	print 'generic_entity LibreNMS snmpd pass_persist v. ' . $VERSION . "\n";
+}
+
+sub main::HELP_MESSAGE {
+	pod2usage( -exitval => 255, -verbose => 2, -output => \*STDOUT, );
+}
+
+# Compares two OIDs component by component, numerically, for use with sort
+# and for finding the next OID. A OID that is a prefix of another sorts first.
+#
+# Args:
+# - $oid_a_parts :: Array ref of the numeric components of the first OID,
+#       for example [ 1, 3, 6, 1, 2, 1, 47 ].
+# - $oid_b_parts :: Same for the second OID.
+#
+# Returns -1, 0, or 1, the same as <=>.
+#
+# Example:
+#
+#     # returns -1 as 9 sorts before 10, which a string compare gets wrong
+#     my $order = oid_compare( [ 1, 3, 9 ], [ 1, 3, 10 ] );
+sub oid_compare {
+	my ( $oid_a_parts, $oid_b_parts ) = @_;
+
+	my $shortest = @{$oid_a_parts} < @{$oid_b_parts} ? scalar( @{$oid_a_parts} ) : scalar( @{$oid_b_parts} );
+	for ( my $part_index = 0; $part_index < $shortest; $part_index++ ) {
+		my $order = $oid_a_parts->[$part_index] <=> $oid_b_parts->[$part_index];
+		return $order if $order;
+	}
+
+	return @{$oid_a_parts} <=> @{$oid_b_parts};
+} ## end sub oid_compare
+
+# Runs a command, without a shell, and returns what it printed to stdout.
+# stderr goes to /dev/null, as dmidecode and freeipmi complain about things
+# such as a missing BMC, which would just be noise in cron mail. Failures are
+# instead noticed by the caller via the output or exit status.
+#
+# Args:
+# - @command :: The command and its args, for example
+#       ( '/usr/sbin/bmc-info', '--get-device-id' ).
+#
+# Returns a list of the output as a string, raw bytes, and true if it exited 0.
+# The output is '' if it could not be ran.
+#
+#     ( "Firmware Revision     : 1.73\n...", 1 )
+#
+# Example:
+#
+#     my ( $bmc_info_output, $bmc_info_ok ) = run_command( '/usr/sbin/bmc-info', '--get-device-id' );
+sub run_command {
+	my (@command) = @_;
+
+	open( my $saved_stderr, '>&', \*STDERR ) or die( 'Failed to dup stderr... ' . $! );
+	open( STDERR,           '>',  '/dev/null' );
+	my $output     = '';
+	my $command_ok = open( my $command_fh, '-|', @command );
+	if ($command_ok) {
+		binmode($command_fh);
+		$output = join( '', <$command_fh> );
+		# close returns false when the command exits non-zero
+		$command_ok = close($command_fh);
+	}
+	open( STDERR, '>&', $saved_stderr );
+
+	return ( $output, $command_ok );
+} ## end sub run_command
+
+# Blanks the filler text BIOS vendors put in unused SMBIOS fields, such as
+# 'To Be Filled By O.E.M.', so it does not end up in the inventory.
+#
+# Args:
+# - $value :: The string from SMBIOS, may be undef.
+#
+# Returns the value with surrounding whitespace removed, as SMBIOS strings are
+# often padded, or '' if it is undef or filler.
+#
+# Example:
+#
+#     # returns ''
+#     my $serial = clean_dmi('Not Specified');
+sub clean_dmi {
+	my ($value) = @_;
+
+	return '' if !defined($value);
+	$value =~ s/^\s+|\s+$//g;
+	return '' if $value =~ /^(?:not specified|to be filled by o\.e\.m\.|default string|unknown|none|n\/a|0+|)$/i;
+
+	return $value;
+}
+
+# Reads the SMBIOS table via 'dmidecode --dump-bin', which puts the entry point
+# at the start of the file and the table at offset 32, and splits it into
+# structures by type.
+#
+# Args:
+# - $dmidecode :: Full path to dmidecode.
+#
+# Returns a hash ref keyed by SMBIOS structure type, each a array ref of hash refs,
+# one per structure, in table order. formatted is the raw bytes of the formatted
+# area, including the four byte header, so the offsets in the SMBIOS spec can be
+# used on it directly. strings is the string table, where a string number N from
+# the formatted area is at index N - 1. Returns a empty hash ref if dmidecode is
+# missing or fails.
+#
+#     {
+#         17 => [
+#             {
+#                 formatted => "\x11\x28\x2a\x00...",
+#                 strings   => [ 'DIMM A', 'BANK 0', 'Samsung', '12345678', 'M471A1K43DB1-CWE' ],
+#             },
+#         ],
+#     }
+#
+# Example:
+#
+#     my $smbios = read_smbios_dump('/usr/local/sbin/dmidecode');
+#     print scalar( @{ $smbios->{17} || [] } ) . " memory devices\n";
+sub read_smbios_dump {
+	my ($dmidecode) = @_;
+
+	return {} if !-x $dmidecode;
+
+	my $dump_dir  = tempdir( CLEANUP => 1 );
+	my $dump_file = $dump_dir . '/smbios.bin';
+	my ( undef, $dump_ok ) = run_command( $dmidecode, '-q', '--dump-bin', $dump_file );
+	return {} if !$dump_ok;
+	my $dump = read_file( $dump_file, binmode => ':raw', err_mode => 'quiet' );
+	return {} if !defined($dump);
+
+	my %structures;
+	my $offset = 32;
+	while ( $offset + 4 <= length($dump) ) {
+		my $type             = ord( substr( $dump, $offset,     1 ) );
+		my $formatted_length = ord( substr( $dump, $offset + 1, 1 ) );
+		last if $formatted_length < 4;
+
+		# the strings follow the formatted area, each NUL terminated, with a extra NUL ending them
+		my $strings_start = $offset + $formatted_length;
+		my $strings_end   = index( $dump, "\0\0", $strings_start );
+		last if $strings_end < 0;
+
+		push(
+			@{ $structures{$type} },
+			{
+				formatted => substr( $dump, $offset, $formatted_length ),
+				strings   => [ split( /\0/, substr( $dump, $strings_start, $strings_end - $strings_start ) ) ],
+			}
+		);
+
+		# 127 is the end of table marker
+		last if $type == 127;
+		$offset = $strings_end + 2;
+	} ## end while ( $offset + 4 <= length($dump) )
+
+	return \%structures;
+} ## end sub read_smbios_dump
+
+# Finds a command, as where it lives varies by OS and cron often has a minimal path.
+# Looks in the path, then the sbin and bin dirs under /usr/local, /usr/pkg (pkgsrc),
+# /opt/local, /usr, and /.
+#
+# Args:
+# - $command :: The command name, for example 'dmidecode'.
+#
+# Returns the full path to the first executable found, or undef if none is.
+#
+# Example:
+#
+#     my $dmidecode = find_command('dmidecode') // die('dmidecode not found');
+sub find_command {
+	my ($command) = @_;
+
+	my @dirs = (
+		split( /:/, $ENV{PATH} // '' ),
+		map { ( $_ . '/sbin', $_ . '/bin' ) } ( '/usr/local', '/usr/pkg', '/opt/local', '/usr', '' )
+	);
+	foreach my $dir ( grep { $_ ne '' } @dirs ) {
+		return $dir . '/' . $command if -f $dir . '/' . $command && -x _;
+	}
+
+	return undef;
+} ## end sub find_command
+
+# Parses the output of 'bmc-info --get-device-id', from freeipmi.
+#
+# Args:
+# - $bmc_info_output :: The full output as a string. Each line is a label, spaces,
+#       a colon, and the value...
+#       Firmware Revision     : 1.73
+#       IPMI Version          : 2.0
+#       Manufacturer ID       : Super Micro Computer Inc. (10876)
+#       Product ID            : 2327
+#
+# Returns a hash ref of the firmware, ipmi_version, manufacturer, and product_id,
+# each '' if not found. The IANA number after the manufacturer name is removed,
+# with the number used if it has no name.
+#
+#     {
+#         firmware     => '1.73',
+#         ipmi_version => '2.0',
+#         manufacturer => 'Super Micro Computer Inc.',
+#         product_id   => '2327',
+#     }
+#
+# Example:
+#
+#     my $bmc_info = parse_bmc_info($bmc_info_output);
+sub parse_bmc_info {
+	my ($bmc_info_output) = @_;
+
+	my %labels = (
+		'Firmware Revision' => 'firmware',
+		'IPMI Version'      => 'ipmi_version',
+		'Manufacturer ID'   => 'manufacturer',
+		'Product ID'        => 'product_id',
+	);
+	my %bmc_info = map { $_ => '' } values(%labels);
+	foreach my $line ( split( /\n/, $bmc_info_output ) ) {
+		my ( $label, $value ) = $line =~ /^([^:]+?)\s*:\s*(.*?)\s*$/ or next;
+		$bmc_info{ $labels{$label} } = $value if $labels{$label};
+	}
+	# unknown ones show as just the number
+	$bmc_info{manufacturer} =~ s/^(.+?)\s*\(\d+\)$/$1/;
+
+	return \%bmc_info;
+} ## end sub parse_bmc_info
+
+# Parses the output of 'ipmi-sensors --output-sensor-thresholds
+# --comma-separated-output', from freeipmi. The columns are found via the
+# header, so the order they are in does not matter.
+#
+# Args:
+# - $ipmi_output :: The full output as a string. The header and each row look like...
+#       ID,Name,Type,Reading,Units,Lower NR,Lower C,Lower NC,Upper NC,Upper C,Upper NR,Event
+#       4,CPU Temp,Temperature,45.00,C,N/A,N/A,N/A,85.00,90.00,95.00,'OK'
+#
+# Returns undef if there is no header, which is how ipmi-sensors failing shows.
+# Otherwise a array ref of hash refs, one per sensor with a numeric reading, so
+# discrete sensors are left out. units is as ipmi-sensors abbreviates them, such
+# as C, V, A, W, or RPM. thresholds only has those with a numeric value, keyed
+# by the header name.
+#
+#     [
+#         {
+#             id         => '4',
+#             name       => 'CPU Temp',
+#             units      => 'C',
+#             reading    => '45.00',
+#             thresholds => { 'Upper NC' => '85.00', 'Upper C' => '90.00', 'Upper NR' => '95.00' },
+#         },
+#     ]
+#
+# Example:
+#
+#     my $ipmi_sensors = parse_ipmi_sensors($ipmi_output) // [];
+sub parse_ipmi_sensors {
+	my ($ipmi_output) = @_;
+
+	my @lines = split( /\n/, $ipmi_output );
+	my @header;
+	while ( defined( my $line = shift(@lines) ) ) {
+		if ( $line =~ /^ID,/ ) {
+			@header = split( /,/, $line );
+			last;
+		}
+	}
+	return undef if !@header;
+
+	my $number_regexp = qr/^-?\d+(?:\.\d+)?$/;
+	my @sensors;
+	foreach my $line (@lines) {
+		# limited to the column count so a comma in the event, the last column, stays in it
+		my @fields = split( /,/, $line, scalar(@header) );
+		next if @fields != @header;
+		my %row;
+		@row{@header} = map { s/^\s+|\s+$//gr } @fields;
+		next if ( $row{Reading} // '' ) !~ $number_regexp;
+
+		my %thresholds;
+		foreach my $threshold_name ( 'Lower NR', 'Lower C', 'Lower NC', 'Upper NC', 'Upper C', 'Upper NR' ) {
+			my $threshold = $row{$threshold_name} // '';
+			$thresholds{$threshold_name} = $threshold if $threshold =~ $number_regexp;
+		}
+
+		push(
+			@sensors,
+			{
+				id         => $row{ID},
+				name       => $row{Name},
+				units      => $row{Units} // '',
+				reading    => $row{Reading},
+				thresholds => \%thresholds,
+			}
+		);
+	} ## end foreach my $line (@lines)
+
+	return \@sensors;
+} ## end sub parse_ipmi_sensors
+
+# Parses the output of 'smartctl --json' for a disk into the same format the
+# smart-v1 extend uses for each disk in its cache, so either can be used the
+# same way.
+#
+# Args:
+# - $smartctl_output :: The JSON output as a string, from a run with -i, -H, -A,
+#       and -l scttemp, which have the identity, health, and temperatures.
+#
+# Returns undef if it is not JSON or smartctl's exit status has bit 1 set, which is
+# the device failing to open or, with '-n standby', being asleep. Otherwise a hash
+# ref. 194 is the current temperature, as the SMART attribute it usually comes
+# from. temp_limit is the drive trip temperature, else the max operating one.
+# health_pass is undef if the disk has no SMART health status, such as some
+# virtual disks. Missing ones are undef.
+#
+#     {
+#         serial       => 'S2RBNX0H000000X',
+#         fw_version   => 'EMT02B6Q',
+#         device_model => 'Samsung SSD 850 EVO 500GB',
+#         vendor       => undef,
+#         194          => 33,
+#         temp_limit   => 70,
+#         health_pass  => 1,
+#         over_temp    => 0,
+#         dev_error    => 0,
+#     }
+#
+# Example:
+#
+#     my $smart_disk = parse_smartctl($smartctl_output) // die('nothing from smartctl');
+sub parse_smartctl {
+	my ($smartctl_output) = @_;
+
+	my $smartctl_info = eval { decode_json($smartctl_output) };
+	return undef if ref($smartctl_info) ne 'HASH';
+	my $exit_status = ref( $smartctl_info->{smartctl} ) eq 'HASH' ? $smartctl_info->{smartctl}{exit_status} // 0 : 0;
+	return undef if $exit_status & 2;
+
+	my $temperature = ref( $smartctl_info->{temperature} ) eq 'HASH' ? $smartctl_info->{temperature} : {};
+	my %smart_disk  = (
+		serial       => $smartctl_info->{serial_number},
+		fw_version   => $smartctl_info->{firmware_version} // $smartctl_info->{scsi_revision},
+		device_model => $smartctl_info->{model_name}       // $smartctl_info->{scsi_model_name}
+			// $smartctl_info->{scsi_product},
+		vendor      => $smartctl_info->{scsi_vendor},
+		194         => $temperature->{current},
+		temp_limit  => $temperature->{drive_trip} // $temperature->{op_limit_max},
+		health_pass => undef,
+		over_temp   => 0,
+		dev_error   => 0,
+	);
+	if ( ref( $smartctl_info->{smart_status} ) eq 'HASH' ) {
+		$smart_disk{health_pass} = $smartctl_info->{smart_status}{passed} ? 1 : 0;
+	}
+	if ( defined( $smart_disk{194} ) && defined( $smart_disk{temp_limit} ) ) {
+		$smart_disk{over_temp} = $smart_disk{194} >= $smart_disk{temp_limit} ? 1 : 0;
+	}
+
+	return \%smart_disk;
+} ## end sub parse_smartctl
+
+# Reads the cache and returns the OIDs in it that are under the base OID, in order.
+#
+# Args:
+# - $cache_file :: Full path to the cache file written by -u.
+# - $base_oid :: Only OIDs under this are returned, for example '.1.3.6.1.2.1.47'.
+#       Undef returns all of them.
+#
+# Returns a array ref of hash refs, sorted by OID, each with the OID as a string,
+# its numeric parts as a array ref, its pass_persist type, and its value. Returns
+# a empty array ref if the cache does not exist or can not be parsed, so a missing
+# cache just means nothing is answered.
+#
+#     [
+#         {
+#             oid   => '.1.3.6.1.2.1.47.1.1.1.1.2.1',
+#             parts => [ 1, 3, 6, 1, 2, 1, 47, 1, 1, 1, 1, 2, 1 ],
+#             type  => 'string',
+#             value => 'Chassis',
+#         },
+#     ]
+#
+# Example:
+#
+#     my $entries = load_cache( '/var/cache/generic_entity/entity.json', '.1.3.6.1.2.1.99' );
+sub load_cache {
+	my ( $cache_file, $base_oid ) = @_;
+
+	my $cache = eval { decode_json( read_file($cache_file) ) };
+	return [] if ref($cache) ne 'HASH' || ref( $cache->{oids} ) ne 'ARRAY';
+
+	my $base_prefix = defined($base_oid) ? $base_oid . '.' : '';
+
+	my @entries;
+	foreach my $cached_oid ( @{ $cache->{oids} } ) {
+		my ( $oid, $type, $value ) = @{$cached_oid};
+		next if index( $oid, $base_prefix ) != 0;
+		push(
+			@entries,
+			{
+				oid   => $oid,
+				parts => [ grep { $_ ne '' } split( /\./, $oid ) ],
+				type  => $type,
+				value => $value,
+			}
+		);
+	} ## end foreach my $cached_oid ( @{ $cache->{oids} } )
+
+	return [ sort { oid_compare( $a->{parts}, $b->{parts} ) } @entries ];
+} ## end sub load_cache
+
+#gets the options
+my %opts;
+Getopt::Long::Configure( 'bundling', 'no_ignore_case' );
+GetOptions( \%opts, 'u', 'p=s', 'w', 'd=s', 'dmi', 'smart', 'smart-cache=s', 'smart-mode=s', 'ipmi', 'state',
+	'thresholds', 'help', 'version' )
+	or exit 255;
+
+if ( $opts{version} ) {
+	main::VERSION_MESSAGE();
+	exit 0;
+}
+
+if ( $opts{help} ) {
+	main::VERSION_MESSAGE();
+	main::HELP_MESSAGE();
+}
+
+# --smart-cache and --smart-mode only matter with --smart, so they turn it on
+if ( defined( $opts{'smart-cache'} ) || defined( $opts{'smart-mode'} ) ) {
+	$opts{smart} = 1;
+}
+$opts{'smart-mode'} //= 'auto';
+if ( $opts{'smart-mode'} !~ /^(?:auto|extend|smartctl)$/ ) {
+	die('--smart-mode must be auto, extend, or smartctl');
+}
+
+my $modes_given = grep { defined( $opts{$_} ) } ( 'u', 'p', 'w' );
+if ( $modes_given != 1 ) {
+	die('One of -u, -p, or -w is required');
+}
+
+if ( !$opts{u} && grep { defined( $opts{$_} ) } ( 'dmi', 'smart', 'ipmi', 'state', 'thresholds' ) ) {
+	die('--dmi, --smart, --ipmi, --state, and --thresholds need -u');
+}
+
+my $cache_dir  = defined( $opts{d} ) ? $opts{d} : '/var/cache/generic_entity';
+my $cache_file = $cache_dir . '/entity.json';
+my $state_file = $cache_dir . '/state.json';
+
+if ( $opts{u} ) {
+	# found up front so a missing one dies before anything is done
+	my %commands;
+	if ( $opts{dmi} ) {
+		$commands{dmidecode} = find_command('dmidecode') // die('dmidecode not found');
+	}
+	if ( $opts{ipmi} ) {
+		$commands{ipmi_sensors} = find_command('ipmi-sensors') // die('ipmi-sensors not found, it is in freeipmi');
+		# only used for the BMC details, so it is fine if missing
+		$commands{bmc_info} = find_command('bmc-info');
+	}
+
+	# auto uses the smart-v1 cache if there is one, otherwise smartctl
+	my $smart_cache_file = $opts{'smart-cache'} // '/var/cache/smart';
+	my $smart_mode       = $opts{'smart-mode'};
+	if ( $smart_mode eq 'auto' ) {
+		$smart_mode = -e $smart_cache_file ? 'extend' : 'smartctl';
+	}
+	# -n standby skips disks that are asleep instead of waking them
+	my @smartctl_args = ( '--json', '-n', 'standby', '-i', '-H', '-A', '-l', 'scttemp' );
+	if ( $opts{smart} && $smart_mode eq 'smartctl' ) {
+		$commands{smartctl} = find_command('smartctl') // die('smartctl not found, it is in smartmontools');
+	}
+
+	if ( !-d $cache_dir ) {
+		mkdir( $cache_dir, 0755 ) or die( 'Failed to create "' . $cache_dir . '"... ' . $! );
+	}
+
+	# What has to be kept between runs. index_map is stable key to entPhysicalIndex for
+	# everything but the chassis, with next_index the last one handed out.
+	my $state = eval { decode_json( read_file($state_file) ) };
+	if ( ref($state) ne 'HASH' ) {
+		$state = {};
+	}
+	$state->{index_map}  //= {};
+	$state->{next_index} //= 999999999;
+
+	my $index_for = sub {
+		my ($stable_key) = @_;
+		$state->{index_map}{$stable_key} //= ++$state->{next_index};
+		return $state->{index_map}{$stable_key};
+	};
+
+	# entPhysicalClass values
+	my %entity_classes = (
+		chassis       => 3,
+		power_supply  => 6,
+		sensor        => 8,
+		module        => 9,
+		cpu           => 12,
+		storage_drive => 15,
+	);
+
+	# Each is [ OID, pass_persist type, value ]. The entPhysicalTable columns
+	# are, in order, Descr, VendorType, ContainedIn, Class, ParentRelPos, Name,
+	# HardwareRev, FirmwareRev, SoftwareRev, SerialNum, MfgName, ModelName,
+	# Alias, AssetID, and IsFRU, which are 2 to 16, with MfgDate as 17.
+	my @oids;
+	my $add_entity = sub {
+		my (%entity) = @_;
+		my @columns = (
+			[ 'string',   $entity{descr} ],
+			[ 'objectid', '.0.0' ],
+			[ 'integer',  $entity{contained_in} ],
+			[ 'integer',  $entity{class} ],
+			[ 'integer',  $entity{parent_rel_pos} ],
+			[ 'string',   $entity{name} ],
+			[ 'string',   $entity{hardware_rev} // '' ],
+			[ 'string',   $entity{firmware_rev} // '' ],
+			[ 'string',   '' ],
+			[ 'string',   $entity{serial}     // '' ],
+			[ 'string',   $entity{mfg_name}   // '' ],
+			[ 'string',   $entity{model_name} // '' ],
+			[ 'string',   $entity{alias}      // '' ],
+			[ 'string',   $entity{asset_id}   // '' ],
+			[ 'integer',  $entity{is_fru} ? 1 : 2 ],
+		);
+		for ( my $column_index = 0; $column_index < @columns; $column_index++ ) {
+			my ( $type, $value ) = @{ $columns[$column_index] };
+			# a newline would break the pass_persist protocol
+			$value =~ s/[\r\n]+/ /g;
+			push( @oids,
+				[ '.1.3.6.1.2.1.47.1.1.1.1.' . ( $column_index + 2 ) . '.' . $entity{index}, $type, $value ] );
+		}
+
+		# entPhysicalMfgDate is a DateAndTime, the year as two bytes, then a byte each for
+		# month, day, hour, minutes, seconds, and deciseconds. mfg_date is YYYY-MM-DD, with
+		# the time left 0. All zeros means unknown, per the RFC. Sent as hex for the octet type.
+		my @date_parts = ( 0, 0, 0 );
+		if ( ( $entity{mfg_date} // '' ) =~ /^(\d{4})-(\d{2})-(\d{2})$/ ) {
+			@date_parts = ( $1, $2, $3 );
+		}
+		my $mfg_date_hex
+			= join( ' ', map { sprintf( '%02X', $_ ) } unpack( 'C*', pack( 'nC6', @date_parts, 0, 0, 0, 0 ) ) );
+		push( @oids, [ '.1.3.6.1.2.1.47.1.1.1.1.17.' . $entity{index}, 'octet', $mfg_date_hex ] );
+	}; ## end $add_entity = sub
+
+	# Adds a sensor entity and its entPhySensorTable row. Takes index, name,
+	# contained_in, parent_rel_pos, type, scale, precision, value, units, and thresholds.
+	#
+	# type is the entPhySensorType, 1 other, 4 voltsDC, 5 amperes, 6 watts, 8 celsius, or
+	# 10 rpm. scale is the entPhySensorScale, 8 milli or 9 units. value is the integer to
+	# send, the reading being value / 10 ** precision at that scale.
+	#
+	# thresholds is optional and only sent with --thresholds. It is a array ref of hash refs
+	# with the entSensorThresholdIndex as index, the CatalystSeverity as severity, the
+	# relation, the value at the same scale and precision as the reading, and crossed, true
+	# if the reading is past it. For example...
+	#
+	#     [ { index => 4, severity => 10, relation => 4, value => 8500, crossed => 0 } ]
+	my $add_sensor = sub {
+		my (%sensor) = @_;
+
+		# entPhySensorValue is a Integer32
+		return if abs( $sensor{value} ) > 2147483647;
+
+		$add_entity->(
+			index          => $sensor{index},
+			descr          => $sensor{name},
+			name           => $sensor{name},
+			contained_in   => $sensor{contained_in},
+			class          => $entity_classes{sensor},
+			parent_rel_pos => $sensor{parent_rel_pos},
+		);
+
+		# Type, Scale, Precision, Value, OperStatus of ok, and UnitsDisplay
+		my @sensor_columns = (
+			[ 'integer', $sensor{type} ],
+			[ 'integer', $sensor{scale} ],
+			[ 'integer', $sensor{precision} ],
+			[ 'integer', $sensor{value} ],
+			[ 'integer', 1 ],
+			[ 'string',  $sensor{units} ],
+		);
+		for ( my $column_index = 0; $column_index < @sensor_columns; $column_index++ ) {
+			push(
+				@oids,
+				[
+					'.1.3.6.1.2.1.99.1.1.1.' . ( $column_index + 1 ) . '.' . $sensor{index},
+					@{ $sensor_columns[$column_index] }
+				]
+			);
+		}
+
+		# CISCO-ENTITY-SENSOR-MIB entSensorThresholdTable, indexed by the entPhysicalIndex
+		# then the threshold index. Severity, Relation, Value, Evaluation, and
+		# NotificationEnable, which is always false as no traps are sent.
+		return if !$opts{thresholds};
+		foreach my $threshold ( @{ $sensor{thresholds} || [] } ) {
+			# entSensorThresholdValue is a SensorValue, which has a smaller range than Integer32
+			next if abs( $threshold->{value} ) > 1000000000;
+			my @threshold_columns = (
+				[ 2, $threshold->{severity} ],
+				[ 3, $threshold->{relation} ],
+				[ 4, $threshold->{value} ],
+				[ 5, $threshold->{crossed} ? 1 : 2 ],
+				[ 6, 2 ],
+			);
+			foreach my $threshold_column (@threshold_columns) {
+				my ( $column, $value ) = @{$threshold_column};
+				push(
+					@oids,
+					[
+						'.1.3.6.1.4.1.9.9.91.1.2.1.1.' . $column . '.' . $sensor{index} . '.' . $threshold->{index},
+						'integer',
+						$value
+					]
+				);
+			} ## end foreach my $threshold_column (@threshold_columns)
+		} ## end foreach my $threshold ( @{ $sensor{thresholds} ...})
+	}; ## end $add_sensor = sub
+
+	# Adds a entStateTable row if --state was given. Takes index, admin, oper, and
+	# the alarms as a hash ref of critical, major, and warning, true for each set.
+	#
+	# admin is entStateAdmin, 1 unknown, 2 locked, or 4 unlocked. oper is entStateOper,
+	# 1 unknown, 2 disabled, or 3 enabled. Usage and standby are always 1, unknown.
+	my $add_state = sub {
+		my (%entity_state) = @_;
+		return if !$opts{state};
+
+		# entStateAlarm is BITS, numbered from the high bit of the first octet, with
+		# critical as 2, major as 3, and warning as 5. Sent as hex for the octet type.
+		my $alarm_bits = 0;
+		$alarm_bits |= 0x20 if $entity_state{alarms}{critical};
+		$alarm_bits |= 0x10 if $entity_state{alarms}{major};
+		$alarm_bits |= 0x04 if $entity_state{alarms}{warning};
+
+		my @state_columns = (
+			[ 2, 'integer', $entity_state{admin} ],
+			[ 3, 'integer', $entity_state{oper} ],
+			[ 4, 'integer', 1 ],
+			[ 5, 'octet',   sprintf( '%02X', $alarm_bits ) ],
+			[ 6, 'integer', 1 ],
+		);
+		foreach my $state_column (@state_columns) {
+			my ( $column, $type, $value ) = @{$state_column};
+			push( @oids, [ '.1.3.6.1.2.1.131.1.1.1.' . $column . '.' . $entity_state{index}, $type, $value ] );
+		}
+	}; ## end $add_state = sub
+
+	#
+	# chassis and SMBIOS
+	#
+
+	my $smbios = $opts{dmi} ? read_smbios_dump( $commands{dmidecode} ) : {};
+	if ( $opts{dmi} && !%{$smbios} ) {
+		warn('dmidecode failed or found no SMBIOS tables, so --dmi is skipped');
+	}
+
+	# Returns the string a SMBIOS string number at the given offset of the formatted
+	# area points to, or '' if the structure is too short for it, it is 0 for none, or
+	# it is filler text.
+	my $smbios_string = sub {
+		my ( $structure, $offset ) = @_;
+		return '' if !defined($structure) || length( $structure->{formatted} ) <= $offset;
+		my $string_number = ord( substr( $structure->{formatted}, $offset, 1 ) );
+		return '' if !$string_number;
+		return clean_dmi( $structure->{strings}[ $string_number - 1 ] );
+	};
+
+	# SMBIOS type 0 is the BIOS, with its version at 0x05. Type 1 is the system, with
+	# the manufacturer at 0x04, product at 0x05, and serial at 0x07. Type 3 is the
+	# chassis, with the asset tag at 0x08.
+	my $bios_structure    = $smbios->{0}[0];
+	my $system_structure  = $smbios->{1}[0];
+	my $chassis_structure = $smbios->{3}[0];
+	$add_entity->(
+		index          => 1,
+		descr          => 'Chassis',
+		name           => 'Chassis',
+		contained_in   => 0,
+		class          => $entity_classes{chassis},
+		parent_rel_pos => -1,
+		firmware_rev   => $smbios_string->( $bios_structure,    0x05 ),
+		serial         => $smbios_string->( $system_structure,  0x07 ),
+		mfg_name       => $smbios_string->( $system_structure,  0x04 ),
+		model_name     => $smbios_string->( $system_structure,  0x05 ),
+		asset_id       => $smbios_string->( $chassis_structure, 0x08 ),
+	);
+
+	if ( $opts{dmi} ) {
+		# SMBIOS type 2, the baseboard. Manufacturer at 0x04, product at 0x05, version
+		# at 0x06, and serial at 0x07.
+		my $board_structure = $smbios->{2}[0];
+		my $board_vendor    = $smbios_string->( $board_structure, 0x04 );
+		my $board_name      = $smbios_string->( $board_structure, 0x05 );
+		my $board_index     = $index_for->('board');
+		$add_entity->(
+			index          => $board_index,
+			descr          => join( ' ', grep { $_ ne '' } $board_vendor, $board_name ) || 'Motherboard',
+			name           => 'Motherboard',
+			contained_in   => 1,
+			class          => $entity_classes{module},
+			parent_rel_pos => -1,
+			hardware_rev   => $smbios_string->( $board_structure, 0x06 ),
+			serial         => $smbios_string->( $board_structure, 0x07 ),
+			mfg_name       => $board_vendor,
+			model_name     => $board_name,
+		);
+
+		# SMBIOS type 4, processors. Socket designation is at 0x04, manufacturer at 0x07,
+		# version, which is the model, at 0x10, status at 0x18, serial at 0x20, and part
+		# number at 0x22. Bit 6 of status is set if the socket is populated.
+		my $cpu_position = 1;
+		foreach my $cpu_structure ( @{ $smbios->{4} || [] } ) {
+			next if length( $cpu_structure->{formatted} ) <= 0x18;
+			next if !( ord( substr( $cpu_structure->{formatted}, 0x18, 1 ) ) & 0x40 );
+
+			my $socket = $smbios_string->( $cpu_structure, 0x04 ) || 'CPU ' . $cpu_position;
+			my $model  = $smbios_string->( $cpu_structure, 0x10 );
+			$add_entity->(
+				index          => $index_for->( 'cpu:' . $socket ),
+				descr          => $model || $socket,
+				name           => $socket,
+				contained_in   => $board_index,
+				class          => $entity_classes{cpu},
+				parent_rel_pos => $cpu_position++,
+				serial         => $smbios_string->( $cpu_structure, 0x20 ),
+				mfg_name       => $smbios_string->( $cpu_structure, 0x07 ),
+				model_name     => $smbios_string->( $cpu_structure, 0x22 ) || $model,
+				is_fru         => 1,
+			);
+		} ## end foreach my $cpu_structure ( @{ $smbios->{4} || ...})
+
+		# SMBIOS type 17, memory devices. Size is a word at 0x0C, device locator at 0x10,
+		# bank locator at 0x11, memory type at 0x12, speed a word at 0x15, manufacturer at
+		# 0x17, serial at 0x18, part number at 0x1A, and extended size a dword at 0x1C.
+		my %memory_types = (
+			0x12 => 'DDR',
+			0x13 => 'DDR2',
+			0x18 => 'DDR3',
+			0x1A => 'DDR4',
+			0x1B => 'LPDDR',
+			0x1C => 'LPDDR2',
+			0x1D => 'LPDDR3',
+			0x1E => 'LPDDR4',
+			0x22 => 'DDR5',
+			0x23 => 'LPDDR5',
+		);
+		my $dimm_position = 1;
+		foreach my $dimm_structure ( @{ $smbios->{17} || [] } ) {
+			my $formatted = $dimm_structure->{formatted};
+			next if length($formatted) <= 0x12;
+
+			# 0 is a empty slot and 0xFFFF unknown. 0x7FFF means the size is in the extended
+			# size, in MB. Otherwise it is in MB, or KB if the high bit is set.
+			my $size_word = unpack( 'v', substr( $formatted, 0x0C, 2 ) );
+			next if $size_word == 0 || $size_word == 0xFFFF;
+			my $size_mb;
+			if ( $size_word == 0x7FFF ) {
+				next if length($formatted) < 0x20;
+				$size_mb = unpack( 'V', substr( $formatted, 0x1C, 4 ) ) & 0x7FFFFFFF;
+			} elsif ( $size_word & 0x8000 ) {
+				$size_mb = ( $size_word & 0x7FFF ) / 1024;
+			} else {
+				$size_mb = $size_word;
+			}
+
+			my $speed = length($formatted) > 0x16 ? unpack( 'v', substr( $formatted, 0x15, 2 ) ) : 0;
+			my $descr = join( ' ',
+				$size_mb >= 1024 ? ( $size_mb / 1024 ) . ' GB' : $size_mb . ' MB',
+				grep { $_ ne '' } $memory_types{ ord( substr( $formatted, 0x12, 1 ) ) } // '',
+				$speed && $speed != 0xFFFF ? $speed . ' MT/s' : '' );
+
+			my $locator = join( ' ',
+				grep { $_ ne '' } $smbios_string->( $dimm_structure, 0x11 ),
+				$smbios_string->( $dimm_structure, 0x10 ) )
+				|| 'DIMM ' . $dimm_position;
+			$add_entity->(
+				index          => $index_for->( 'dimm:' . $locator ),
+				descr          => $descr,
+				name           => $locator,
+				contained_in   => $board_index,
+				class          => $entity_classes{module},
+				parent_rel_pos => $dimm_position++,
+				serial         => $smbios_string->( $dimm_structure, 0x18 ),
+				mfg_name       => $smbios_string->( $dimm_structure, 0x17 ),
+				model_name     => $smbios_string->( $dimm_structure, 0x1A ),
+				is_fru         => 1,
+			);
+		} ## end foreach my $dimm_structure ( @{ $smbios->{17} ||...})
+
+		# SMBIOS type 39, system power supplies. Location at 0x05, device name at 0x06,
+		# manufacturer at 0x07, serial at 0x08, model part number at 0x0A, revision at
+		# 0x0B, and the max power in watts a word at 0x0C, 0x8000 if unknown. Bit 1 of
+		# the characteristics word at 0x0E is set if present.
+		my $supply_position = 1;
+		foreach my $supply_structure ( @{ $smbios->{39} || [] } ) {
+			my $formatted = $supply_structure->{formatted};
+			next if length($formatted) < 0x10;
+			next if !( unpack( 'v', substr( $formatted, 0x0E, 2 ) ) & 0x02 );
+
+			my $supply_name
+				= $smbios_string->( $supply_structure, 0x06 )
+				|| $smbios_string->( $supply_structure, 0x05 )
+				|| 'Power Supply ' . $supply_position;
+			my $max_power = unpack( 'v', substr( $formatted, 0x0C, 2 ) );
+			my $model     = $smbios_string->( $supply_structure, 0x0A );
+			$add_entity->(
+				index => $index_for->( 'power_supply:' . $supply_name ),
+				descr => join( ' ', grep { $_ ne '' } $model, $max_power != 0x8000 ? $max_power . ' W' : '' )
+					|| 'Power Supply',
+				name           => $supply_name,
+				contained_in   => 1,
+				class          => $entity_classes{power_supply},
+				parent_rel_pos => $supply_position++,
+				hardware_rev   => $smbios_string->( $supply_structure, 0x0B ),
+				serial         => $smbios_string->( $supply_structure, 0x08 ),
+				mfg_name       => $smbios_string->( $supply_structure, 0x07 ),
+				model_name     => $model,
+				is_fru         => 1,
+			);
+		} ## end foreach my $supply_structure ( @{ $smbios->{39}...})
+	} ## end if ( $opts{dmi} )
+
+	#
+	# disks
+	#
+
+	if ( $opts{smart} ) {
+		# Each disk is a hash ref in the format smart-v1 uses, such as serial, fw_version,
+		# device_model, 194 for the temperature, temp_limit, and health_pass, keyed by a
+		# stable name for it.
+		my $smart_disks = {};
+		if ( $smart_mode eq 'extend' ) {
+			# keyed by the name from its config with useSN=0, or by serial with useSN=1
+			my $smart_cache = eval { decode_json( read_file($smart_cache_file) ) };
+			if (   ref($smart_cache) eq 'HASH'
+				&& ref( $smart_cache->{data} ) eq 'HASH'
+				&& ref( $smart_cache->{data}{disks} ) eq 'HASH' )
+			{
+				$smart_disks = $smart_cache->{data}{disks};
+			} else {
+				warn( 'Failed to read the smart-v1 cache "' . $smart_cache_file . '", so --smart is skipped' );
+			}
+		} else {
+			# smartctl --scan lists the disks, including those behind RAID controllers it knows
+			# how to reach, which have a type with the port in it, such as megaraid,0. Those are
+			# passed along with -d and added to the key, as they share the device file. The type
+			# is not passed for the rest, as --scan does not open the disk so might give scsi for a
+			# SATA one, with smartctl doing better on its own.
+			my ($scan_output) = run_command( $commands{smartctl}, '--scan', '--json' );
+			my $scan          = eval { decode_json($scan_output) };
+			my @scanned_disks = ref($scan) eq 'HASH' && ref( $scan->{devices} ) eq 'ARRAY' ? @{ $scan->{devices} } : ();
+			foreach my $scanned_disk ( grep { ref($_) eq 'HASH' && defined( $_->{name} ) } @scanned_disks ) {
+				my $disk_key  = $scanned_disk->{name} =~ s{^/dev/}{}r;
+				my @type_args = ();
+				if ( ( $scanned_disk->{type} // '' ) =~ /,/ ) {
+					$disk_key .= ' ' . $scanned_disk->{type};
+					@type_args = ( '-d', $scanned_disk->{type} );
+				}
+				my ($smartctl_output)
+					= run_command( $commands{smartctl}, @smartctl_args, @type_args, $scanned_disk->{name} );
+				my $smart_disk = parse_smartctl($smartctl_output);
+				$smart_disks->{$disk_key} = $smart_disk if defined($smart_disk);
+			} ## end foreach my $scanned_disk ( grep { ref($_) eq 'HASH'...})
+		} ## end else [ if ( $smart_mode eq 'extend' ) ]
+
+		my $number_regexp = qr/^-?\d+(?:\.\d+)?$/;
+		my $disk_position = 1;
+		foreach my $smart_key ( sort( keys( %{$smart_disks} ) ) ) {
+			my $smart_disk = $smart_disks->{$smart_key};
+			next if ref($smart_disk) ne 'HASH';
+
+			# with useSN=1 the key is the serial, so the device is added to make it readable
+			my $serial    = $smart_disk->{serial} // '';
+			my $disk_name = $smart_key;
+			if ( $smart_key eq $serial ) {
+				$disk_name = ( $smart_disk->{disk} // 'Disk' ) . ' ' . $serial;
+			}
+
+			my $model = $smart_disk->{device_model} // $smart_disk->{model_name} // $smart_disk->{model_number}
+				// $smart_disk->{product} // '';
+			my $disk_key   = 'disk:smart:' . $smart_key;
+			my $disk_index = $index_for->($disk_key);
+			$add_entity->(
+				index          => $disk_index,
+				descr          => $model || 'Disk',
+				name           => $disk_name,
+				contained_in   => 1,
+				class          => $entity_classes{storage_drive},
+				parent_rel_pos => $disk_position++,
+				firmware_rev   => $smart_disk->{fw_version} // $smart_disk->{revision} // '',
+				serial         => $serial,
+				mfg_name       => $smart_disk->{vendor} // '',
+				model_name     => $model,
+				is_fru         => 1,
+			);
+
+			# health_pass is 0 when smartctl could not read the disk as well as when it failed
+			$add_state->(
+				index  => $disk_index,
+				admin  => 1,
+				oper   => $smart_disk->{dev_error} ? 2 : 3,
+				alarms => {
+					critical => defined( $smart_disk->{health_pass} ) && !$smart_disk->{health_pass},
+					major    => $smart_disk->{over_temp},
+				},
+			);
+
+			# 194 is the current temperature, with 190 used if that is all there is
+			my ($temperature)
+				= grep { defined($_) && $_ =~ $number_regexp } ( $smart_disk->{194}, $smart_disk->{190} );
+			next if !defined($temperature);
+
+			my @thresholds;
+			if ( ( $smart_disk->{temp_limit} // '' ) =~ $number_regexp ) {
+				push(
+					@thresholds,
+					{
+						index    => 5,
+						severity => 20,
+						relation => 4,
+						value    => sprintf( '%.0f', $smart_disk->{temp_limit} ),
+						crossed  => $temperature >= $smart_disk->{temp_limit},
+					}
+				);
+			} ## end if ( ( $smart_disk->{temp_limit} // '' ) =~...)
+			$add_sensor->(
+				index          => $index_for->( $disk_key . ':temperature' ),
+				name           => $disk_name . ' Temperature',
+				contained_in   => $disk_index,
+				parent_rel_pos => 1,
+				type           => 8,
+				scale          => 9,
+				precision      => 0,
+				value          => sprintf( '%.0f', $temperature ),
+				units          => 'C',
+				thresholds     => \@thresholds,
+			);
+		} ## end foreach my $smart_key ( sort( keys( %{$smart_disks...})))
+	} ## end if ( $opts{smart} )
+
+	#
+	# IPMI
+	#
+
+	if ( $opts{ipmi} ) {
+		# A stale SDR cache, as after a BMC firmware update, makes ipmi-sensors fail, so it
+		# is tried again with the cache rebuilt. That is slow on some BMCs, so not done every run.
+		my @ipmi_args = (
+			'--output-sensor-thresholds',     '--comma-separated-output',
+			'--ignore-not-available-sensors', '--quiet-cache'
+		);
+		my $ipmi_sensors;
+		foreach my $cache_args ( [], ['--sdr-cache-recreate'] ) {
+			my ($ipmi_output) = run_command( $commands{ipmi_sensors}, @ipmi_args, @{$cache_args} );
+			$ipmi_sensors = parse_ipmi_sensors($ipmi_output);
+			last if defined($ipmi_sensors);
+		}
+		if ( !defined($ipmi_sensors) ) {
+			warn('ipmi-sensors failed, so no IPMI sensors are reported');
+			$ipmi_sensors = [];
+		}
+
+		# ipmi-sensors units to entPhySensorType, with the rest, such as % and discrete
+		# sensors, skipped. Readings are sent at units scale with a precision of 2.
+		my %ipmi_unit_types = ( C => 8, V => 4, A => 5, W => 6, RPM => 10 );
+
+		# Each is the ipmi-sensors column, the entSensorThresholdIndex, the CatalystSeverity of
+		# minor 10, major 20, or critical 30, and the relation of lessOrEqual 2 or greaterOrEqual
+		# 4, as IPMI thresholds are hit at the value. The severity also sets the BMC alarm.
+		my @ipmi_thresholds = (
+			[ 'Lower NR', 1, 30, 2 ],
+			[ 'Lower C',  2, 20, 2 ],
+			[ 'Lower NC', 3, 10, 2 ],
+			[ 'Upper NC', 4, 10, 4 ],
+			[ 'Upper C',  5, 20, 4 ],
+			[ 'Upper NR', 6, 30, 4 ],
+		);
+		my %alarm_for_severity = ( 10 => 'warning', 20 => 'major', 30 => 'critical' );
+
+		my @usable_sensors = grep { $ipmi_unit_types{ $_->{units} } } @{$ipmi_sensors};
+
+		# some BMCs reuse a name, such as Dell with several named Temp, so those get the ID added
+		my %name_counts;
+		$name_counts{ $_->{name} }++ foreach @usable_sensors;
+
+		my $bmc_info = parse_bmc_info('');
+		if ( defined( $commands{bmc_info} ) ) {
+			my ($bmc_info_output) = run_command( $commands{bmc_info}, '--get-device-id' );
+			$bmc_info = parse_bmc_info($bmc_info_output);
+		}
+
+		# the BMC is added if either bmc-info or ipmi-sensors worked
+		if ( @usable_sensors || $bmc_info->{firmware} ne '' ) {
+			my $bmc_index = $index_for->('ipmi:bmc');
+			$add_entity->(
+				index => $bmc_index,
+				descr =>
+					join( ' ', 'BMC', $bmc_info->{ipmi_version} ne '' ? 'IPMI ' . $bmc_info->{ipmi_version} : () ),
+				name           => 'BMC',
+				contained_in   => 1,
+				class          => $entity_classes{module},
+				parent_rel_pos => -1,
+				firmware_rev   => $bmc_info->{firmware},
+				mfg_name       => $bmc_info->{manufacturer},
+				model_name     => $bmc_info->{product_id},
+			);
+
+			my %bmc_alarms;
+			my $sensor_position = 1;
+			foreach my $ipmi_sensor (@usable_sensors) {
+				my $sensor_name = $ipmi_sensor->{name};
+				if ( $name_counts{ $ipmi_sensor->{name} } > 1 ) {
+					$sensor_name .= ' ' . $ipmi_sensor->{id};
+				}
+
+				my @thresholds;
+				foreach my $ipmi_threshold (@ipmi_thresholds) {
+					my ( $column, $threshold_index, $severity, $relation ) = @{$ipmi_threshold};
+					my $threshold_value = $ipmi_sensor->{thresholds}{$column} // next;
+					my $crossed
+						= $relation == 2
+						? $ipmi_sensor->{reading} <= $threshold_value
+						: $ipmi_sensor->{reading} >= $threshold_value;
+					$bmc_alarms{ $alarm_for_severity{$severity} } = 1 if $crossed;
+					push(
+						@thresholds,
+						{
+							index    => $threshold_index,
+							severity => $severity,
+							relation => $relation,
+							value    => sprintf( '%.0f', $threshold_value * 100 ),
+							crossed  => $crossed,
+						}
+					);
+				} ## end foreach my $ipmi_threshold (@ipmi_thresholds)
+
+				$add_sensor->(
+					index          => $index_for->( 'ipmi:' . $sensor_name ),
+					name           => $sensor_name,
+					contained_in   => $bmc_index,
+					parent_rel_pos => $sensor_position++,
+					type           => $ipmi_unit_types{ $ipmi_sensor->{units} },
+					scale          => 9,
+					precision      => 2,
+					value          => sprintf( '%.0f', $ipmi_sensor->{reading} * 100 ),
+					units          => $ipmi_sensor->{units},
+					thresholds     => \@thresholds,
+				);
+			} ## end foreach my $ipmi_sensor (@usable_sensors)
+
+			$add_state->( index => $bmc_index, admin => 1, oper => 3, alarms => \%bmc_alarms );
+		} ## end if ( @usable_sensors || $bmc_info->{firmware...})
+	} ## end if ( $opts{ipmi} )
+
+	# snmpd reads the cache as its own user
+	umask(022);
+	write_file( $cache_file, { atomic => 1 }, encode_json( { version => 1, updated => time, oids => \@oids } ) );
+	write_file( $state_file, { atomic => 1 }, encode_json($state) );
+
+	exit 0;
+} ## end if ( $opts{u} )
+
+if ( $opts{w} ) {
+	foreach my $entry ( @{ load_cache($cache_file) } ) {
+		print $entry->{oid} . ' = ' . $entry->{type} . ': ' . $entry->{value} . "\n";
+	}
+
+	exit 0;
+}
+
+# pass_persist mode. snmpd sends a command line and, for get and getnext, a OID line.
+#
+#     PING                       -> PONG
+#     get / .1.3.6.1.2.1.47...   -> OID, type, and value lines, or NONE
+#     getnext / .1.3.6...        -> the same for the next OID, or NONE
+#     set / OID / type value     -> not-writable
+#
+# A empty line or EOF means snmpd is done with us.
+
+my $base_oid = $opts{p};
+if ( $base_oid !~ /^\.?\d+(?:\.\d+)*$/ ) {
+	die( '-p "' . $base_oid . '" is not a numeric OID' );
+}
+$base_oid =~ s/^(?!\.)/./;
+
+$| = 1;
+
+my $cache_mtime = -1;
+my $entries     = [];
+
+while ( defined( my $command = <STDIN> ) ) {
+	chomp($command);
+	last if $command eq '';
+
+	if ( $command eq 'PING' ) {
+		print "PONG\n";
+		next;
+	}
+
+	my $requested_oid = <STDIN>;
+	last if !defined($requested_oid);
+	chomp($requested_oid);
+
+	if ( $command eq 'set' ) {
+		# the value line, which is not used
+		<STDIN>;
+		print "not-writable\n";
+		next;
+	}
+
+	# reload when -u has written a new cache, missing counts as 0 so it is empty until there is one
+	my $current_mtime = ( stat($cache_file) )[9] // 0;
+	if ( $current_mtime != $cache_mtime ) {
+		$entries     = load_cache( $cache_file, $base_oid );
+		$cache_mtime = $current_mtime;
+	}
+
+	my @requested_parts = grep { $_ ne '' } split( /\./, $requested_oid );
+	my $found;
+	if ( $command eq 'get' ) {
+		($found) = grep { $_->{oid} eq '.' . join( '.', @requested_parts ) } @{$entries};
+	} elsif ( $command eq 'getnext' ) {
+		($found) = grep { oid_compare( $_->{parts}, \@requested_parts ) > 0 } @{$entries};
+	}
+
+	if ( defined($found) ) {
+		print $found->{oid} . "\n" . $found->{type} . "\n" . $found->{value} . "\n";
+	} else {
+		print "NONE\n";
+	}
+} ## end while ( defined( my $command = <STDIN> ) )
