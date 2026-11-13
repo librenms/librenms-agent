@@ -42,7 +42,8 @@ our $VERSION = '0.1.0';
 
 linux_entity B<-u> [B<-d> <cache dir>] [B<-i> <regexp>]... [B<-I> <regexp>]...
 [B<--hwmon>] [B<--hwmon-kinds> <kinds>] [B<--hwmon-skip-disks>] [B<--rapl>] [B<--power>]
-[B<--inventory>] [B<--smart> [<cache>]] [B<--state>] [B<--ipmi>] [B<--thresholds>]
+[B<--inventory>] [B<--smart>] [B<--smart-cache> <cache>] [B<--smart-mode> <mode>]
+[B<--state>] [B<--ipmi>] [B<--thresholds>]
 
 linux_entity B<-p> <base OID> [B<-d> <cache dir>]
 
@@ -91,6 +92,8 @@ ethtool, plus a NIC and driver that support reading the module EEPROM for
 transceivers. Not all do. Readings only show up for modules that support
 digital optical monitoring.
 
+smartmontools 7.0 or newer for B<--smart-mode> smartctl.
+
 freeipmi for B<--ipmi>, plus a BMC the kernel can reach, which needs the
 ipmi_si and ipmi_devintf modules loaded.
 
@@ -124,7 +127,7 @@ L</LM-SENSORS-MIB>.
 =head2 --hwmon-skip-disks
 
 Skip the hwmon devices for disks, nvme and drivetemp. Mainly for
-B<--smart>, so all the disk temperatures come from smart-v1, or for when
+B<--smart>, so all the disk temperatures come from SMART, or for when
 the smart app in LibreNMS already covers them. Implies B<--hwmon>.
 
 =head2 --rapl
@@ -145,25 +148,40 @@ Add the motherboard, CPUs, memory, and disks to the inventory. The CPUs
 and memory come from the SMBIOS tables, so are not present on systems
 lacking them. Disks are SATA, SAS, and NVMe, skipping removable ones.
 
-=head2 --smart [<cache>]
+=head2 --smart
 
-Merge in what the smart-v1 extend has for the disks, from its cache.
-Defaults to /var/cache/smart, the plain JSON one, not smart.snmp. Implies
-B<--inventory>.
+Add SMART info for the disks, from the smart-v1 extend's cache or
+smartctl, see B<--smart-mode>. Implies B<--inventory>.
 
-A disk is matched by serial, or by device name if no serial was found
-for it here. The serial, firmware, and model from smartctl are used over
-the ones found here. Disks only smart-v1 knows about, such as those
-behind a RAID controller, are added too, keyed by serial.
-
-With B<--hwmon>, the hwmon reading is used for disks that have one
-instead, as it is live and not as old as the smart-v1 cache. Use
-B<--hwmon-skip-disks> to use the smart-v1 one for all of them.
-
-Each disk smart-v1 has also gets a temperature sensor, named
+The serial, firmware, and model from it are used over the ones found
+here. Each disk with SMART info gets a temperature sensor, named
 "$disk Temperature" and contained in the disk, with its temperature
 limit as a threshold, see L</THRESHOLDS>, and with B<--state> a
 entStateTable row, see L</STATE>.
+
+With B<--hwmon>, the hwmon reading is used for disks that have one
+instead, as it is live. Use B<--hwmon-skip-disks> to use the SMART one
+for all of them.
+
+=head2 --smart-cache <cache>
+
+The smart-v1 cache to use. Defaults to /var/cache/smart, the plain JSON
+one, not smart.snmp. Implies B<--smart>.
+
+=head2 --smart-mode <mode>
+
+Where the SMART info comes from. Implies B<--smart>.
+
+- auto :: The smart-v1 cache if it exists, else smartctl. The default.
+
+- extend :: The smart-v1 cache. A disk is matched by serial, or by device
+  name if no serial was found for it here. Disks only smart-v1 knows
+  about, such as those behind a RAID controller, are added too, keyed by
+  serial. It is as old as the last smart-v1 run.
+
+- smartctl :: Ran on each disk found here, so disks behind a RAID
+  controller are not covered. Disks that are asleep are skipped instead of
+  being woken up, so have no SMART info until a run when they are awake.
 
 =head2 --state
 
@@ -316,7 +334,7 @@ It needs its own pass_persist line...
 =head1 STATE
 
 With B<--state>, the entStateTable has a row for each transceiver, with
-B<--power> each power supply, with B<--smart> each disk smart-v1 has,
+B<--power> each power supply, with B<--smart> each disk with SMART info,
 and with B<--ipmi> the BMC.
 
 - Transceivers :: entStateAdmin is unlocked if the interface is up and
@@ -335,11 +353,12 @@ and with B<--ipmi> the BMC.
   sensor is at or past a non-recoverable threshold, major for a critical
   one, and warning for a non-critical one.
 
-- Disks :: Only with B<--smart>, for the disks smart-v1 has.
+- Disks :: Only with B<--smart>, for the disks with SMART info.
   entStateOper is disabled if smartctl could not read the disk and enabled
   if it could. entStateAlarm has critical set if the SMART health check
   did not pass, which includes smartctl not being able to read it, and
-  major if it is over its temperature limit.
+  major if it is over its temperature limit. A disk with no SMART health
+  status, such as some virtual disks, never has critical set.
 
 The rest of the columns are unknown.
 
@@ -351,6 +370,9 @@ Debian...
 
     # for --ipmi
     apt-get install freeipmi-tools
+
+    # for --smart-mode smartctl
+    apt-get install smartmontools
 
 Generic...
 
@@ -717,6 +739,67 @@ sub parse_ipmi_sensors {
 	return \@sensors;
 } ## end sub parse_ipmi_sensors
 
+# Parses the output of 'smartctl --json' for a disk into the same format the
+# smart-v1 extend uses for each disk in its cache, so either can be used the
+# same way.
+#
+# Args:
+# - $smartctl_output :: The JSON output as a string, from a run with -i, -H, -A,
+#       and -l scttemp, which have the identity, health, and temperatures.
+#
+# Returns undef if it is not JSON or smartctl's exit status has bit 1 set, which is
+# the device failing to open or, with '-n standby', being asleep. Otherwise a hash
+# ref. 194 is the current temperature, as the SMART attribute it usually comes
+# from. temp_limit is the drive trip temperature, else the max operating one.
+# health_pass is undef if the disk has no SMART health status, such as some
+# virtual disks. Missing ones are undef.
+#
+#     {
+#         serial       => 'S2RBNX0H000000X',
+#         fw_version   => 'EMT02B6Q',
+#         device_model => 'Samsung SSD 850 EVO 500GB',
+#         vendor       => undef,
+#         194          => 33,
+#         temp_limit   => 70,
+#         health_pass  => 1,
+#         over_temp    => 0,
+#         dev_error    => 0,
+#     }
+#
+# Example:
+#
+#     my $smart_disk = parse_smartctl($smartctl_output) // die('nothing from smartctl');
+sub parse_smartctl {
+	my ($smartctl_output) = @_;
+
+	my $smartctl_info = eval { decode_json($smartctl_output) };
+	return undef if ref($smartctl_info) ne 'HASH';
+	my $exit_status = ref( $smartctl_info->{smartctl} ) eq 'HASH' ? $smartctl_info->{smartctl}{exit_status} // 0 : 0;
+	return undef if $exit_status & 2;
+
+	my $temperature = ref( $smartctl_info->{temperature} ) eq 'HASH' ? $smartctl_info->{temperature} : {};
+	my %smart_disk  = (
+		serial       => $smartctl_info->{serial_number},
+		fw_version   => $smartctl_info->{firmware_version} // $smartctl_info->{scsi_revision},
+		device_model => $smartctl_info->{model_name}       // $smartctl_info->{scsi_model_name}
+			// $smartctl_info->{scsi_product},
+		vendor      => $smartctl_info->{scsi_vendor},
+		194         => $temperature->{current},
+		temp_limit  => $temperature->{drive_trip} // $temperature->{op_limit_max},
+		health_pass => undef,
+		over_temp   => 0,
+		dev_error   => 0,
+	);
+	if ( ref( $smartctl_info->{smart_status} ) eq 'HASH' ) {
+		$smart_disk{health_pass} = $smartctl_info->{smart_status}{passed} ? 1 : 0;
+	}
+	if ( defined( $smart_disk{194} ) && defined( $smart_disk{temp_limit} ) ) {
+		$smart_disk{over_temp} = $smart_disk{194} >= $smart_disk{temp_limit} ? 1 : 0;
+	}
+
+	return \%smart_disk;
+} ## end sub parse_smartctl
+
 # Reads the cache and returns the OIDs in it that are under the base OID, in order.
 #
 # Args:
@@ -772,15 +855,24 @@ my %opts;
 # i and I are array refs as they may be given more than once
 Getopt::Long::Configure( 'bundling', 'no_ignore_case' );
 GetOptions( \%opts, 'u', 'p=s', 'w', 'd=s', 'i=s@', 'I=s@', 'hwmon', 'hwmon-kinds=s', 'rapl', 'power', 'inventory',
-	'state', 'ipmi', 'thresholds', 'help', 'version', 'hwmon-skip-disks', 'smart:s' )
+	'state', 'ipmi', 'thresholds', 'help', 'version', 'hwmon-skip-disks', 'smart', 'smart-cache=s', 'smart-mode=s' )
 	or exit 255;
 
 if ( defined( $opts{'hwmon-kinds'} ) || $opts{'hwmon-skip-disks'} ) {
 	$opts{hwmon} = 1;
 }
 
-# disks have to be found for there to be anything to merge the smart-v1 info into
-if ( defined( $opts{smart} ) ) {
+# --smart-cache and --smart-mode only matter with --smart, so they turn it on
+if ( defined( $opts{'smart-cache'} ) || defined( $opts{'smart-mode'} ) ) {
+	$opts{smart} = 1;
+}
+$opts{'smart-mode'} //= 'auto';
+if ( $opts{'smart-mode'} !~ /^(?:auto|extend|smartctl)$/ ) {
+	die('--smart-mode must be auto, extend, or smartctl');
+}
+
+# disks have to be found for there to be anything to merge the SMART info into
+if ( $opts{smart} ) {
 	$opts{inventory} = 1;
 }
 
@@ -825,6 +917,20 @@ if ( $opts{u} ) {
 		= grep { -x $_ } ( '/usr/sbin/ipmi-sensors', '/sbin/ipmi-sensors', '/usr/bin/ipmi-sensors' );
 	if ( $opts{ipmi} && !defined($ipmi_sensors_command) ) {
 		die('ipmi-sensors not found, it is in the freeipmi-tools package');
+	}
+
+	# auto uses the smart-v1 cache if there is one, otherwise smartctl
+	my $smart_cache_file = $opts{'smart-cache'} // '/var/cache/smart';
+	my $smart_mode       = $opts{'smart-mode'};
+	if ( $smart_mode eq 'auto' ) {
+		$smart_mode = -e $smart_cache_file ? 'extend' : 'smartctl';
+	}
+	# -n standby skips disks that are asleep instead of waking them
+	my @smartctl_args = ( '--json', '-n', 'standby', '-i', '-H', '-A', '-l', 'scttemp' );
+	my ($smartctl)
+		= grep { -x $_ } ( '/usr/sbin/smartctl', '/sbin/smartctl', '/usr/bin/smartctl', '/usr/local/sbin/smartctl' );
+	if ( $opts{smart} && $smart_mode eq 'smartctl' && !defined($smartctl) ) {
+		die('smartctl not found, it is in the smartmontools package');
 	}
 
 	if ( !-d $cache_dir ) {
@@ -1485,13 +1591,12 @@ if ( $opts{u} ) {
 			);
 		} ## end foreach my $dimm_structure ( @{ read_smbios_structures...})
 
-		# smart-v1's cache, with --smart. Its disks are keyed by serial, or with useSN=0 by
+		# smart-v1's cache, with --smart-mode extend. Its disks are keyed by serial, or with useSN=0 by
 		# the name from its config. Each is hash ref of what smart-v1 found for it, such as
 		# serial, fw_version, device_model, 194 for the temperature, temp_limit, and health_pass.
 		my %smart_disks;
-		if ( defined( $opts{smart} ) ) {
-			my $smart_cache_file = $opts{smart} ne '' ? $opts{smart} : '/var/cache/smart';
-			my $smart_cache      = eval { decode_json( read_file($smart_cache_file) ) };
+		if ( $opts{smart} && $smart_mode eq 'extend' ) {
+			my $smart_cache = eval { decode_json( read_file($smart_cache_file) ) };
 			if (   ref($smart_cache) eq 'HASH'
 				&& ref( $smart_cache->{data} ) eq 'HASH'
 				&& ref( $smart_cache->{data}{disks} ) eq 'HASH' )
@@ -1505,15 +1610,25 @@ if ( $opts{u} ) {
 			} else {
 				warn( 'Failed to read the smart-v1 cache "' . $smart_cache_file . '", so --smart is skipped' );
 			}
-		} ## end if ( defined( $opts{smart} ) )
+		} ## end if ( $opts{smart} && $smart_mode eq 'extend')
 
-		# Finds the smart-v1 disk for a disk found here, by serial, else by device name for
-		# disks whose serial could not be read here. It is removed from %smart_disks so what
-		# is left after is the disks only smart-v1 knows about, such as those behind a RAID
-		# controller. Takes the serial, '' if unknown, and the device name, such as sda.
-		# Returns the hash ref from %smart_disks, or undef if there is none.
-		my $take_smart_disk = sub {
-			my ( $serial, $device_name ) = @_;
+		# Gets the SMART info for a disk found here. With smartctl, it is ran on the device
+		# file. With the smart-v1 cache, the disk is found by serial, else by device name for
+		# disks whose serial could not be read here, and removed from %smart_disks so what is
+		# left after is the disks only smart-v1 knows about, such as those behind a RAID
+		# controller. Takes the serial, '' if unknown, the device name, such as sda, and the
+		# device file, such as /dev/sda. Returns a hash ref in the format smart-v1 uses, see
+		# parse_smartctl, or undef if there is none.
+		my $smart_for_disk = sub {
+			my ( $serial, $device_name, $device_file ) = @_;
+			return undef if !$opts{smart};
+
+			if ( $smart_mode eq 'smartctl' ) {
+				open( my $smartctl_fh, '-|', $smartctl, @smartctl_args, $device_file ) or return undef;
+				my $smartctl_output = join( '', <$smartctl_fh> );
+				close($smartctl_fh);
+				return parse_smartctl($smartctl_output);
+			}
 
 			my ($smart_key)
 				= grep { $serial ne '' && ( $smart_disks{$_}{serial} // '' ) eq $serial } sort( keys(%smart_disks) );
@@ -1522,14 +1637,14 @@ if ( $opts{u} ) {
 			}
 
 			return defined($smart_key) ? delete( $smart_disks{$smart_key} ) : undef;
-		}; ## end $take_smart_disk = sub
+		}; ## end $smart_for_disk = sub
 
 		# Adds a disk. Takes key, the stable key for its index, name, descr, firmware_rev,
 		# serial, mfg_name, model_name, and position, all of what was found here, '' for those
-		# unknown, plus smart, the smart-v1 hash ref for it or undef.
+		# unknown, plus smart, the SMART info hash ref for it or undef, see $smart_for_disk.
 		# hwmon_temperature is true if --hwmon already reported its temperature.
 		#
-		# With smart, the details smart-v1 has are used over those found here, as smartctl
+		# With smart, the details from it are used over those found here, as smartctl
 		# reads them from the disk itself. The disk gets a entStateTable row, and a temperature
 		# sensor with temp_limit as its upper critical threshold, see THRESHOLDS.
 		my $add_disk = sub {
@@ -1559,7 +1674,10 @@ if ( $opts{u} ) {
 				index  => $disk_index,
 				admin  => 1,
 				oper   => $smart_disk->{dev_error} ? 2 : 3,
-				alarms => { critical => !$smart_disk->{health_pass}, major => $smart_disk->{over_temp} },
+				alarms => {
+					critical => defined( $smart_disk->{health_pass} ) && !$smart_disk->{health_pass},
+					major    => $smart_disk->{over_temp},
+				},
 			);
 
 			# the --hwmon one is used instead, as it is live and not as old as the smart-v1 cache
@@ -1619,7 +1737,7 @@ if ( $opts{u} ) {
 				mfg_name          => '',
 				model_name        => $model,
 				position          => $disk_position++,
-				smart             => $take_smart_disk->( $serial, $controller ),
+				smart             => $smart_for_disk->( $serial, $controller, '/dev/' . $controller ),
 				hwmon_temperature => $hwmon_temperature_devices{$controller_path}
 					|| $hwmon_temperature_devices{$device_path},
 			);
@@ -1655,7 +1773,7 @@ if ( $opts{u} ) {
 				mfg_name          => $vendor,
 				model_name        => $model,
 				position          => $disk_position++,
-				smart             => $take_smart_disk->( $serial, $disk ),
+				smart             => $smart_for_disk->( $serial, $disk, '/dev/' . $disk ),
 				hwmon_temperature => $hwmon_temperature_devices{$device_path},
 			);
 		} ## end foreach my $block_dir ( sort { $a cmp $b } glob...)
