@@ -41,7 +41,8 @@ our $VERSION = '0.1.0';
 =head1 SYNOPSIS
 
 freebsd_entity B<-u> [B<-d> <cache dir>] [B<-i> <regexp>]... [B<-I> <regexp>]...
-[B<--sensors>] [B<--power>] [B<--inventory>] [B<--state>] [B<--ipmi>] [B<--thresholds>]
+[B<--sensors>] [B<--power>] [B<--inventory>] [B<--smart> [<cache>]] [B<--state>] [B<--ipmi>]
+[B<--thresholds>]
 
 freebsd_entity B<-p> <base OID> [B<-d> <cache dir>]
 
@@ -114,10 +115,27 @@ Add the motherboard, CPUs, memory, and disks to the inventory. The
 motherboard comes from kenv. The CPUs and memory need dmidecode and are
 skipped without it. Disks come from geom, skipping md and cd devices.
 
+=head2 --smart [<cache>]
+
+Merge in what the smart-v1 extend has for the disks, from its cache.
+Defaults to /var/cache/smart, the plain JSON one, not smart.snmp. Implies
+B<--inventory>.
+
+A disk is matched by serial, or by device name if no serial was found
+for it here. The serial, firmware, and model from smartctl are used over
+the ones found here. Disks only smart-v1 knows about, such as those
+behind a RAID controller, are added too, keyed by serial.
+
+Each disk smart-v1 has also gets a temperature sensor, named
+"$disk Temperature" and contained in the disk, with its temperature
+limit as a threshold, see L</THRESHOLDS>, and with B<--state> a
+entStateTable row, see L</STATE>.
+
 =head2 --state
 
 Add ENTITY-STATE-MIB state for the transceivers, the BMC with B<--ipmi>,
-and the batteries and AC adapter with B<--power>.
+the disks with B<--smart>, and the batteries and AC adapter with
+B<--power>.
 
 =head2 --ipmi
 
@@ -132,8 +150,8 @@ the IPMI thresholds. See L</STATE>.
 =head2 --thresholds
 
 Add the CISCO-ENTITY-SENSOR-MIB entSensorThresholdTable, under
-.1.3.6.1.4.1.9.9.91, for sensors that have thresholds. Currently only the
-B<--ipmi> sensors do. See L</THRESHOLDS>.
+.1.3.6.1.4.1.9.9.91, for sensors that have thresholds, which are the B<--ipmi> and
+B<--smart> ones. See L</THRESHOLDS>.
 
 =head2 -p <base OID>
 
@@ -220,7 +238,8 @@ indexed by the entPhysicalIndex of the sensor, then the threshold.
 
 - 6 :: Upper non-recoverable, critical, greater or equal.
 
-Only the ones the BMC has are present. The value uses the same scale and
+Only the ones the BMC has are present. Disk temperatures from B<--smart>
+only have 5, the drive's temperature limit. The value uses the same scale and
 precision as the sensor's entPhySensorValue. entSensorThresholdEvaluation
 is true if the reading is past it. entSensorThresholdNotificationEnable is
 always false, as no traps are sent.
@@ -232,7 +251,8 @@ It needs its own pass_persist line...
 =head1 STATE
 
 With B<--state>, the entStateTable has a row for each transceiver, with
-B<--power> each battery and the AC adapter, and with B<--ipmi> the BMC.
+B<--power> each battery and the AC adapter, with B<--smart> each disk
+smart-v1 has, and with B<--ipmi> the BMC.
 
 - Transceivers :: entStateAdmin is unlocked if the interface is up and
   locked if down. entStateOper is enabled. entStateAlarm is always clear,
@@ -246,6 +266,12 @@ B<--power> each battery and the AC adapter, and with B<--ipmi> the BMC.
 - BMC :: entStateOper is enabled. entStateAlarm has critical set if any
   sensor is at or past a non-recoverable threshold, major for a critical
   one, and warning for a non-critical one.
+
+- Disks :: Only with B<--smart>, for the disks smart-v1 has.
+  entStateOper is disabled if smartctl could not read the disk and enabled
+  if it could. entStateAlarm has critical set if the SMART health check
+  did not pass, which includes smartctl not being able to read it, and
+  major if it is over its temperature limit.
 
 The rest of the columns are unknown.
 
@@ -656,8 +682,8 @@ my %opts;
 # i and I are array refs as they may be given more than once
 Getopt::Long::Configure( 'bundling', 'no_ignore_case' );
 GetOptions(
-	\%opts,  'u',         'p=s',   'w',    'd=s',        'i=s@', 'I=s@', 'sensors',
-	'power', 'inventory', 'state', 'ipmi', 'thresholds', 'help', 'version'
+	\%opts,  'u',         'p=s',   'w',    'd=s',        'i=s@', 'I=s@',    'sensors',
+	'power', 'inventory', 'state', 'ipmi', 'thresholds', 'help', 'version', 'smart:s'
 ) or exit 255;
 
 if ( $opts{version} ) {
@@ -675,8 +701,13 @@ if ( $modes_given != 1 ) {
 	die('One of -u, -p, or -w is required');
 }
 
-if ( !$opts{u} && grep { $opts{$_} } ( 'sensors', 'power', 'inventory', 'state', 'ipmi', 'thresholds' ) ) {
-	die('--sensors, --power, --inventory, --state, --ipmi, and --thresholds are only used with -u');
+# disks have to be found for there to be anything to merge the smart-v1 info into
+if ( defined( $opts{smart} ) ) {
+	$opts{inventory} = 1;
+}
+
+if ( !$opts{u} && grep { defined( $opts{$_} ) } ( 'sensors', 'power', 'inventory', 'state', 'ipmi', 'thresholds' ) ) {
+	die('--sensors, --power, --inventory, --smart, --state, --ipmi, and --thresholds need -u');
 }
 
 my $cache_dir  = defined( $opts{d} ) ? $opts{d} : '/var/cache/freebsd_entity';
@@ -1292,6 +1323,115 @@ if ( $opts{u} ) {
 			}
 		}
 
+		# smart-v1's cache, with --smart. Its disks are keyed by serial, or with useSN=0 by
+		# the name from its config. Each is hash ref of what smart-v1 found for it, such as
+		# serial, fw_version, device_model, 194 for the temperature, temp_limit, and health_pass.
+		my %smart_disks;
+		if ( defined( $opts{smart} ) ) {
+			my $smart_cache_file = $opts{smart} ne '' ? $opts{smart} : '/var/cache/smart';
+			my $smart_cache      = eval { decode_json( read_file($smart_cache_file) ) };
+			if (   ref($smart_cache) eq 'HASH'
+				&& ref( $smart_cache->{data} ) eq 'HASH'
+				&& ref( $smart_cache->{data}{disks} ) eq 'HASH' )
+			{
+				my $smart_cache_disks = $smart_cache->{data}{disks};
+				foreach my $smart_key ( keys( %{$smart_cache_disks} ) ) {
+					if ( ref( $smart_cache_disks->{$smart_key} ) eq 'HASH' ) {
+						$smart_disks{$smart_key} = $smart_cache_disks->{$smart_key};
+					}
+				}
+			} else {
+				warn( 'Failed to read the smart-v1 cache "' . $smart_cache_file . '", so --smart is skipped' );
+			}
+		} ## end if ( defined( $opts{smart} ) )
+
+		# Finds the smart-v1 disk for a disk found here, by serial, else by device name for
+		# disks whose serial could not be read here. It is removed from %smart_disks so what
+		# is left after is the disks only smart-v1 knows about, such as those behind a RAID
+		# controller. Takes the serial, '' if unknown, and the device name, such as sda.
+		# Returns the hash ref from %smart_disks, or undef if there is none.
+		my $take_smart_disk = sub {
+			my ( $serial, $device_name ) = @_;
+
+			my ($smart_key)
+				= grep { $serial ne '' && ( $smart_disks{$_}{serial} // '' ) eq $serial } sort( keys(%smart_disks) );
+			if ( !defined($smart_key) ) {
+				($smart_key) = grep { ( $smart_disks{$_}{disk} // '' ) eq $device_name } sort( keys(%smart_disks) );
+			}
+
+			return defined($smart_key) ? delete( $smart_disks{$smart_key} ) : undef;
+		}; ## end $take_smart_disk = sub
+
+		# Adds a disk. Takes key, the stable key for its index, name, descr, firmware_rev,
+		# serial, mfg_name, model_name, and position, all of what was found here, '' for those
+		# unknown, plus smart, the smart-v1 hash ref for it or undef.
+		#
+		# With smart, the details smart-v1 has are used over those found here, as smartctl
+		# reads them from the disk itself. The disk gets a entStateTable row, and a temperature
+		# sensor with temp_limit as its upper critical threshold, see THRESHOLDS.
+		my $add_disk = sub {
+			my (%disk) = @_;
+			my $smart_disk = $disk{smart} // {};
+
+			my $smart_model = $smart_disk->{device_model} // $smart_disk->{model_name}
+				// $smart_disk->{model_number} // $smart_disk->{product} // '';
+			my $disk_index = $index_for->( $disk{key} );
+			$add_entity->(
+				index          => $disk_index,
+				descr          => $disk{descr} || $smart_model || 'Disk',
+				name           => $disk{name},
+				contained_in   => 1,
+				class          => $entity_classes{storage_drive},
+				parent_rel_pos => $disk{position},
+				firmware_rev   => $smart_disk->{fw_version} // $smart_disk->{revision} // $disk{firmware_rev},
+				serial         => $disk{serial}   || $smart_disk->{serial} // '',
+				mfg_name       => $disk{mfg_name} || $smart_disk->{vendor} // '',
+				model_name     => $smart_model    || $disk{model_name},
+				is_fru         => 1,
+			);
+			return if !$disk{smart};
+
+			# health_pass is 0 when smartctl could not read the disk as well as when it failed
+			$add_state->(
+				index  => $disk_index,
+				admin  => 1,
+				oper   => $smart_disk->{dev_error} ? 2 : 3,
+				alarms => { critical => !$smart_disk->{health_pass}, major => $smart_disk->{over_temp} },
+			);
+
+			# 194 is the current temperature, with 190 used if that is all there is
+			my $number_regexp = qr/^-?\d+(?:\.\d+)?$/;
+			my ($temperature)
+				= grep { defined($_) && $_ =~ $number_regexp } ( $smart_disk->{194}, $smart_disk->{190} );
+			return if !defined($temperature);
+
+			my @thresholds;
+			if ( ( $smart_disk->{temp_limit} // '' ) =~ $number_regexp ) {
+				push(
+					@thresholds,
+					{
+						index    => 5,
+						severity => 20,
+						relation => 4,
+						value    => sprintf( '%.0f', $smart_disk->{temp_limit} ),
+						crossed  => $temperature >= $smart_disk->{temp_limit},
+					}
+				);
+			} ## end if ( ( $smart_disk->{temp_limit} // '' ) =~...)
+			$add_sensor->(
+				index          => $index_for->( $disk{key} . ':smart_temperature' ),
+				name           => $disk{name} . ' Temperature',
+				contained_in   => $disk_index,
+				parent_rel_pos => 1,
+				type           => 8,
+				scale          => 9,
+				precision      => 0,
+				value          => sprintf( '%.0f', $temperature ),
+				units          => 'C',
+				thresholds     => \@thresholds,
+			);
+		}; ## end $add_disk = sub
+
 		my $disk_position = 1;
 		foreach my $disk (@disks) {
 			# memory disks, and optical drives which show 0 when empty
@@ -1303,20 +1443,42 @@ if ( $opts{u} ) {
 			# no stable key to be had
 			next if $disk_key eq 'serial:';
 
-			$add_entity->(
-				index => $index_for->( 'disk:' . $disk_key ),
+			$add_disk->(
+				key   => 'disk:' . $disk_key,
+				name  => $disk->{name},
 				descr =>
 					join( ' ', grep { $_ ne '' } $disk->{descr}, sprintf( '%.0f GB', $disk->{mediasize} / 1e9 ) ),
-				name           => $disk->{name},
-				contained_in   => 1,
-				class          => $entity_classes{storage_drive},
-				parent_rel_pos => $disk_position++,
-				firmware_rev   => $cam_disk->{firmware_rev} // '',
-				serial         => $serial,
-				model_name     => $disk->{descr},
-				is_fru         => 1,
+				firmware_rev => $cam_disk->{firmware_rev} // '',
+				serial       => $serial,
+				mfg_name     => '',
+				model_name   => $disk->{descr},
+				position     => $disk_position++,
+				smart        => $take_smart_disk->( $serial, $disk->{name} ),
 			);
 		} ## end foreach my $disk (@disks)
+
+		# what smart-v1 has that was not found above, such as disks behind a RAID controller,
+		# keyed by serial as there is no device path. With useSN=1, the smart-v1 key is the
+		# serial, so the name is the device smart-v1 used plus the serial to tell them apart.
+		foreach my $smart_key ( sort( keys(%smart_disks) ) ) {
+			my $smart_disk = $smart_disks{$smart_key};
+			my $serial     = $smart_disk->{serial} // '';
+			my $name       = $smart_key;
+			if ( $smart_key eq $serial ) {
+				$name = ( $smart_disk->{disk} // 'Disk' ) . ' ' . $serial;
+			}
+			$add_disk->(
+				key          => 'disk:smart:' . ( $serial ne '' ? $serial : $smart_key ),
+				name         => $name,
+				descr        => '',
+				firmware_rev => '',
+				serial       => $serial,
+				mfg_name     => '',
+				model_name   => '',
+				position     => $disk_position++,
+				smart        => $smart_disk,
+			);
+		} ## end foreach my $smart_key ( sort( keys(%smart_disks...)))
 	} ## end if ( $opts{inventory} )
 
 	#
