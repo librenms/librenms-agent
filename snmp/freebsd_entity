@@ -41,7 +41,7 @@ our $VERSION = '0.1.0';
 =head1 SYNOPSIS
 
 freebsd_entity B<-u> [B<-d> <cache dir>] [B<-i> <regexp>]... [B<-I> <regexp>]...
-[B<--sensors>] [B<--power>] [B<--inventory>] [B<--state>]
+[B<--sensors>] [B<--power>] [B<--inventory>] [B<--state>] [B<--ipmi>] [B<--thresholds>]
 
 freebsd_entity B<-p> <base OID> [B<-d> <cache dir>]
 
@@ -52,8 +52,8 @@ freebsd_entity B<-w> [B<-d> <cache dir>]
 Reports pluggable transceivers, SFP, QSFP, and the like, as found via
 C<ifconfig -v>, as ENTITY-MIB inventory and their digital optical
 monitoring readings as ENTITY-SENSOR-MIB sensors. Optionally also reports
-temperature sensors, batteries and AC power, hardware inventory, and
-ENTITY-STATE-MIB state.
+temperature sensors, batteries and AC power, hardware inventory, BMC
+sensors via IPMI, ENTITY-STATE-MIB state, and sensor thresholds.
 
 It works in two parts. Ran with B<-u> from cron as root, it gathers
 everything and writes the cache. Ran with B<-p> by snmpd, it answers
@@ -75,7 +75,8 @@ not support pass_persist.
 
 One line is needed per MIB as they are in separate trees. B<-p> is told
 the tree as snmpd does not pass along what it was registered for. The
-.1.3.6.1.2.1.131 line is only needed with B<--state>.
+.1.3.6.1.2.1.131 line is only needed with B<--state>. B<--thresholds>
+needs one more, see L</THRESHOLDS>.
 
 Run B<-u> once before restarting snmpd so the cache exists. Without a
 cache, nothing is returned.
@@ -87,6 +88,9 @@ such as ix, ixl, mce, and cxgbe. Readings only show up for modules that
 support digital optical monitoring.
 
 dmidecode for the CPUs and memory with B<--inventory>.
+
+freeipmi for B<--ipmi>, plus ipmi(4) loaded, which can be done at boot by
+adding ipmi_load="YES" to /boot/loader.conf.
 
 =head1 FLAGS
 
@@ -112,8 +116,24 @@ skipped without it. Disks come from geom, skipping md and cd devices.
 
 =head2 --state
 
-Add ENTITY-STATE-MIB state for the transceivers and, with B<--power>, the
-batteries and AC adapter.
+Add ENTITY-STATE-MIB state for the transceivers, the BMC with B<--ipmi>,
+and the batteries and AC adapter with B<--power>.
+
+=head2 --ipmi
+
+Add the BMC sensors via C<ipmi-sensors> from freeipmi. Temperature,
+voltage, current, power, and fan readings are reported, under a BMC
+entity. Discrete sensors and those in other units, such as percent, are
+skipped.
+
+With B<--state>, the BMC gets a entStateTable row with its alarm set from
+the IPMI thresholds. See L</STATE>.
+
+=head2 --thresholds
+
+Add the CISCO-ENTITY-SENSOR-MIB entSensorThresholdTable, under
+.1.3.6.1.4.1.9.9.91, for sensors that have thresholds. Currently only the
+B<--ipmi> sensors do. See L</THRESHOLDS>.
 
 =head2 -p <base OID>
 
@@ -182,10 +202,37 @@ reading of zero, -inf dBm, is reported as -40 dBm.
 
 Battery charge is not reported, as ENTITY-SENSOR-MIB lacks a percent type.
 
+=head1 THRESHOLDS
+
+ENTITY-SENSOR-MIB has nowhere to put thresholds, so with B<--thresholds>
+they go in the entSensorThresholdTable from CISCO-ENTITY-SENSOR-MIB. It is
+indexed by the entPhysicalIndex of the sensor, then the threshold.
+
+- 1 :: Lower non-recoverable, critical, less or equal.
+
+- 2 :: Lower critical, major, less or equal.
+
+- 3 :: Lower non-critical, minor, less or equal.
+
+- 4 :: Upper non-critical, minor, greater or equal.
+
+- 5 :: Upper critical, major, greater or equal.
+
+- 6 :: Upper non-recoverable, critical, greater or equal.
+
+Only the ones the BMC has are present. The value uses the same scale and
+precision as the sensor's entPhySensorValue. entSensorThresholdEvaluation
+is true if the reading is past it. entSensorThresholdNotificationEnable is
+always false, as no traps are sent.
+
+It needs its own pass_persist line...
+
+    pass_persist .1.3.6.1.4.1.9.9.91 /usr/local/etc/snmp/extends/freebsd_entity -p .1.3.6.1.4.1.9.9.91
+
 =head1 STATE
 
-With B<--state>, the entStateTable has a row for each transceiver, and
-with B<--power> each battery and the AC adapter.
+With B<--state>, the entStateTable has a row for each transceiver, with
+B<--power> each battery and the AC adapter, and with B<--ipmi> the BMC.
 
 - Transceivers :: entStateAdmin is unlocked if the interface is up and
   locked if down. entStateOper is enabled. entStateAlarm is always clear,
@@ -196,11 +243,18 @@ with B<--power> each battery and the AC adapter.
 
 - AC adapter :: entStateOper is enabled if on AC power and disabled if not.
 
+- BMC :: entStateOper is enabled. entStateAlarm has critical set if any
+  sensor is at or past a non-recoverable threshold, major for a critical
+  one, and warning for a non-critical one.
+
 The rest of the columns are unknown.
 
 =head1 INSTALL
 
     pkg install p5-JSON p5-File-Slurp dmidecode
+
+    # for --ipmi
+    pkg install freeipmi
 
 =cut
 
@@ -475,6 +529,78 @@ sub parse_ifconfig {
 	return \%interface_info;
 } ## end sub parse_ifconfig
 
+# Parses the output of 'ipmi-sensors --output-sensor-thresholds
+# --comma-separated-output', from freeipmi. The columns are found via the
+# header, so the order they are in does not matter.
+#
+# Args:
+# - $ipmi_output :: The full output as a string. The header and each row look like...
+#       ID,Name,Type,Reading,Units,Lower NR,Lower C,Lower NC,Upper NC,Upper C,Upper NR,Event
+#       4,CPU Temp,Temperature,45.00,C,N/A,N/A,N/A,85.00,90.00,95.00,'OK'
+#
+# Returns undef if there is no header, which is how ipmi-sensors failing shows.
+# Otherwise a array ref of hash refs, one per sensor with a numeric reading, so
+# discrete sensors are left out. units is as ipmi-sensors abbreviates them, such
+# as C, V, A, W, or RPM. thresholds only has those with a numeric value, keyed
+# by the header name.
+#
+#     [
+#         {
+#             id         => '4',
+#             name       => 'CPU Temp',
+#             units      => 'C',
+#             reading    => '45.00',
+#             thresholds => { 'Upper NC' => '85.00', 'Upper C' => '90.00', 'Upper NR' => '95.00' },
+#         },
+#     ]
+#
+# Example:
+#
+#     my $ipmi_sensors = parse_ipmi_sensors($ipmi_output) // [];
+sub parse_ipmi_sensors {
+	my ($ipmi_output) = @_;
+
+	my @lines = split( /\n/, $ipmi_output );
+	my @header;
+	while ( defined( my $line = shift(@lines) ) ) {
+		if ( $line =~ /^ID,/ ) {
+			@header = split( /,/, $line );
+			last;
+		}
+	}
+	return undef if !@header;
+
+	my $number_regexp = qr/^-?\d+(?:\.\d+)?$/;
+	my @sensors;
+	foreach my $line (@lines) {
+		# limited to the column count so a comma in the event, the last column, stays in it
+		my @fields = split( /,/, $line, scalar(@header) );
+		next if @fields != @header;
+		my %row;
+		@row{@header} = map { s/^\s+|\s+$//gr } @fields;
+		next if ( $row{Reading} // '' ) !~ $number_regexp;
+
+		my %thresholds;
+		foreach my $threshold_name ( 'Lower NR', 'Lower C', 'Lower NC', 'Upper NC', 'Upper C', 'Upper NR' ) {
+			my $threshold = $row{$threshold_name} // '';
+			$thresholds{$threshold_name} = $threshold if $threshold =~ $number_regexp;
+		}
+
+		push(
+			@sensors,
+			{
+				id         => $row{ID},
+				name       => $row{Name},
+				units      => $row{Units} // '',
+				reading    => $row{Reading},
+				thresholds => \%thresholds,
+			}
+		);
+	} ## end foreach my $line (@lines)
+
+	return \@sensors;
+} ## end sub parse_ipmi_sensors
+
 # Reads the cache and returns the OIDs in it that are under the base OID, in order.
 #
 # Args:
@@ -529,9 +655,10 @@ sub load_cache {
 my %opts;
 # i and I are array refs as they may be given more than once
 Getopt::Long::Configure( 'bundling', 'no_ignore_case' );
-GetOptions( \%opts, 'u', 'p=s', 'w', 'd=s', 'i=s@', 'I=s@', 'sensors', 'power', 'inventory', 'state', 'help',
-	'version' )
-	or exit 255;
+GetOptions(
+	\%opts,  'u',         'p=s',   'w',    'd=s',        'i=s@', 'I=s@', 'sensors',
+	'power', 'inventory', 'state', 'ipmi', 'thresholds', 'help', 'version'
+) or exit 255;
 
 if ( $opts{version} ) {
 	main::VERSION_MESSAGE();
@@ -548,8 +675,8 @@ if ( $modes_given != 1 ) {
 	die('One of -u, -p, or -w is required');
 }
 
-if ( !$opts{u} && grep { $opts{$_} } ( 'sensors', 'power', 'inventory', 'state' ) ) {
-	die('--sensors, --power, --inventory, and --state are only used with -u');
+if ( !$opts{u} && grep { $opts{$_} } ( 'sensors', 'power', 'inventory', 'state', 'ipmi', 'thresholds' ) ) {
+	die('--sensors, --power, --inventory, --state, --ipmi, and --thresholds are only used with -u');
 }
 
 my $cache_dir  = defined( $opts{d} ) ? $opts{d} : '/var/cache/freebsd_entity';
@@ -563,14 +690,18 @@ if ( $opts{u} ) {
 
 	# full paths as cron has a minimal path
 	my %commands = (
-		sysctl     => '/sbin/sysctl',
-		ifconfig   => '/sbin/ifconfig',
-		kenv       => '/bin/kenv',
-		acpiconf   => '/usr/sbin/acpiconf',
-		geom       => '/sbin/geom',
-		camcontrol => '/sbin/camcontrol',
-		dmidecode  => '/usr/local/sbin/dmidecode',
+		sysctl       => '/sbin/sysctl',
+		ifconfig     => '/sbin/ifconfig',
+		kenv         => '/bin/kenv',
+		acpiconf     => '/usr/sbin/acpiconf',
+		geom         => '/sbin/geom',
+		camcontrol   => '/sbin/camcontrol',
+		dmidecode    => '/usr/local/sbin/dmidecode',
+		ipmi_sensors => '/usr/local/sbin/ipmi-sensors',
 	);
+	if ( $opts{ipmi} && !-x $commands{ipmi_sensors} ) {
+		die( $commands{ipmi_sensors} . ' not found, it is in sysutils/freeipmi' );
+	}
 
 	if ( !-d $cache_dir ) {
 		mkdir( $cache_dir, 0755 ) or die( 'Failed to create "' . $cache_dir . '"... ' . $! );
@@ -648,11 +779,18 @@ if ( $opts{u} ) {
 	}; ## end $add_entity = sub
 
 	# Adds a sensor entity and its entPhySensorTable row. Takes index, name,
-	# contained_in, parent_rel_pos, type, scale, precision, value, and units.
+	# contained_in, parent_rel_pos, type, scale, precision, value, units, and thresholds.
 	#
-	# type is the entPhySensorType, 1 other, 4 voltsDC, 5 amperes, 6 watts, or 8 celsius.
-	# scale is the entPhySensorScale, 8 milli or 9 units. value is the integer to send,
-	# the reading being value / 10 ** precision at that scale.
+	# type is the entPhySensorType, 1 other, 4 voltsDC, 5 amperes, 6 watts, 8 celsius, or
+	# 10 rpm. scale is the entPhySensorScale, 8 milli or 9 units. value is the integer to
+	# send, the reading being value / 10 ** precision at that scale.
+	#
+	# thresholds is optional and only sent with --thresholds. It is a array ref of hash refs
+	# with the entSensorThresholdIndex as index, the CatalystSeverity as severity, the
+	# relation, the value at the same scale and precision as the reading, and crossed, true
+	# if the reading is past it. For example...
+	#
+	#     [ { index => 4, severity => 10, relation => 4, value => 8500, crossed => 0 } ]
 	my $add_sensor = sub {
 		my (%sensor) = @_;
 
@@ -686,6 +824,33 @@ if ( $opts{u} ) {
 				]
 			);
 		}
+
+		# CISCO-ENTITY-SENSOR-MIB entSensorThresholdTable, indexed by the entPhysicalIndex
+		# then the threshold index. Severity, Relation, Value, Evaluation, and
+		# NotificationEnable, which is always false as no traps are sent.
+		return if !$opts{thresholds};
+		foreach my $threshold ( @{ $sensor{thresholds} || [] } ) {
+			# entSensorThresholdValue is a SensorValue, which has a smaller range than Integer32
+			next if abs( $threshold->{value} ) > 1000000000;
+			my @threshold_columns = (
+				[ 2, $threshold->{severity} ],
+				[ 3, $threshold->{relation} ],
+				[ 4, $threshold->{value} ],
+				[ 5, $threshold->{crossed} ? 1 : 2 ],
+				[ 6, 2 ],
+			);
+			foreach my $threshold_column (@threshold_columns) {
+				my ( $column, $value ) = @{$threshold_column};
+				push(
+					@oids,
+					[
+						'.1.3.6.1.4.1.9.9.91.1.2.1.1.' . $column . '.' . $sensor{index} . '.' . $threshold->{index},
+						'integer',
+						$value
+					]
+				);
+			} ## end foreach my $threshold_column (@threshold_columns)
+		} ## end foreach my $threshold ( @{ $sensor{thresholds} ...})
 	}; ## end $add_sensor = sub
 
 	# Adds a entStateTable row if --state was given. Takes index, admin, oper, and
@@ -1153,6 +1318,109 @@ if ( $opts{u} ) {
 			);
 		} ## end foreach my $disk (@disks)
 	} ## end if ( $opts{inventory} )
+
+	#
+	# IPMI
+	#
+
+	if ( $opts{ipmi} ) {
+		# A stale SDR cache, as after a BMC firmware update, makes ipmi-sensors fail, so it
+		# is tried again with the cache rebuilt. That is slow on some BMCs, so not done every run.
+		my @ipmi_args = (
+			'--output-sensor-thresholds',     '--comma-separated-output',
+			'--ignore-not-available-sensors', '--quiet-cache'
+		);
+		my $ipmi_sensors;
+		foreach my $cache_args ( [], ['--sdr-cache-recreate'] ) {
+			my ($ipmi_output) = run_command( $commands{ipmi_sensors}, @ipmi_args, @{$cache_args} );
+			$ipmi_sensors = parse_ipmi_sensors($ipmi_output);
+			last if defined($ipmi_sensors);
+		}
+		if ( !defined($ipmi_sensors) ) {
+			warn('ipmi-sensors failed, so no IPMI sensors are reported');
+			$ipmi_sensors = [];
+		}
+
+		# ipmi-sensors units to entPhySensorType, with the rest, such as % and discrete
+		# sensors, skipped. Readings are sent at units scale with a precision of 2.
+		my %ipmi_unit_types = ( C => 8, V => 4, A => 5, W => 6, RPM => 10 );
+
+		# Each is the ipmi-sensors column, the entSensorThresholdIndex, the CatalystSeverity of
+		# minor 10, major 20, or critical 30, and the relation of lessOrEqual 2 or greaterOrEqual
+		# 4, as IPMI thresholds are hit at the value. The severity also sets the BMC alarm.
+		my @ipmi_thresholds = (
+			[ 'Lower NR', 1, 30, 2 ],
+			[ 'Lower C',  2, 20, 2 ],
+			[ 'Lower NC', 3, 10, 2 ],
+			[ 'Upper NC', 4, 10, 4 ],
+			[ 'Upper C',  5, 20, 4 ],
+			[ 'Upper NR', 6, 30, 4 ],
+		);
+		my %alarm_for_severity = ( 10 => 'warning', 20 => 'major', 30 => 'critical' );
+
+		my @usable_sensors = grep { $ipmi_unit_types{ $_->{units} } } @{$ipmi_sensors};
+
+		# some BMCs reuse a name, such as Dell with several named Temp, so those get the ID added
+		my %name_counts;
+		$name_counts{ $_->{name} }++ foreach @usable_sensors;
+
+		if (@usable_sensors) {
+			my $bmc_index = $index_for->('ipmi:bmc');
+			$add_entity->(
+				index          => $bmc_index,
+				descr          => 'BMC',
+				name           => 'BMC',
+				contained_in   => 1,
+				class          => $entity_classes{module},
+				parent_rel_pos => -1,
+			);
+
+			my %bmc_alarms;
+			my $sensor_position = 1;
+			foreach my $ipmi_sensor (@usable_sensors) {
+				my $sensor_name = $ipmi_sensor->{name};
+				if ( $name_counts{ $ipmi_sensor->{name} } > 1 ) {
+					$sensor_name .= ' ' . $ipmi_sensor->{id};
+				}
+
+				my @thresholds;
+				foreach my $ipmi_threshold (@ipmi_thresholds) {
+					my ( $column, $threshold_index, $severity, $relation ) = @{$ipmi_threshold};
+					my $threshold_value = $ipmi_sensor->{thresholds}{$column} // next;
+					my $crossed
+						= $relation == 2
+						? $ipmi_sensor->{reading} <= $threshold_value
+						: $ipmi_sensor->{reading} >= $threshold_value;
+					$bmc_alarms{ $alarm_for_severity{$severity} } = 1 if $crossed;
+					push(
+						@thresholds,
+						{
+							index    => $threshold_index,
+							severity => $severity,
+							relation => $relation,
+							value    => sprintf( '%.0f', $threshold_value * 100 ),
+							crossed  => $crossed,
+						}
+					);
+				} ## end foreach my $ipmi_threshold (@ipmi_thresholds)
+
+				$add_sensor->(
+					index          => $index_for->( 'ipmi:' . $sensor_name ),
+					name           => $sensor_name,
+					contained_in   => $bmc_index,
+					parent_rel_pos => $sensor_position++,
+					type           => $ipmi_unit_types{ $ipmi_sensor->{units} },
+					scale          => 9,
+					precision      => 2,
+					value          => sprintf( '%.0f', $ipmi_sensor->{reading} * 100 ),
+					units          => $ipmi_sensor->{units},
+					thresholds     => \@thresholds,
+				);
+			} ## end foreach my $ipmi_sensor (@usable_sensors)
+
+			$add_state->( index => $bmc_index, admin => 1, oper => 3, alarms => \%bmc_alarms );
+		} ## end if (@usable_sensors)
+	} ## end if ( $opts{ipmi} )
 
 	# snmpd reads the cache as its own user
 	umask(022);
